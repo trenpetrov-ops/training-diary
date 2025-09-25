@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Дневник тренировок</title>
+
+    <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+
+<div id="auth-screen">
+    <div class="auth-box">
+        <h3>Вход в Дневник</h3>
+        <input type="email" id="auth-email" placeholder="Email">
+        <input type="password" id="auth-password" placeholder="Пароль">
+        <button id="auth-login-btn" class="btn btn-primary">Войти</button>
+        <button id="auth-toggle-btn" class="auth-toggle-btn">Зарегистрироваться</button>
+    </div>
+</div>
+
+<div id="mode-select-screen">
+    <div class="mode-select-box">
+        <h3>Выберите режим работы</h3>
+        <div class="mode-options">
+            <button id="select-own-mode" class="mode-btn">
+                <span class="mode-icon">🏋️</span>
+                <h4>Личные тренировки</h4>
+                <p>Ваши циклы и программы</p>
+            </button>
+
+            <button id="select-personal-mode" class="mode-btn">
+                <span class="mode-icon">👥</span>
+                <h4>Персональный тренинг</h4>
+                <p>Работа с клиентами</p>
+            </button>
+        </div>
+        <button id="mode-logout-btn" class="btn back-btn logout-btn">Выход</button>
+    </div>
+</div>
+
+<div class="container">
+
+    <div id="root"></div>
+
+    <div class="navigation">
+        <button id="programs-btn" class="nav-btn">Программы</button>
+        <button id="journal-btn" class="nav-btn">Дневник</button>
+    </div>
+</div>
+
+<script type="module" src="./script.js"></script>
+</body>
+</html>

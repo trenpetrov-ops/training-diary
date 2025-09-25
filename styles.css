@@ -1,0 +1,815 @@
+/* ========================================================== */
+/* БАЗОВЫЕ СТИЛИ И СБРОСЫ (RESET) */
+/* ========================================================== */
+@import url('https://fonts.googleapis.com/css2?family=SF+Pro+Text:wght@400;500;600;700&display=swap');
+
+body {
+    font-family: 'SF Pro Text', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: #f2f2f7; /* Светлый фон iOS */
+    color: #1c1c1e; /* Темный текст iOS */
+    padding: 0;
+    margin: 0;
+    min-height: 100vh;
+}
+
+.container {
+    width: 100%;
+    max-width: 500px; /* Ограничение для мобильного экрана */
+    margin: 0 auto;
+    background-color: #f2f2f7;
+    padding-bottom: 80px; /* Отступ для нижней навигации */
+}
+
+#root {
+    padding: 0 16px;
+}
+
+/* ========================================================== */
+/* НАВИГАЦИОННАЯ ПАНЕЛЬ (TAB BAR) */
+/* ========================================================== */
+.navigation {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    height: 65px; /* Высота таб-бара */
+    background-color: #f9f9f9;
+    border-top: 1px solid #c7c7cc;
+    box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.05);
+    z-index: 1000;
+}
+
+.nav-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: 500;
+    color: #8e8e93; /* Стандартный серый */
+    padding: 0;
+    transition: color 0.2s ease;
+}
+
+.nav-btn.active {
+    color: #007aff; /* Активный синий iOS */
+}
+
+/* Иконки можно заменить на SVG или Font Awesome, но здесь используем текст */
+.nav-btn::before {
+    font-size: 24px;
+    margin-bottom: 4px;
+}
+
+#programs-btn::before { content: '🏋️'; }
+#journal-btn::before { content: '📖'; }
+
+/* ========================================================== */
+/* ЗАГОЛОВКИ И КНОПКИ (iOS BUTTONS & HEADERS) */
+/* ========================================================== */
+h3 {
+    font-size: 28px;
+    font-weight: 700;
+    padding: 24px 0 8px 0;
+    margin: 0;
+    color: #1c1c1e;
+}
+
+.section-title {
+    font-size: 22px;
+    font-weight: 600;
+    margin: 16px 0 12px 0;
+    color: #1c1c1e;
+}
+
+.btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 16px;
+    transition: opacity 0.2s;
+    white-space: nowrap;
+}
+
+.btn:active {
+    opacity: 0.7;
+}
+
+/* Основная синяя кнопка (для 'Создать', 'Добавить') */
+.btn-primary {
+    background-color: #007aff;
+    color: white;
+    flex-shrink: 0;
+}
+
+/* Кнопка 'Назад' */
+.back-btn {
+    color: #007aff;
+    background: none;
+    font-size: 17px;
+    padding: 10px 0;
+    margin-left: -10px;
+}
+
+/* Кнопки удаления */
+.delete-btn {
+    background-color: #ffffff;
+    color: #b63c3c;
+    padding: 4px 13px;
+    font-size: 13px;
+    border: 1px solid #b63c3c;
+}
+
+.delete-exercise-btn {
+    background-color: #ffffff;
+    color: #b63c3c;
+    padding: 5px 13px;
+    font-size: 12px;
+    border: 1px solid #b63c3c;
+}
+
+/* ========================================================== */
+/* КАРТОЧКИ, СПИСКИ И ПОЛЯ ВВОДА (LISTS & INPUTS) */
+/* ========================================================== */
+
+/* Общий стиль для всех секций-списков */
+.list-section {
+    background-color: white;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 0.5px 0 0 rgba(0, 0, 0, 0.05); /* Легкая тень */
+    margin-bottom: 20px;
+}
+
+/* Общий стиль для строк списка */
+.list-item, .journal-record, .set-row {
+    display: flex;
+    align-items: center;
+    /* justify-content: space-between;*/
+    padding: 12px 16px;
+    border-bottom: 0.5px solid #c7c7cc; /* Разделитель iOS */
+    background-color: white;
+    cursor: pointer;
+}
+
+.list-item:last-child, .journal-record:last-child {
+    border-bottom: none;
+}
+
+input {
+    flex-grow: 1;
+    padding: 10px 12px;
+    border: none;
+    background-color: white;
+    border-radius: 10px;
+    font-size: 16px;
+    color: #1c1c1e;
+    /* iOS-style field */
+    box-shadow: inset 0 0 0 0.5px #c7c7cc;
+    -webkit-appearance: none; /* Убрать дефолтный стиль iOS */
+}
+
+input:focus {
+    outline: none;
+    box-shadow: inset 0 0 0 2px #007aff;
+}
+
+.input-group {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+
+/* ========================================================== */
+/* СТРАНИЦА ПРОГРАММ */
+/* ========================================================== */
+.programs-list {
+    margin-top: 16px;
+}
+
+.program-item {
+    font-size: 17px;
+    font-weight: 500;
+}
+
+.program-item > div:first-child {
+    flex-grow: 1;
+}
+
+.program-item > div:last-child {
+    display: flex;
+    gap: 8px;
+}
+
+/* ========================================================== */
+/* СТРАНИЦА ДЕТАЛЕЙ ПРОГРАММЫ */
+/* ========================================================== */
+
+.exercise-item {
+    display: block;
+    margin-bottom: 12px;
+    padding: 0;
+    border: none;
+    background-color: transparent;
+}
+
+.exercise-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background-color: white;
+    border-radius: 10px;
+    margin-bottom: 1px;
+    font-weight: 600;
+}
+
+.control-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+.exercise-title {
+    display: flex;
+    align-items: center;
+    font-size: 16px;
+}
+
+.exercise-number {
+    margin-right: 8px;
+}
+
+.sets-container {
+    display: none;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+    transition: all 0.3s ease-in-out;
+    border: 1px solid #c7c7cc;
+    border-top: none;
+}
+
+.sets-container.expanded {
+    display: block;
+}
+
+.summary-sets-container {
+    display: none;
+    font-size: 15px;
+    color: #8e8e93;
+    padding: 0 16px 12px 16px;
+    flex-wrap: wrap;
+}
+
+.summary-sets-container span {
+    margin-right: 12px;
+    white-space: nowrap;
+}
+
+.exercise-header:not(.expanded) + .summary-sets-container {
+    display: flex;
+}
+
+/* Строка подхода (Set Row) */
+.set-row {
+    padding: 8px 98px 8px 69px;
+    border-bottom: 0.5px solid #e5e5ea;
+    font-size: 15px;
+}
+span.set-label {
+    font-size: 13px;
+}
+span.set-display {
+    margin-left: 15px;
+    flex-grow: 1;
+}
+
+small.unit-label {
+    font-size: 12px;
+    color: #606060;
+}
+.set-row:last-child {
+    border-bottom: none;
+}
+
+.set-input-group {
+    display: none;
+    flex-grow: 1;
+    gap: 4px;
+    padding-left: 10px;
+}
+
+.set-input-group input {
+    padding: 6px;
+    text-align: center;
+    max-width: 50px;
+}
+
+.set-row.editing .set-input-group {
+    display: flex;
+}
+
+.set-row.editing .set-display {
+    display: none;
+}
+
+.set-row .delete-set-row-btn {
+    background: none;
+    color: #b63c3c;
+    width: 20px;
+    height: 20px;
+    font-size: 18px;
+    line-height: 1;
+    padding: 0;
+}
+
+.set-row .delete-set-row-btn:active {
+    opacity: 0.5;
+}
+
+.add-set-btn {
+    display: block;
+    background-color: #ffffff;
+    color: #007aff;
+    padding: 3px 30px;
+    font-size: 14px;
+    border: 1px solid #007aff;
+    border-radius: 8px;
+    margin: 13px auto;
+
+}
+.add-set-btn:active {
+    background-color: #e5e5ea;
+}
+
+/* Кнопка "Завершить тренировку" - Floats */
+.complete-training-btn {
+    display: block;
+    width: 100%;
+    margin-top: 30px;
+    padding: 16px;
+    font-size: 18px;
+    background-color: #34c759; /* Зеленый iOS */
+    color: white;
+    border-radius: 12px;
+}
+
+/* ========================================================== */
+/* СТРАНИЦА ДНЕВНИКА */
+/* ========================================================== */
+.category-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+    padding: 8px;
+    background-color: white;
+    border-radius: 10px;
+    box-shadow: 0 0.5px 0 0 rgba(0, 0, 0, 0.05);
+}
+
+.filter-btn {
+    padding: 6px 12px;
+    background-color: #e5e5ea;
+    color: #1c1c1e;
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+.filter-btn.active {
+    background-color: #007aff;
+    color: white;
+}
+
+.journal-record {
+    display: block;
+    margin-bottom: 12px;
+    border-radius: 10px;
+    padding: 16px;
+    border: none;
+}
+
+.journal-record:last-child {
+    margin-bottom: 0;
+}
+
+.journal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.journal-header h4 {
+    font-size: 13px;
+    font-weight: 100;
+    margin: 0;
+}
+
+.journal-program-name {
+    font-size: 15px;
+    margin-bottom: 12px;
+    font-weight: 700;
+}
+
+.journal-exercise-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+    border-top: 0.5px solid #e5e5ea;
+    flex-direction: column; /* Размещаем название и подходы вертикально */
+}
+
+.journal-sets {
+    font-size: 14px;
+    color: #007aff;
+    display: flex;
+    /* ✅ ВОТ ЭТО ГЛАВНОЕ ИЗМЕНЕНИЕ: Разрешаем перенос элементов */
+    margin-top: 5px; /* Отступ от названия упражнения */
+    flex-wrap: wrap;
+}
+
+.journal-sets span {
+    color: #000000;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 14px;
+    white-space: nowrap;
+    margin-left: 1px;
+    margin-bottom: 4px;
+    font-weight: 100;
+}
+
+
+
+
+
+/* ========================================================== */
+/* TOAST И ПРОЧЕЕ */
+/* ========================================================== */
+.toast-message {
+    position: fixed;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background-color: rgba(0, 0, 0, 0.75);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 10px;
+    font-size: 15px;
+    opacity: 0;
+    transition: opacity 0.5s ease, transform 0.5s ease;
+    z-index: 2000;
+    max-width: 80%;
+    text-align: center;
+}
+
+.toast-message.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+.muted {
+    font-size: 15px;
+    color: #8e8e93;
+    text-align: center;
+    padding: 20px 0;
+}
+
+/* ========================================================== */
+/* ВЕРХНЯЯ НАВИГАЦИЯ (ЛИЧНЫЕ/ПЕРСОНАЛЬНЫЕ/ШАБЛОНЫ) */
+/* ========================================================== */
+#main-nav-switcher {
+    display: flex;
+    justify-content: space-around;
+    padding: 10px 16px 0; /* Отступ сверху */
+    background-color: #f2f2f7; /* Тот же фон, что и body */
+    gap: 1px; /* 🔥 Новое: Небольшой зазор между кнопками */
+}
+
+
+
+#nav-personal {
+    border-radius: 8px 0 0 8px; /* Скругление слева */
+}
+
+
+
+/* 🔥 Новое: Стиль для кнопки Шаблоны */
+#nav-templates {
+    border-left: none; /* Убираем двойную границу */
+    border-radius: 0 8px 8px 0; /* Скругление справа */
+}
+
+
+.nav-switch-btn.active {
+    background-color: #007aff;
+    color: white;
+}
+
+/* ========================================================== */
+/* КАРТОЧКИ, СПИСКИ И ПОЛЯ ВВОДА (LISTS & INPUTS) */
+/* ========================================================== */
+/* ... (Оставьте ваш существующий код, но убедитесь, что в нем есть следующие стили) ... */
+
+/* Добавьте в раздел "КНОПКИ" (если еще нет) */
+.program-item > div:last-child {
+    display: flex;
+    gap: 8px;
+    align-items: center; /* Выравнивание кнопок */
+}
+
+.list-item .go-btn {
+    background: #007aff; /* Синяя кнопка "Перейти" */
+    color: white;
+    padding: 5px 12px;
+    font-size: 14px;
+    border-radius: 8px;
+}
+
+/* ... (Остальной ваш CSS код) ... */
+
+/* Убедитесь, что в конце вашего файла есть следующие стили для toast и muted */
+
+.toast-message {
+    /* ... (ваши стили) ... */
+}
+
+.muted {
+    font-size: 15px;
+    color: #8e8e93;
+    text-align: center;
+    padding: 20px 0;
+}
+/* ЭКРАН АВТОРИЗАЦИИ */
+/* ========================================================== */
+.auth-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #f2f2f7;
+    z-index: 5000; /* Перекрывает все */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.auth-box {
+    width: 74%;
+    max-width: 350px;
+    padding: 30px;
+    background-color: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    text-align: center;
+}
+
+.auth-box h3 {
+    padding-top: 0;
+    margin-bottom: 25px;
+}
+
+#auth-email, #auth-password {
+    display: block;
+    width: 100%;
+    margin-bottom: 15px;
+    box-sizing: border-box;
+}
+
+#auth-login-btn {
+    width: 100%;
+    padding: 12px;
+    margin-bottom: 15px;
+}
+
+.auth-toggle-btn {
+    background: none;
+    color: #007aff;
+    font-size: 15px;
+    font-weight: 500;
+}
+
+/* ========================================================== */
+/* ЭКРАН ВЫБОРА РЕЖИМА (Mode Select Screen) */
+/* ========================================================== */
+#mode-select-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #f2f2f7;
+    z-index: 4000; /* Должен быть ниже auth-screen */
+    display: none; /* Скрыто по умолчанию */
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.mode-select-box {
+    width: 100%;
+    max-width: 400px;
+    text-align: center;
+}
+
+.mode-select-box h3 {
+    padding-top: 0;
+    margin-bottom: 30px;
+}
+
+.mode-options {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    margin-bottom: 40px;
+}
+
+.mode-btn {
+    display: flex;
+    align-items: center;
+    text-align: left;
+    background-color: white;
+    border: 1px solid #e5e5ea;
+    border-radius: 12px;
+    padding: 15px;
+    width: 100%;
+    cursor: pointer;
+    transition: background-color 0.2s, box-shadow 0.2s;
+}
+
+.mode-btn:active {
+    background-color: #f0f0f5;
+    box-shadow: 0 0 0 2px #007aff;
+}
+
+.mode-icon {
+    font-size: 32px;
+    margin-right: 15px;
+}
+
+.mode-btn h4 {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0;
+    color: #1c1c1e;
+}
+
+.mode-btn p {
+    font-size: 13px;
+    color: #8e8e93;
+    margin: 2px 0 0 0;
+}
+
+/* ========================================================== */
+/* ИЗМЕНЕНИЯ СТАРЫХ СТИЛЕЙ */
+/* ========================================================== */
+
+/* 🔥 УДАЛИТЕ ВСЕ СТИЛИ, СВЯЗАННЫЕ С #main-nav-switcher и .top-nav-btn
+   Избавьтесь от этого блока полностью: */
+
+/*
+#main-nav-switcher {
+    ...
+}
+.nav-switch-btn {
+    ...
+}
+#nav-personal {
+    ...
+}
+#nav-own {
+    ...
+}
+.top-nav-btn.active {
+    ...
+}
+*/
+
+/* 🔥 В СТРАНИЦЕ КЛИЕНТОВ/ЦИКЛОВ: Добавляем кнопку "Сменить режим" */
+.logout-wrapper {
+    /* Меняем навигацию в верхнем правом углу */
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+}
+.logout-wrapper .logout-btn {
+    margin: 0; /* Убираем лишние отступы */
+    font-size: 15px;
+}
+.logout-wrapper .change-mode-btn {
+    background: none;
+    color: #007aff;
+    font-size: 15px;
+    font-weight: 500;
+    padding: 0;
+}
+
+/* ========================================================== */
+/* СТИЛИ ДЛЯ КОММЕНТАРИЕВ */
+/* ========================================================== */
+
+.comment-wrapper {
+    margin-top: 20px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #e5e5ea;
+}
+
+.comment-toggle-btn {
+    background: none;
+    color: #007aff;
+    border: none;
+    padding: 0;
+    margin-bottom: 10px;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.comment-input,
+.comment-edit-input {
+    width: 100%;
+    min-height: 80px;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    box-sizing: border-box;
+    font-size: 15px;
+    margin-top: 5px;
+    resize: vertical;
+}
+
+/* Стили в Дневнике */
+.comment-section {
+    padding: 10px;
+    background-color: #f2f2f7;
+    border-radius: 8px;
+    margin: 10px 0;
+}
+
+.comment-text {
+    margin: 0;
+    color: #333;
+    font-style: italic;
+    white-space: pre-wrap; /* Сохраняет переносы строк */
+}
+
+.edit-comment-btn {
+    background: none;
+    color: #5856d6; /* Фиолетовый оттенок для редактирования */
+    border: none;
+    padding: 0;
+    margin-top: 5px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.comment-edit-controls {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+.comment-edit-controls .btn-small {
+    padding: 6px 12px;
+    font-size: 14px;
+}
+
+.journal-record {
+    border: 1px solid #ccc;
+    padding: 15px;
+    margin-bottom: 15px;
+    border-radius: 12px;
+    background-color: white;
+}
+
+/* Стили для двойного фильтра в дневнике */
+.category-filter.sub-filter {
+    background-color: #f0f0f5;
+    padding: 8px 10px;
+    border-radius: 8px;
+}
+
+div#auth-screen {
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    position: fixed;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: #f4f4f4;
+    z-index: 100;
+}
