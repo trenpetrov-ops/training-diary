@@ -1283,3 +1283,29 @@ onAuthStateChanged(auth, (user) => {
     // Первоначальный рендер
     render();
 });
+
+// =================================================================
+// 🚀 БЛОКИРОВКА МАСШТАБИРОВАНИЯ (ХАК ДЛЯ IOS)
+// =================================================================
+
+// Проверка на наличие touch-событий (только для мобильных)
+if (('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (navigator.msMaxTouchPoints > 0)) {
+    
+    let lastTouchEnd = 0;
+    
+    // Блокировка двойного нажатия (double-tap zoom)
+    document.addEventListener('touchend', function (event) {
+        const now = (new Date()).getTime();
+        
+        // Если двойное касание произошло очень быстро (менее 300 мс)
+        if (now - lastTouchEnd <= 300) {
+            event.preventDefault(); // Отменяем стандартное действие (зум)
+        }
+        lastTouchEnd = now;
+    }, false);
+
+    // Блокировка "щипка" (pinch-zoom) на уровне документа
+    document.addEventListener('gesturestart', function (event) {
+        event.preventDefault(); 
+    });
+}
