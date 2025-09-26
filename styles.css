@@ -10,7 +10,6 @@ body {
     padding: 0;
     margin: 0;
     min-height: 100vh;
-     -webkit-text-size-adjust: 100%;
 }
 
 .container {
@@ -813,4 +812,132 @@ div#auth-screen {
     align-items: center;
     background-color: #f4f4f4;
     z-index: 100;
+}
+
+/* ========================================================== */
+/* МОДАЛЬНОЕ ОКНО ДЛЯ КОММЕНТАРИЕВ К УПРАЖНЕНИЯМ */
+/* ========================================================== */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.4);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    z-index: 5000;
+    pointer-events: none;
+}
+
+.modal-overlay.active {
+    opacity: 1;
+    pointer-events: all;
+}
+
+.modal-content {
+    background-color: white;
+    padding: 20px;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 400px;
+    transform: scale(0.9);
+    transition: transform 0.3s ease;
+}
+
+.modal-overlay.active .modal-content {
+    transform: scale(1);
+}
+
+.modal-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin-top: 0;
+    margin-bottom: 15px;
+}
+
+.modal-controls {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+/* ========================================================== */
+/* СТИЛИ КОММЕНТАРИЕВ К УПРАЖНЕНИЮ */
+/* ========================================================== */
+/* Кнопка карандаша в заголовке упражнения */
+.edit-note-btn {
+    background: none;
+    color: #8e8e93; /* Серый карандаш */
+    font-size: 16px;
+    padding: 0 5px;
+}
+
+.edit-note-btn.has-note {
+    color: #5856d6; /* Фиолетовый, если комментарий есть */
+}
+
+/* Контейнер для отображения комментария к упражнению */
+.exercise-note-display {
+    padding: 8px 16px 12px 16px; /* Отступ для свернутого состояния */
+    background-color: #ffffff;
+    border-top: 0.5px solid #e5e5ea;
+    font-size: 14px;
+}
+
+.sets-container.expanded + .exercise-note-display {
+    /* Если развернуто, скройте его из свернутого блока */
+    display: none;
+}
+
+.sets-container.expanded .exercise-note-display {
+    /* Внутри развернутого контейнера, если он там рендерится */
+    padding: 12px 16px;
+    border-top: none;
+    border-radius: 0 0 10px 10px;
+    background-color: #f7f7f7;
+}
+
+.exercise-note-display .comment-text {
+    font-style: italic;
+    color: #555;
+    margin: 0;
+}
+
+/* Отображение комментария к упражнению в дневнике */
+.journal-exercise-note {
+    font-size: 13px;
+    color: #555;
+    margin: 5px 0 0 0;
+    padding-left: 0; /* Убираем отступ для списка */
+    font-style: italic;
+    white-space: pre-wrap;
+    border-top: 0.5px dotted #e5e5ea;
+    padding-top: 5px;
+}
+
+/* ========================================================== */
+/* СТИЛИ ДЛЯ КОММЕНТАРИЯ К ТРЕНИРОВКЕ В PROGRAM DETAILS */
+/* ========================================================== */
+
+.comment-wrapper .comment-toggle-btn.has-note {
+    /* Фиолетовый, когда комментарий к тренировке существует */
+    color: #5856d6;
+}
+
+/* Стиль для отображения текста комментария к тренировке */
+.comment-text-display {
+    margin: 10px 0 0 0;
+    padding: 10px 15px;
+    background-color: #f7f7f7;
+    border-radius: 8px;
+    font-size: 14px;
+    color: #555;
+    white-space: pre-wrap;
+    font-style: italic;
+    border: 1px solid #e5e5ea;
 }
