@@ -251,7 +251,7 @@ function renderClientsPage() {
 
             clientItem.innerHTML = `<div>${client.name}</div>
                                      <div>
-                                         <button class="btn delete-btn">×</button>
+                                         <button class="btn delete-btn"><svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><title>Ios-trash-outline SVG Icon</title><path d="M400 113.3h-80v-20c0-16.2-13.1-29.3-29.3-29.3h-69.5C205.1 64 192 77.1 192 93.3v20h-80V128h21.1l23.6 290.7c0 16.2 13.1 29.3 29.3 29.3h141c16.2 0 29.3-13.1 29.3-29.3L379.6 128H400v-14.7zm-193.4-20c0-8.1 6.6-14.7 14.6-14.7h69.5c8.1 0 14.6 6.6 14.6 14.7v20h-98.7v-20zm135 324.6v.8c0 8.1-6.6 14.7-14.6 14.7H186c-8.1 0-14.6-6.6-14.6-14.7v-.8L147.7 128h217.2l-23.3 289.9z" fill="currentColor"/><path d="M249 160h14v241h-14z" fill="currentColor"/><path d="M320 160h-14.6l-10.7 241h14.6z" fill="currentColor"/><path d="M206.5 160H192l10.7 241h14.6z" fill="currentColor"/></svg></button>
                                      </div>`;
 
             const deleteBtn = clientItem.querySelector('.delete-btn');
@@ -369,8 +369,7 @@ function renderCyclesPage() {
 
             cycleItem.innerHTML = `<div>${cycle.name} <small class="muted">(${cycle.startDateString})</small></div>
                                      <div>
-                                         <button class="btn delete-btn">×</button>
-                                         <button class="btn go-btn">→</button>
+                                         <button class="btn delete-btn "><svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><title>Ios-trash-outline SVG Icon</title><path d="M400 113.3h-80v-20c0-16.2-13.1-29.3-29.3-29.3h-69.5C205.1 64 192 77.1 192 93.3v20h-80V128h21.1l23.6 290.7c0 16.2 13.1 29.3 29.3 29.3h141c16.2 0 29.3-13.1 29.3-29.3L379.6 128H400v-14.7zm-193.4-20c0-8.1 6.6-14.7 14.6-14.7h69.5c8.1 0 14.6 6.6 14.6 14.7v20h-98.7v-20zm135 324.6v.8c0 8.1-6.6 14.7-14.6 14.7H186c-8.1 0-14.6-6.6-14.6-14.7v-.8L147.7 128h217.2l-23.3 289.9z" fill="currentColor"/><path d="M249 160h14v241h-14z" fill="currentColor"/><path d="M320 160h-14.6l-10.7 241h14.6z" fill="currentColor"/><path d="M206.5 160H192l10.7 241h14.6z" fill="currentColor"/></svg></button>
                                      </div>`;
 
             const deleteBtn = cycleItem.querySelector('.delete-btn');
@@ -386,11 +385,7 @@ function renderCyclesPage() {
                 render();
             };
 
-            const goBtn = cycleItem.querySelector('.go-btn');
-            goBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                clickHandler();
-            });
+
 
             cycleItem.addEventListener('click', (e) => {
                 if (!e.target.closest('.delete-btn')) {
@@ -481,7 +476,7 @@ function renderProgramsInCyclePage() {
 
             programItem.innerHTML = `<div>${program.name}</div>
                                      <div>
-                                         <button class="btn delete-btn">×</button>
+                                         <button class="btn delete-btn"><svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><title>Ios-trash-outline SVG Icon</title><path d="M400 113.3h-80v-20c0-16.2-13.1-29.3-29.3-29.3h-69.5C205.1 64 192 77.1 192 93.3v20h-80V128h21.1l23.6 290.7c0 16.2 13.1 29.3 29.3 29.3h141c16.2 0 29.3-13.1 29.3-29.3L379.6 128H400v-14.7zm-193.4-20c0-8.1 6.6-14.7 14.6-14.7h69.5c8.1 0 14.6 6.6 14.6 14.7v20h-98.7v-20zm135 324.6v.8c0 8.1-6.6 14.7-14.6 14.7H186c-8.1 0-14.6-6.6-14.6-14.7v-.8L147.7 128h217.2l-23.3 289.9z" fill="currentColor"/><path d="M249 160h14v241h-14z" fill="currentColor"/><path d="M320 160h-14.6l-10.7 241h14.6z" fill="currentColor"/><path d="M206.5 160H192l10.7 241h14.6z" fill="currentColor"/></svg></button>
                                      </div>`;
 
             const deleteBtn = programItem.querySelector('.delete-btn');
@@ -704,7 +699,8 @@ function renderProgramDetailsPage() {
             const controlButtons = createElement('div', 'control-buttons');
 
             // Кнопка редактирования комментария к упражнению
-            const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-note' : ''}`, '✏️');
+            const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-note' : ''}`);
+            editNoteBtn.innerHTML = ' <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Edit SVG Icon</title><path fill="currentColor" d="M3.548 20.938h16.9a.5.5 0 0 0 0-1h-16.9a.5.5 0 0 0 0 1M9.71 17.18a2.587 2.587 0 0 0 1.12-.65l9.54-9.54a1.75 1.75 0 0 0 0-2.47l-.94-.93a1.788 1.788 0 0 0-2.47 0l-9.54 9.53a2.473 2.473 0 0 0-.64 1.12L6.04 17a.737.737 0 0 0 .19.72a.767.767 0 0 0 .53.22Zm.41-1.36a1.468 1.468 0 0 1-.67.39l-.97.26l-1-1l.26-.97a1.521 1.521 0 0 1 .39-.67l.38-.37l1.99 1.99Zm1.09-1.08l-1.99-1.99l6.73-6.73l1.99 1.99Zm8.45-8.45L18.65 7.3l-1.99-1.99l1.01-1.02a.748.748 0 0 1 1.06 0l.93.94a.754.754 0 0 1 0 1.06"/></svg>';
             editNoteBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 // Используем универсальное модальное окно
@@ -717,7 +713,8 @@ function renderProgramDetailsPage() {
             });
 
 
-            const deleteExerciseBtn = createElement('button', 'btn delete-exercise-btn', '×');
+            const deleteExerciseBtn = createElement('button', 'btn delete-exercise-btn');
+            deleteExerciseBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><title>Ios-trash-outline SVG Icon</title><path d="M400 113.3h-80v-20c0-16.2-13.1-29.3-29.3-29.3h-69.5C205.1 64 192 77.1 192 93.3v20h-80V128h21.1l23.6 290.7c0 16.2 13.1 29.3 29.3 29.3h141c16.2 0 29.3-13.1 29.3-29.3L379.6 128H400v-14.7zm-193.4-20c0-8.1 6.6-14.7 14.6-14.7h69.5c8.1 0 14.6 6.6 14.6 14.7v20h-98.7v-20zm135 324.6v.8c0 8.1-6.6 14.7-14.6 14.7H186c-8.1 0-14.6-6.6-14.6-14.7v-.8L147.7 128h217.2l-23.3 289.9z" fill="currentColor"/><path d="M249 160h14v241h-14z" fill="currentColor"/><path d="M320 160h-14.6l-10.7 241h14.6z" fill="currentColor"/><path d="M206.5 160H192l10.7 241h14.6z" fill="currentColor"/></svg>';
 
             controlButtons.append(editNoteBtn, deleteExerciseBtn);
             exerciseHeader.append(exerciseTitle, controlButtons);
@@ -1112,11 +1109,12 @@ function renderJournalPage() {
             const journalHeader = createElement('div', 'journal-header');
             const dateText = createElement('h4', null, `${record.date} в ${record.time}`);
 
-            const deleteBtn = createElement('button', 'btn delete-btn', '×');
+            const deleteBtn = createElement('button', 'btn delete-btn');
             deleteBtn.addEventListener('click', async () => {
                 await deleteDoc(doc(getUserJournalCollection(), record.id));
             });
 
+            deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><title>Ios-trash-outline SVG Icon</title><path d="M400 113.3h-80v-20c0-16.2-13.1-29.3-29.3-29.3h-69.5C205.1 64 192 77.1 192 93.3v20h-80V128h21.1l23.6 290.7c0 16.2 13.1 29.3 29.3 29.3h141c16.2 0 29.3-13.1 29.3-29.3L379.6 128H400v-14.7zm-193.4-20c0-8.1 6.6-14.7 14.6-14.7h69.5c8.1 0 14.6 6.6 14.6 14.7v20h-98.7v-20zm135 324.6v.8c0 8.1-6.6 14.7-14.6 14.7H186c-8.1 0-14.6-6.6-14.6-14.7v-.8L147.7 128h217.2l-23.3 289.9z" fill="currentColor"/><path d="M249 160h14v241h-14z" fill="currentColor"/><path d="M320 160h-14.6l-10.7 241h14.6z" fill="currentColor"/><path d="M206.5 160H192l10.7 241h14.6z" fill="currentColor"/></svg>';
             journalHeader.append(dateText, deleteBtn);
 
             const programName = createElement('div', 'journal-program-name', `${record.programName}`);
