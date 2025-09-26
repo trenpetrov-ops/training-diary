@@ -527,7 +527,7 @@ const debouncedSaveSetData = debounce(async (programId, exerciseId, setIndex, fi
             currentExercise.sets[setIndex][field] = value;
             try {
                 await updateDoc(doc(getUserProgramsCollection(), currentProgram.id), { exercises: currentProgram.exercises });
-                render();
+                // render() здесь не нужен, так как сработает Firebase listener
             } catch (error) {
                 console.error("Ошибка при отложенном сохранении:", error);
             }
@@ -559,6 +559,16 @@ function renderProgramDetailsPage() {
     });
     contentContainer.append(backButton);
 
+    // ✅ ИСПРАВЛЕНИЕ 2: Обработчик клика для сброса режима редактирования (скрытие полей ввода)
+    contentContainer.addEventListener('click', (e) => {
+        // Проверяем, что клик не был сделан внутри элемента, который управляет редактированием
+        if (!e.target.closest('.set-row') && state.editingSetId !== null) {
+            // Если мы кликнули вне подхода и режим редактирования активен
+            state.editingSetId = null;
+            // Вызываем render, чтобы скрыть все поля ввода
+            render();
+        }
+    });
 
     contentContainer.append(createElement('h3', null, selectedProgram.name));
 
@@ -702,18 +712,35 @@ function renderProgramDetailsPage() {
                     });
 
                     const deleteSetBtn = createElement('button', 'btn delete-set-row-btn', '-');
+
+                    // ✅ ИСПРАВЛЕНИЕ 1: Правильное удаление подхода
                     deleteSetBtn.addEventListener('click', async (e) => {
                         e.stopPropagation();
                         const currentProgram = state.programs.find(p => p.id === state.selectedProgramIdForDetails);
                         if (currentProgram) {
                             const currentExercise = (currentProgram.exercises || []).find(ex => ex.id === exercise.id);
                             if (currentExercise) {
+
+                                // 1. Удаляем подход из массива данных упражнения
                                 currentExercise.sets.splice(setIndex, 1);
                                 state.editingSetId = null;
-                                await updateDoc(doc(getUserProgramsCollection(), currentProgram.id), { exercises: currentExercise.sets });
+
+                                // 2. ПРАВИЛЬНОЕ ОБНОВЛЕНИЕ FIREBASE:
+                                // Отправляем ВЕСЬ массив упражнений.
+                                try {
+                                    await updateDoc(doc(getUserProgramsCollection(), currentProgram.id), {
+                                        exercises: currentProgram.exercises
+                                    });
+                                } catch (error) {
+                                    console.error("Ошибка при удалении подхода:", error);
+                                    showToast("Не удалось удалить подход.");
+                                }
+
+                                // render() будет вызван слушателем Firebase после обновления данных.
                             }
                         }
                     });
+
                     setRow.append(deleteSetBtn);
                     setsContainer.append(setRow);
                 });
@@ -729,8 +756,10 @@ function renderProgramDetailsPage() {
                         if (!currentExercise.sets) {
                             currentExercise.sets = [];
                         }
+                        const newSetIndex = currentExercise.sets.length;
                         currentExercise.sets.push({ weight: '', reps: '' });
-                        state.editingSetId = null;
+                        // Устанавливаем редактирование на только что созданный подход
+                        state.editingSetId = `${exercise.id}-${newSetIndex}`;
                         await updateDoc(doc(getUserProgramsCollection(), currentProgram.id), { exercises: currentProgram.exercises });
                     }
                 }
@@ -771,6 +800,26 @@ function renderProgramDetailsPage() {
     completeTrainingBtn.addEventListener('click', async () => {
         const trainingComment = document.querySelector('.comment-input').value.trim(); // Считываем комментарий
         const currentCycle = state.cycles.find(c => c.id === state.selectedCycleId);
+
+        // 1. Фильтруем упражнения, оставляя только те, где есть подходы с данными
+        const exercisesToSave = selectedProgram.exercises
+            .filter(ex => ex.sets && ex.sets.some(set => set.weight || set.reps))
+            .map(ex => ({
+                // ✅ ИСПРАВЛЕНИЕ 3: Копируем весь объект упражнения и подходы
+                ...ex,
+                sets: (ex.sets || []).map(set => ({
+                    weight: set.weight || '',
+                    reps: set.reps || '',
+                    note: set.note || ''
+                }))
+            }));
+
+        // Если нет упражнений с данными, выдаем предупреждение
+        if (exercisesToSave.length === 0) {
+            showToast('Нечего сохранять: нет подходов с весом или повторениями!');
+            return;
+        }
+
         const trainingRecord = {
             date: new Date().toLocaleDateString('ru-RU'),
             time: new Date().toLocaleTimeString('ru-RU'),
@@ -778,12 +827,7 @@ function renderProgramDetailsPage() {
             category: currentCycle ? currentCycle.name : selectedProgram.name,
             cycleName: currentCycle ? currentCycle.name : 'Без цикла',
             comment: trainingComment, // Сохраняем комментарий
-            exercises: selectedProgram.exercises
-                .filter(ex => ex.sets.some(set => set.weight || set.reps))
-                .map(ex => ({
-                    name: ex.name,
-                    sets: ex.sets
-                }))
+            exercises: exercisesToSave // Используем отфильтрованный массив с полной структурой
         };
 
         try {
@@ -851,7 +895,6 @@ function renderJournalPage() {
     };
 
     // Кнопка "Все циклы" как обязательный начальный выбор
-    categoryFilter.append(createFilterButton('Все циклы', 'all'));
     allCategories.forEach(category => {
         categoryFilter.append(createFilterButton(category, category));
     });
@@ -861,7 +904,7 @@ function renderJournalPage() {
     // Блокируем отображение по умолчанию
     // -----------------------------------------------------------
     if (!state.selectedJournalCategory) {
-        contentContainer.append(createElement('div', 'muted', 'Выберите цикл или "Все циклы", чтобы увидеть записи.'));
+        contentContainer.append(createElement('div', 'muted', 'Выберите цикл и тренировку , чтобы посмотреть записи.'));
         root.append(contentContainer);
         return;
     }
@@ -896,8 +939,6 @@ function renderJournalPage() {
             return btn;
         };
 
-        // Кнопка "Все программы"
-        programFilter.append(createProgramFilterButton('Все программы', 'all'));
         allPrograms.forEach(programName => {
             programFilter.append(createProgramFilterButton(programName, programName));
         });
@@ -931,8 +972,15 @@ function renderJournalPage() {
     } else {
         // Сортировка по дате и времени
         filteredJournal.sort((a, b) => {
-            const dateA = new Date(`${a.date.split('.').reverse().join('-')} ${a.time}`);
-            const dateB = new Date(`${b.date.split('.').reverse().join('-')} ${b.time}`);
+            // Преобразование даты в формат YYYY-MM-DD для корректного создания Date
+            const datePartsA = a.date.split('.');
+            const formattedDateA = `${datePartsA[2]}-${datePartsA[1]}-${datePartsA[0]} ${a.time}`;
+            const dateA = new Date(formattedDateA);
+
+            const datePartsB = b.date.split('.');
+            const formattedDateB = `${datePartsB[2]}-${datePartsB[1]}-${datePartsB[0]} ${b.time}`;
+            const dateB = new Date(formattedDateB);
+
             return dateB - dateA;
         });
 
@@ -957,7 +1005,7 @@ function renderJournalPage() {
             // -----------------------------------------------------------
             // 🔥 УПРАЖНЕНИЯ (С НУМЕРАЦИЕЙ)
             // -----------------------------------------------------------
-            (record.exercises || []).forEach((exercise, index) => { // 🔥 Добавлен index
+            (record.exercises || []).forEach((exercise, index) => {
                 const exerciseRow = createElement('div', 'journal-exercise-row');
 
                 // 🔥 Добавлена нумерация
@@ -965,7 +1013,9 @@ function renderJournalPage() {
 
                 const setsContainer = createElement('div', 'journal-sets');
 
+                // ✅ ИСПРАВЛЕНИЕ 3 (Проверка): Теперь sets должны быть массивом объектов
                 (exercise.sets || []).forEach(set => {
+                    // Используем строгие проверки на наличие данных
                     if (set.weight || set.reps) {
                         const setSpan = createElement('span', null, `${set.weight || '0'}x${set.reps || '0'}`);
                         setsContainer.append(setSpan);
@@ -978,7 +1028,7 @@ function renderJournalPage() {
 
 
             // -----------------------------------------------------------
-            // 🔥 КОММЕНТАРИЙ ТРЕНИРОВКИ (Отображение и редактирование - ПЕРЕМЕЩЕН В КОНЕЦ)
+            // 🔥 КОММЕНТАРИЙ ТРЕНИРОВКИ
             // -----------------------------------------------------------
             const commentSection = createElement('div', 'comment-section');
             const commentText = createElement('p', 'comment-text', record.comment || 'Нет комментария.');
@@ -1112,6 +1162,8 @@ function setupDynamicListeners() {
         });
     }
 }
+
+
 
 
 // =================================================================
@@ -1283,29 +1335,3 @@ onAuthStateChanged(auth, (user) => {
     // Первоначальный рендер
     render();
 });
-
-// =================================================================
-// 🚀 БЛОКИРОВКА МАСШТАБИРОВАНИЯ (ХАК ДЛЯ IOS)
-// =================================================================
-
-// Проверка на наличие touch-событий (только для мобильных)
-if (('ontouchstart' in window) || (navigator.maxTouchPoints > 0) || (navigator.msMaxTouchPoints > 0)) {
-    
-    let lastTouchEnd = 0;
-    
-    // Блокировка двойного нажатия (double-tap zoom)
-    document.addEventListener('touchend', function (event) {
-        const now = (new Date()).getTime();
-        
-        // Если двойное касание произошло очень быстро (менее 300 мс)
-        if (now - lastTouchEnd <= 300) {
-            event.preventDefault(); // Отменяем стандартное действие (зум)
-        }
-        lastTouchEnd = now;
-    }, false);
-
-    // Блокировка "щипка" (pinch-zoom) на уровне документа
-    document.addEventListener('gesturestart', function (event) {
-        event.preventDefault(); 
-    });
-}
