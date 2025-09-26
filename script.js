@@ -454,7 +454,8 @@ function renderProgramsInCyclePage() {
         if (name) {
             const newProgram = {
                 name: name,
-                exercises: []
+                exercises: [],
+                trainingNote: '' // 🔥 ИНИЦИАЛИЗАЦИЯ: Поле для комментария к тренировке
             };
             try {
                 await addDoc(getUserProgramsCollection(), newProgram);
@@ -515,6 +516,83 @@ function renderProgramsInCyclePage() {
 }
 
 
+// =================================================================
+// 🌟 ОБНОВЛЕННАЯ ФУНКЦИЯ: УНИВЕРСАЛЬНОЕ МОДАЛЬНОЕ ОКНО ДЛЯ КОММЕНТАРИЕВ
+// =================================================================
+
+function openCommentModal(itemId, currentNote, title, saveCallback) {
+    const modalId = `modal-comment-${itemId}`;
+    let modal = document.getElementById(modalId);
+
+    // Удаляем старую модалку, если она была, чтобы избежать дублирования
+    if (modal) {
+        modal.remove();
+    }
+
+    modal = createElement('div', 'modal-overlay', '');
+    modal.id = modalId;
+
+    const modalContent = createElement('div', 'modal-content');
+    modalContent.innerHTML = `
+        <h4 class="modal-title">${title}</h4>
+        <textarea id="comment-input-${itemId}" class="comment-edit-input" placeholder="Введите комментарий...">${currentNote || ''}</textarea>
+        <div class="modal-controls">
+            <button class="btn btn-secondary modal-cancel-btn">Отмена</button>
+            <button class="btn btn-primary modal-save-btn">Сохранить</button>
+        </div>
+    `;
+
+    modal.append(modalContent);
+    document.body.append(modal);
+
+    const closeModal = () => modal.classList.remove('active');
+
+    // Активируем модальное окно (для CSS перехода)
+    setTimeout(() => modal.classList.add('active'), 50);
+
+    modal.querySelector('.modal-cancel-btn').addEventListener('click', () => {
+        closeModal();
+        setTimeout(() => modal.remove(), 300); // Удаляем после анимации
+    });
+
+    modal.querySelector('.modal-save-btn').addEventListener('click', async () => {
+        const newNote = modal.querySelector(`#comment-input-${itemId}`).value.trim();
+        await saveCallback(newNote); // Используем переданную функцию сохранения
+        closeModal();
+        setTimeout(() => modal.remove(), 300);
+    });
+}
+
+
+async function saveExerciseNote(programId, exerciseId, note) {
+    const currentProgram = state.programs.find(p => p.id === programId);
+    if (currentProgram) {
+        const currentExercise = (currentProgram.exercises || []).find(ex => ex.id === exerciseId);
+        if (currentExercise) {
+            currentExercise.note = note;
+
+            try {
+                await updateDoc(doc(getUserProgramsCollection(), currentProgram.id), { exercises: currentProgram.exercises });
+                showToast('Комментарий к упражнению сохранен!');
+            } catch (error) {
+                console.error("Ошибка при сохранении комментария к упражнению:", error);
+                showToast('Ошибка сохранения комментария.');
+            }
+        }
+    }
+}
+
+async function saveTrainingNote(programId, note) {
+    try {
+        await updateDoc(doc(getUserProgramsCollection(), programId), { trainingNote: note });
+        showToast('Комментарий к тренировке сохранен!');
+    } catch (error) {
+        console.error("Ошибка при сохранении комментария к тренировке:", error);
+        showToast('Ошибка сохранения комментария к тренировке.');
+    }
+}
+
+
 // 🚀 ЛОГИКА ДЛЯ СТРАНИЦЫ ДЕТАЛЕЙ ПРОГРАММЫ
 const debouncedSaveSetData = debounce(async (programId, exerciseId, setIndex, field, value) => {
     const currentProgram = state.programs.find(p => p.id === programId);
@@ -559,13 +637,10 @@ function renderProgramDetailsPage() {
     });
     contentContainer.append(backButton);
 
-    // ✅ ИСПРАВЛЕНИЕ 2: Обработчик клика для сброса режима редактирования (скрытие полей ввода)
+    // Обработчик клика для сброса режима редактирования (скрытие полей ввода)
     contentContainer.addEventListener('click', (e) => {
-        // Проверяем, что клик не был сделан внутри элемента, который управляет редактированием
         if (!e.target.closest('.set-row') && state.editingSetId !== null) {
-            // Если мы кликнули вне подхода и режим редактирования активен
             state.editingSetId = null;
-            // Вызываем render, чтобы скрыть все поля ввода
             render();
         }
     });
@@ -588,7 +663,8 @@ function renderProgramDetailsPage() {
             const newExercise = {
                 id: Date.now().toString(),
                 name: name,
-                sets: [{ weight: '', reps: '' }]
+                sets: [{ weight: '', reps: '' }],
+                note: ''
             };
             const currentProgram = state.programs.find(p => p.id === state.selectedProgramIdForDetails);
             if (currentProgram) {
@@ -613,6 +689,8 @@ function renderProgramDetailsPage() {
         const exercisesListSection = createElement('div', 'list-section');
         selectedProgram.exercises.forEach((exercise, index) => {
             const isExpanded = state.expandedExerciseId === exercise.id;
+            const hasNote = exercise.note && exercise.note.trim() !== '';
+
             const exerciseItem = createElement('div', 'exercise-item');
 
             const exerciseHeader = createElement('div', `exercise-header ${isExpanded ? 'expanded' : ''}`);
@@ -624,9 +702,24 @@ function renderProgramDetailsPage() {
             exerciseTitle.append(exerciseNumber, exerciseName);
 
             const controlButtons = createElement('div', 'control-buttons');
+
+            // Кнопка редактирования комментария к упражнению
+            const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-note' : ''}`, '✏️');
+            editNoteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                // Используем универсальное модальное окно
+                openCommentModal(
+                    exercise.id,
+                    exercise.note,
+                    `Комментарий к ${exercise.name}`,
+                    (newNote) => saveExerciseNote(selectedProgram.id, exercise.id, newNote)
+                );
+            });
+
+
             const deleteExerciseBtn = createElement('button', 'btn delete-exercise-btn', '×');
 
-            controlButtons.append(deleteExerciseBtn);
+            controlButtons.append(editNoteBtn, deleteExerciseBtn);
             exerciseHeader.append(exerciseTitle, controlButtons);
 
             deleteExerciseBtn.addEventListener('click', async (e) => {
@@ -641,6 +734,14 @@ function renderProgramDetailsPage() {
             });
 
             const setsContainer = createElement('div', `sets-container ${isExpanded ? 'expanded' : ''}`);
+
+            // Контейнер для отображения комментария под подходами
+            const exerciseNoteContainer = createElement('div', 'exercise-note-display');
+            if (hasNote) {
+                const noteText = createElement('p', 'comment-text', exercise.note);
+                exerciseNoteContainer.append(noteText);
+            }
+
 
             const summarySetsContainer = createElement('div', `summary-sets-container ${!isExpanded ? 'visible' : ''}`);
             const summarySets = (exercise.sets || []).filter(set => (set.weight && set.weight.trim() !== '') || (set.reps && set.reps.trim() !== ''));
@@ -713,7 +814,7 @@ function renderProgramDetailsPage() {
 
                     const deleteSetBtn = createElement('button', 'btn delete-set-row-btn', '-');
 
-                    // ✅ ИСПРАВЛЕНИЕ 1: Правильное удаление подхода
+                    // 🔥 ИСПРАВЛЕНИЕ 2: Логика удаления подхода/упражнения
                     deleteSetBtn.addEventListener('click', async (e) => {
                         e.stopPropagation();
                         const currentProgram = state.programs.find(p => p.id === state.selectedProgramIdForDetails);
@@ -721,22 +822,20 @@ function renderProgramDetailsPage() {
                             const currentExercise = (currentProgram.exercises || []).find(ex => ex.id === exercise.id);
                             if (currentExercise) {
 
-                                // 1. Удаляем подход из массива данных упражнения
-                                currentExercise.sets.splice(setIndex, 1);
-                                state.editingSetId = null;
-
-                                // 2. ПРАВИЛЬНОЕ ОБНОВЛЕНИЕ FIREBASE:
-                                // Отправляем ВЕСЬ массив упражнений.
-                                try {
-                                    await updateDoc(doc(getUserProgramsCollection(), currentProgram.id), {
-                                        exercises: currentProgram.exercises
-                                    });
-                                } catch (error) {
-                                    console.error("Ошибка при удалении подхода:", error);
-                                    showToast("Не удалось удалить подход.");
+                                if (currentExercise.sets.length === 1) {
+                                    // 🔥 НОВОЕ ПРАВИЛО: Если это последний подход, удаляем все упражнение
+                                    currentProgram.exercises = currentProgram.exercises.filter(ex => ex.id !== exercise.id);
+                                    showToast('Удалено последнее упражнение!');
+                                } else {
+                                    // Иначе, просто удаляем подход
+                                    currentExercise.sets.splice(setIndex, 1);
+                                    showToast('Подход удален!');
                                 }
 
-                                // render() будет вызван слушателем Firebase после обновления данных.
+                                state.editingSetId = null;
+                                await updateDoc(doc(getUserProgramsCollection(), currentProgram.id), {
+                                    exercises: currentProgram.exercises
+                                });
                             }
                         }
                     });
@@ -766,28 +865,50 @@ function renderProgramDetailsPage() {
             });
             setsContainer.append(addSetBtn);
 
-            exerciseItem.append(exerciseHeader, summarySetsContainer, setsContainer);
+            // Отображение комментария в развернутом виде
+            if (isExpanded) {
+                setsContainer.append(exerciseNoteContainer);
+            }
+
+            exerciseItem.append(exerciseHeader, summarySetsContainer);
+
+            // Отображение комментария в свернутом виде (если есть)
+            if (!isExpanded && hasNote) {
+                exerciseItem.append(exerciseNoteContainer);
+            }
+
+            exerciseItem.append(setsContainer);
             exercisesListSection.append(exerciseItem);
         });
         contentContainer.append(exercisesListSection);
     }
 
     // -----------------------------------------------------------
-    // 🔥 БЛОК КОММЕНТАРИЕВ К ТРЕНИРОВКЕ
+    // 🔥 БЛОК КОММЕНТАРИЕВ К ТРЕНИРОВКЕ (ИСПРАВЛЕНИЕ 1: МОДАЛЬНОЕ ОКНО)
     // -----------------------------------------------------------
+    const hasTrainingNote = selectedProgram.trainingNote && selectedProgram.trainingNote.trim() !== '';
+
     const commentWrapper = createElement('div', 'comment-wrapper');
-    const commentBtn = createElement('button', 'btn comment-toggle-btn', '✏️ Добавить комментарий');
-    const commentInput = createElement('textarea', 'comment-input');
-    commentInput.placeholder = 'Введите комментарии к тренировке...';
-    commentInput.style.display = 'none'; // Скрыто по умолчанию
+    const commentBtn = createElement('button', `btn comment-toggle-btn ${hasTrainingNote ? 'has-note' : ''}`, `✏️ ${hasTrainingNote ? 'Редактировать комментарий' : 'Добавить комментарий'}`);
+
+    // Отображение комментария, если он есть
+    if (hasTrainingNote) {
+        const noteDisplay = createElement('p', 'comment-text-display', selectedProgram.trainingNote);
+        commentWrapper.append(noteDisplay);
+    }
+
 
     commentBtn.addEventListener('click', () => {
-        const isVisible = commentInput.style.display !== 'none';
-        commentInput.style.display = isVisible ? 'none' : 'block';
-        commentBtn.innerText = isVisible ? '✏️ Добавить комментарий' : 'Скрыть комментарий';
+        // Вызываем универсальное модальное окно для комментария к тренировке
+        openCommentModal(
+            selectedProgram.id,
+            selectedProgram.trainingNote,
+            'Комментарий к тренировке',
+            (newNote) => saveTrainingNote(selectedProgram.id, newNote)
+        );
     });
 
-    commentWrapper.append(commentBtn, commentInput);
+    commentWrapper.prepend(commentBtn); // Кнопка должна быть сверху
     contentContainer.append(commentWrapper);
 
 
@@ -798,15 +919,16 @@ function renderProgramDetailsPage() {
     contentContainer.append(completeTrainingBtn);
 
     completeTrainingBtn.addEventListener('click', async () => {
-        const trainingComment = document.querySelector('.comment-input').value.trim(); // Считываем комментарий
+        // Теперь комментарий берем прямо из selectedProgram (он уже сохранен)
+        const trainingComment = selectedProgram.trainingNote || '';
         const currentCycle = state.cycles.find(c => c.id === state.selectedCycleId);
 
-        // 1. Фильтруем упражнения, оставляя только те, где есть подходы с данными
+        // 1. Фильтруем упражнения, оставляя только те, где есть подходы с данными ИЛИ комментарий
         const exercisesToSave = selectedProgram.exercises
-            .filter(ex => ex.sets && ex.sets.some(set => set.weight || set.reps))
+            .filter(ex => ex.note || (ex.sets && ex.sets.some(set => set.weight || set.reps)))
             .map(ex => ({
-                // ✅ ИСПРАВЛЕНИЕ 3: Копируем весь объект упражнения и подходы
                 ...ex,
+                note: ex.note || '',
                 sets: (ex.sets || []).map(set => ({
                     weight: set.weight || '',
                     reps: set.reps || '',
@@ -814,9 +936,8 @@ function renderProgramDetailsPage() {
                 }))
             }));
 
-        // Если нет упражнений с данными, выдаем предупреждение
-        if (exercisesToSave.length === 0) {
-            showToast('Нечего сохранять: нет подходов с весом или повторениями!');
+        if (exercisesToSave.length === 0 && trainingComment === '') {
+            showToast('Нечего сохранять: нет подходов с данными или комментариев к тренировке/упражнениям!');
             return;
         }
 
@@ -826,8 +947,8 @@ function renderProgramDetailsPage() {
             programName: selectedProgram.name,
             category: currentCycle ? currentCycle.name : selectedProgram.name,
             cycleName: currentCycle ? currentCycle.name : 'Без цикла',
-            comment: trainingComment, // Сохраняем комментарий
-            exercises: exercisesToSave // Используем отфильтрованный массив с полной структурой
+            comment: trainingComment, // Используем сохраненный trainingNote
+            exercises: exercisesToSave
         };
 
         try {
@@ -904,7 +1025,7 @@ function renderJournalPage() {
     // Блокируем отображение по умолчанию
     // -----------------------------------------------------------
     if (!state.selectedJournalCategory) {
-        contentContainer.append(createElement('div', 'muted', 'Выберите цикл и тренировку , чтобы посмотреть записи.'));
+        contentContainer.append(createElement('div', 'muted', 'Выберите цикл, чтобы посмотреть записи.'));
         root.append(contentContainer);
         return;
     }
@@ -1008,12 +1129,11 @@ function renderJournalPage() {
             (record.exercises || []).forEach((exercise, index) => {
                 const exerciseRow = createElement('div', 'journal-exercise-row');
 
-                // 🔥 Добавлена нумерация
+                // Добавлена нумерация
                 const exerciseName = createElement('div', 'journal-exercise-name', `${index + 1}. ${exercise.name}`);
 
                 const setsContainer = createElement('div', 'journal-sets');
 
-                // ✅ ИСПРАВЛЕНИЕ 3 (Проверка): Теперь sets должны быть массивом объектов
                 (exercise.sets || []).forEach(set => {
                     // Используем строгие проверки на наличие данных
                     if (set.weight || set.reps) {
@@ -1023,6 +1143,13 @@ function renderJournalPage() {
                 });
 
                 exerciseRow.append(exerciseName, setsContainer);
+
+                // Отображение комментария к упражнению, если он есть
+                if (exercise.note && exercise.note.trim() !== '') {
+                    const noteDisplay = createElement('p', 'journal-exercise-note', exercise.note);
+                    exerciseRow.append(noteDisplay);
+                }
+
                 journalRecord.append(exerciseRow);
             });
 
@@ -1031,56 +1158,62 @@ function renderJournalPage() {
             // 🔥 КОММЕНТАРИЙ ТРЕНИРОВКИ
             // -----------------------------------------------------------
             const commentSection = createElement('div', 'comment-section');
-            const commentText = createElement('p', 'comment-text', record.comment || 'Нет комментария.');
+            const commentText = createElement('p', 'comment-text', record.comment || 'Нет комментария к тренировке.');
 
-            const editCommentBtn = createElement('button', 'btn edit-comment-btn', '✏️ Редактировать');
+            // Если есть комментарий, показываем его
+            if (record.comment && record.comment.trim() !== '') {
+                // Кнопка редактирования только для записей дневника
+                const editCommentBtn = createElement('button', 'btn edit-comment-btn', '✏️ Редактировать');
+                commentSection.append(commentText, editCommentBtn);
 
-            commentSection.append(commentText, editCommentBtn);
+                editCommentBtn.addEventListener('click', () => {
+                    // Скрываем текст и кнопку
+                    commentText.style.display = 'none';
+                    editCommentBtn.style.display = 'none';
 
-            editCommentBtn.addEventListener('click', () => {
-                // Скрываем текст и кнопку
-                commentText.style.display = 'none';
-                editCommentBtn.style.display = 'none';
+                    // Создаем поле редактирования
+                    const editInput = createElement('textarea', 'comment-edit-input');
+                    editInput.value = record.comment || '';
+                    editInput.placeholder = 'Добавьте комментарий...';
 
-                // Создаем поле редактирования
-                const editInput = createElement('textarea', 'comment-edit-input');
-                editInput.value = record.comment || '';
-                editInput.placeholder = 'Добавьте комментарий...';
+                    const saveBtn = createElement('button', 'btn btn-primary btn-small', 'Сохранить');
+                    const cancelBtn = createElement('button', 'btn btn-secondary btn-small', 'Отмена');
 
-                const saveBtn = createElement('button', 'btn btn-primary btn-small', 'Сохранить');
-                const cancelBtn = createElement('button', 'btn btn-secondary btn-small', 'Отмена');
+                    const controls = createElement('div', 'comment-edit-controls');
+                    controls.append(saveBtn, cancelBtn);
 
-                const controls = createElement('div', 'comment-edit-controls');
-                controls.append(saveBtn, cancelBtn);
+                    commentSection.insertBefore(editInput, commentText);
+                    commentSection.insertBefore(controls, commentText);
 
-                commentSection.insertBefore(editInput, commentText);
-                commentSection.insertBefore(controls, commentText);
+                    const stopEditing = () => {
+                        editInput.remove();
+                        controls.remove();
+                        commentText.style.display = 'block';
+                        editCommentBtn.style.display = 'block';
+                    };
 
-                const stopEditing = () => {
-                    editInput.remove();
-                    controls.remove();
-                    commentText.style.display = 'block';
-                    editCommentBtn.style.display = 'block';
-                };
+                    cancelBtn.addEventListener('click', stopEditing);
 
-                cancelBtn.addEventListener('click', stopEditing);
-
-                saveBtn.addEventListener('click', async () => {
-                    const newComment = editInput.value.trim();
-                    const journalRef = doc(getUserJournalCollection(), record.id);
-                    try {
-                        await updateDoc(journalRef, { comment: newComment });
-                        showToast('Комментарий обновлен!');
-                        stopEditing();
-                        // Firebase listener обновит state.journal и вызовет render()
-                    } catch (error) {
-                        console.error('Ошибка обновления комментария:', error);
-                        showToast('Не удалось обновить комментарий.');
-                    }
+                    saveBtn.addEventListener('click', async () => {
+                        const newComment = editInput.value.trim();
+                        const journalRef = doc(getUserJournalCollection(), record.id);
+                        try {
+                            await updateDoc(journalRef, { comment: newComment });
+                            showToast('Комментарий обновлен!');
+                            stopEditing();
+                            // Firebase listener обновит state.journal и вызовет render()
+                        } catch (error) {
+                            console.error('Ошибка обновления комментария:', error);
+                            showToast('Не удалось обновить комментарий.');
+                        }
+                    });
                 });
-            });
+            } else {
+                // Если комментария нет, просто показываем текст
+                commentSection.append(commentText);
+            }
 
-            // 🔥 Добавление секции комментария в конце записи (после упражнений)
+            // Добавление секции комментария в конце записи (после упражнений)
             journalRecord.append(commentSection);
 
             journalList.append(journalRecord);
