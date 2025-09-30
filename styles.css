@@ -941,3 +941,1487 @@ div#auth-screen {
     font-style: italic;
     border: 1px solid #e5e5ea;
 }
+
+
+
+/* Стили для новой группы управления неделями */
+.week-controls-group {
+    display: flex;
+    align-items: center;
+    gap: 5px; /* Уменьшаем расстояние между элементами */
+    margin-top: 15px;
+    margin-bottom: 10px;
+}
+
+.week-controls-group .btn {
+    padding: 8px 12px;
+    font-size: 16px;
+    font-weight: bold;
+    min-width: 40px; /* Чтобы кнопки были квадратными */
+}
+
+.week-controls-group .week-label {
+    font-size: 1.1em;
+    font-weight: 600;
+
+    padding: 0 5px;
+}
+
+/* Измененная обертка для элементов управления */
+.supplements-controls-wrapper {
+    display: flex;
+    flex-direction: column; /* Элементы в столбец */
+    gap: 10px; /* Расстояние между кнопкой добавления и группой недель */
+    margin-bottom: 20px;
+}
+
+/*Стилизация модального окна для добавления препарата*/
+
+/* 1. Общие стили для компактных модалок (как для ввода имени) */
+.modal-content.modal-compact {
+    max-width: 300px; /* Делаем модалку узкой, т.к. нужно только имя */
+}
+
+.modal-content.modal-compact .modal-title {
+    font-size: 1.1em;
+}
+
+/* 2. Стиль для поля ввода (поскольку в openCommentModal используется textarea) */
+.modal-content.modal-compact textarea.comment-edit-input {
+    /* Меняем стандартный textarea на вид обычного input */
+    min-height: 37px;
+    resize: none;
+    font-size: 16px;
+    padding: 8px 10px;
+    margin: 0 0;
+    text-align: center;
+}
+
+
+
+.modal-content.modal-compact .comment-edit-input {
+    height: 37px;
+}
+
+
+/* --- СТИЛИ ДЛЯ СТРАНИЦЫ ПЛАНА БАДОВ/ДОБАВОК (SUPPLEMENTS) --- */
+
+
+
+/* --- СТИЛИ ДЛЯ СТРАНИЦЫ ПЛАНА БАДОВ/ДОБАВОК (SUPPLEMENTS) --- */
+
+/* Контейнер для прокрутки таблицы */
+.supplement-table-wrapper {
+    overflow-x: auto;
+    border: 1px solid var(--color-border-light);
+    border-radius: 8px;
+    background-color: #fff;
+    max-height: calc(68vh); /* Еще сильнее уменьшаем высоту для мобильных */
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch; /* Для плавного скролла на iOS */
+}
+
+/* Общие стили для таблицы */
+.supplement-plan-table {
+    /* 🔥 КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Автоматическая ширина, чтобы min-width работал,
+       используем min-width для 6 столбцов (75px + 6*50px = 375px) */
+    width: auto;
+    border-collapse: collapse;
+    min-width: 375px;
+    font-size: 0.75em; /* Очень маленький базовый шрифт */
+    table-layout: fixed; /* ГАРАНТИЯ: столбцы не сжимаются */
+}
+
+.supplement-plan-table th,
+.supplement-plan-table td {
+    border: 1px solid #d1d1d1;
+    padding: 0; /* Убираем padding по умолчанию */
+    text-align: center;
+    white-space: normal;
+    position: relative;
+    box-sizing: border-box;
+    vertical-align: middle;
+}
+
+/* 1. Сжатие и фиксация ширины первых двух столбцов (еще агрессивнее) */
+
+/* 🔥 УЛЬТРА-СЖАТИЕ: Дата */
+.supplement-plan-table th.date-col,
+.supplement-plan-table td.date-col {
+    width: 45px; /* Очень узкий столбец даты */
+    min-width: 45px;
+    max-width: 45px; /* 🔥 НОВАЯ ФИКСАЦИЯ: Гарантирует, что столбец не расширится */
+    font-size: 0.7em; /* Очень маленький шрифт */
+    line-height: 1.1; /* Сжимаем межстрочный интервал */
+    padding: 2px 1px; /* Минимальный padding */
+}
+
+/* 🔥 УЛЬТРА-СЖАТИЕ: День недели */
+.supplement-plan-table th.day-col, .supplement-plan-table td.day-col {
+    width: 0%;
+    font-size: 11px;
+    font-weight: bold;
+    line-height: 1.1;
+    padding: 0px 1px;
+}
+/* Общая ширина закрепленных столбцов: 45px + 30px = 75px */
+
+
+/* Стили для заголовков таблицы (Дата, День) */
+.supplement-plan-table thead th {
+    background-color: #f8f8f8;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    padding: 0px 3px 9px 3px;
+    vertical-align: middle;
+    height: 43px;
+    font-size: 9px;
+}
+
+/* Стили для заголовка препарата (самый критичный элемент) */
+.supplement-plan-table .supplement-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 1px;
+    height: 100%;
+}
+
+/* 2. Обновленные значения для закрепления столбцов (левое смещение) */
+.supplement-plan-table th.date-col, .supplement-plan-table td.date-col {
+    position: sticky;
+    left: 0;
+    z-index: 20;
+    background-color: #e9e9e9;
+    width: 0%;
+}
+.supplement-plan-table th.day-col,
+.supplement-plan-table td.day-col {
+    position: sticky;
+    left: 45px; /* Сдвигаем на ширину date-col (45px) */
+    z-index: 20;
+    background-color: #e9e9e9;
+}
+
+/* Стили для даты и дня недели в теле таблицы */
+.supplement-plan-table td.date-col {
+    background-color: #f8f8f8;
+    z-index: 5;
+    line-height: 1.1; /* Сжимаем межстрочный интервал */
+}
+.supplement-plan-table td.day-col {
+    background-color: #f8f8f8;
+    z-index: 5;
+    line-height: 1.1;
+    padding: 0 7px;
+}
+
+/* Выходные дни */
+.supplement-plan-table td.weekend {
+    background-color: #ffeaea;
+}
+
+/* 3. Поле ввода дозировки (соответствует 50px ширине столбца) */
+.dose-col {
+    width: 50px; /* Ширина ячейки соответствует ширине столбца препарата */
+    min-width: 50px;
+    max-width: 50px; /* 🔥 НОВАЯ ФИКСАЦИЯ: Гарантирует, что столбец не расширится */
+    padding: 0; /* Убираем padding у самой ячейки */
+}
+.dose-input {
+    width: 100%;
+    height: 28px;
+    box-sizing: border-box;
+    border: none;
+    text-align: center;
+    padding: 2px;
+    font-size: 12px;
+    outline: none;
+    transition: background-color 0.2s;
+    background-color: transparent;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.dose-input:focus {
+    background-color: #d5d5d5;
+    border: 0 solid #ffd700;
+    box-shadow: none;
+}
+
+/* 4. Кнопка удаления препарата в заголовке (очень маленькая) */
+.delete-supplement-btn {
+    padding: 4px 0;
+    line-height: 1;
+    background: #f8f8f8;
+    color: #8a0d0d;
+}
+.delete-supplement-btn svg {
+    width: 14px; /* 🔥 Очень маленькая иконка */
+    height: 14px;
+    fill: currentColor;
+    display: block;
+}
+
+/* Стили для блока управления (кнопки добавить препарат, +/- неделя) */
+.supplements-controls-wrapper {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 6px;
+    margin-top: 19px;
+    align-items: center;
+    padding: 0 5px;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    flex-direction: row-reverse;
+}
+
+/* Стиль для группы +/- Неделя */
+.week-controls-group {
+    display: flex;
+    align-items: center;
+    gap: 3px; /* Очень маленький зазор */
+}
+.week-controls-group .btn {
+    padding: 5px 8px; /* Уменьшаем padding кнопок +/- */
+    font-size: 14px; /* Уменьшаем шрифт кнопок */
+    min-width: 30px; /* Минимальная ширина кнопок */
+    height: 30px; /* Фиксированная высота */
+}
+.week-controls-group .week-label {
+    font-size: 0.9em; /* Уменьшаем шрифт "Неделя" */
+    font-weight: 600;
+    color: var(--color-text-primary);
+    padding: 0 3px;
+}
+
+/* Кнопка "Добавить препарат" */
+.supplements-page .btn-primary {
+    padding: 8px 12px; /* Стандартный padding для основной кнопки */
+    font-size: 0.95em;
+    min-width: 150px;
+}/* ========================================================== */
+/* БАЗОВЫЕ СТИЛИ И СБРОСЫ (RESET) */
+/* ========================================================== */
+@import url('https://fonts.googleapis.com/css2?family=SF+Pro+Text:wght@400;500;600;700&display=swap');
+
+body {
+    font-family: 'SF Pro Text', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: #f2f2f7; /* Светлый фон iOS */
+    color: #1c1c1e; /* Темный текст iOS */
+    padding: 0;
+    margin: 0;
+    min-height: 100vh;
+}
+
+.container {
+    width: 100%;
+    max-width: 500px; /* Ограничение для мобильного экрана */
+    margin: 0 auto;
+    background-color: #f2f2f7;
+    padding-bottom: 80px; /* Отступ для нижней навигации */
+}
+
+#root {
+    padding: 0 16px;
+}
+
+/* ========================================================== */
+/* НАВИГАЦИОННАЯ ПАНЕЛЬ (TAB BAR) */
+/* ========================================================== */
+.navigation {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    height: 65px; /* Высота таб-бара */
+    background-color: #f9f9f9;
+    border-top: 1px solid #c7c7cc;
+    box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.05);
+    z-index: 1000;
+}
+
+.nav-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: 500;
+    color: #8e8e93; /* Стандартный серый */
+    padding: 0;
+    transition: color 0.2s ease;
+}
+
+.nav-btn.active {
+    color: #007aff; /* Активный синий iOS */
+}
+
+/* Иконки можно заменить на SVG или Font Awesome, но здесь используем текст */
+.nav-btn::before {
+    font-size: 24px;
+    margin-bottom: 4px;
+}
+
+#programs-btn::before { content: '🏋️'; }
+#journal-btn::before { content: '📖'; }
+
+/* ========================================================== */
+/* ЗАГОЛОВКИ И КНОПКИ (iOS BUTTONS & HEADERS) */
+/* ========================================================== */
+h3 {
+    font-size: 28px;
+    font-weight: 700;
+    padding: 24px 0 8px 0;
+    margin: 0;
+    color: #1c1c1e;
+}
+
+.section-title {
+    font-size: 22px;
+    font-weight: 600;
+    margin: 16px 0 12px 0;
+    color: #1c1c1e;
+}
+
+.btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 16px;
+    transition: opacity 0.2s;
+    white-space: nowrap;
+}
+
+.btn:active {
+    opacity: 0.7;
+}
+
+/* Основная синяя кнопка (для 'Создать', 'Добавить') */
+.btn-primary {
+    background-color: #2c90fe;
+    color: white;
+    flex-shrink: 0;
+}
+
+/* Кнопка 'Назад' */
+.back-btn {
+    color: #007aff;
+    background: none;
+    font-size: 17px;
+    padding: 10px 0;
+    margin-left: -10px;
+}
+
+/* Кнопки удаления */
+.delete-btn {
+    background-color: #ffffff;
+    padding: 0;
+
+}
+
+.delete-exercise-btn {
+    background: none;
+    padding: 0;
+}
+.delete-exercise-btn svg,
+button.btn.delete-btn svg {
+    width: 25px;
+    height: 25px;
+    color: #b63c3c;
+}
+/* ========================================================== */
+/* КАРТОЧКИ, СПИСКИ И ПОЛЯ ВВОДА (LISTS & INPUTS) */
+/* ========================================================== */
+
+/* Общий стиль для всех секций-списков */
+.list-section {
+    background-color: white;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 0.5px 0 0 rgba(0, 0, 0, 0.05); /* Легкая тень */
+    margin-bottom: 20px;
+}
+
+/* Общий стиль для строк списка */
+.list-item, .journal-record, .set-row {
+    display: flex;
+    align-items: center;
+    /* justify-content: space-between;*/
+    padding: 12px 16px;
+    border-bottom: 0.5px solid #c7c7cc; /* Разделитель iOS */
+    background-color: white;
+    cursor: pointer;
+}
+
+.list-item:last-child, .journal-record:last-child {
+    border-bottom: none;
+}
+
+input {
+    flex-grow: 1;
+    padding: 10px 12px;
+    border: none;
+    background-color: white;
+    border-radius: 10px;
+    font-size: 16px;
+    color: #1c1c1e;
+    /* iOS-style field */
+    box-shadow: inset 0 0 0 0.5px #c7c7cc;
+    -webkit-appearance: none; /* Убрать дефолтный стиль iOS */
+}
+
+input:focus {
+    outline: none;
+    box-shadow: inset 0 0 0 2px #007aff;
+}
+
+.input-group {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+
+/* ========================================================== */
+/* СТРАНИЦА ПРОГРАММ */
+/* ========================================================== */
+.programs-list {
+    margin-top: 16px;
+}
+
+.program-item {
+    font-size: 17px;
+    font-weight: 500;
+}
+
+.program-item > div:first-child {
+    flex-grow: 1;
+}
+
+.program-item > div:last-child {
+    display: flex;
+    gap: 8px;
+}
+
+/* ========================================================== */
+/* СТРАНИЦА ДЕТАЛЕЙ ПРОГРАММЫ */
+/* ========================================================== */
+
+.exercise-item {
+    display: block;
+    margin-bottom: 12px;
+    padding: 0;
+    border: none;
+    background-color: transparent;
+}
+
+.exercise-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background-color: white;
+    border-radius: 10px;
+    margin-bottom: 1px;
+    font-weight: 600;
+}
+
+.control-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+.exercise-title {
+    display: flex;
+    align-items: center;
+    font-size: 16px;
+}
+
+.exercise-number {
+    margin-right: 8px;
+}
+
+.sets-container {
+    display: none;
+    border-bottom-left-radius: 10px;
+    border-bottom-right-radius: 10px;
+    transition: all 0.3s ease-in-out;
+    border: 1px solid #c7c7cc;
+    border-top: none;
+}
+
+.sets-container.expanded {
+    display: block;
+}
+
+.summary-sets-container {
+    display: none;
+    font-size: 15px;
+    color: #8e8e93;
+    padding: 0 16px 12px 35px;
+    flex-wrap: wrap;
+}
+
+.summary-sets-container span {
+    margin-right: 12px;
+    white-space: nowrap;
+}
+
+.exercise-header:not(.expanded) + .summary-sets-container {
+    display: flex;
+}
+
+/* Строка подхода (Set Row) */
+.set-row {
+    padding: 8px 98px 8px 69px;
+    border-bottom: 0.5px solid #e5e5ea;
+    font-size: 15px;
+}
+span.set-label {
+    font-size: 13px;
+}
+span.set-display {
+    margin-left: 15px;
+    flex-grow: 1;
+}
+
+small.unit-label {
+    font-size: 12px;
+    color: #606060;
+}
+.set-row:last-child {
+    border-bottom: none;
+}
+
+.set-input-group {
+    display: none;
+    flex-grow: 1;
+    gap: 4px;
+    padding-left: 10px;
+}
+
+.set-input-group input {
+    padding: 6px;
+    text-align: center;
+    max-width: 50px;
+}
+
+.set-row.editing .set-input-group {
+    display: flex;
+}
+
+.set-row.editing .set-display {
+    display: none;
+}
+
+.set-row .delete-set-row-btn {
+    background: none;
+    color: #b63c3c;
+    width: 20px;
+    height: 20px;
+    font-size: 18px;
+    line-height: 1;
+    padding: 0;
+}
+
+.set-row .delete-set-row-btn:active {
+    opacity: 0.5;
+}
+
+.add-set-btn {
+    display: block;
+    background-color: #ffffff;
+    color: #007aff;
+    padding: 3px 30px;
+    font-size: 14px;
+    border: 1px solid #007aff;
+    border-radius: 8px;
+    margin: 13px auto;
+
+}
+.add-set-btn:active {
+    background-color: #e5e5ea;
+}
+
+/* Кнопка "Завершить тренировку" - Floats */
+.complete-training-btn {
+    display: block;
+    width: 100%;
+    margin-top: 30px;
+    padding: 16px;
+    font-size: 18px;
+    background-color: #54ce74; /* Зеленый iOS */
+    color: white;
+    border-radius: 12px;
+}
+
+/* ========================================================== */
+/* СТРАНИЦА ДНЕВНИКА */
+/* ========================================================== */
+.category-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+    padding: 8px;
+    background-color: white;
+    border-radius: 10px;
+    box-shadow: 0 0.5px 0 0 rgba(0, 0, 0, 0.05);
+}
+
+.filter-btn {
+    padding: 6px 12px;
+    background-color: #e5e5ea;
+    color: #1c1c1e;
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+.filter-btn.active {
+    background-color: #007aff;
+    color: white;
+}
+
+.journal-record {
+    display: block;
+    margin-bottom: 12px;
+    border-radius: 10px;
+    padding: 16px;
+    border: none;
+}
+
+.journal-record:last-child {
+    margin-bottom: 0;
+}
+
+.journal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.journal-header h4 {
+    font-size: 13px;
+    font-weight: 100;
+    margin: 0;
+}
+
+.journal-program-name {
+    font-size: 15px;
+    margin-bottom: 12px;
+    font-weight: 700;
+}
+
+.journal-exercise-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+    border-top: 0.5px solid #e5e5ea;
+    flex-direction: column; /* Размещаем название и подходы вертикально */
+}
+
+.journal-sets {
+    font-size: 14px;
+    color: #007aff;
+    display: flex;
+    /* ✅ ВОТ ЭТО ГЛАВНОЕ ИЗМЕНЕНИЕ: Разрешаем перенос элементов */
+    margin-top: 5px; /* Отступ от названия упражнения */
+    flex-wrap: wrap;
+}
+
+.journal-sets span {
+    color: #000000;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 14px;
+    white-space: nowrap;
+    margin-left: 1px;
+    margin-bottom: 4px;
+    font-weight: 100;
+}
+
+
+
+
+
+/* ========================================================== */
+/* TOAST И ПРОЧЕЕ */
+/* ========================================================== */
+.toast-message {
+    position: fixed;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background-color: rgba(0, 0, 0, 0.75);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 10px;
+    font-size: 15px;
+    opacity: 0;
+    transition: opacity 0.5s ease, transform 0.5s ease;
+    z-index: 2000;
+    max-width: 80%;
+    text-align: center;
+}
+
+.toast-message.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+.muted {
+    font-size: 15px;
+    color: #8e8e93;
+    text-align: center;
+    padding: 20px 0;
+}
+
+/* ========================================================== */
+/* ВЕРХНЯЯ НАВИГАЦИЯ (ЛИЧНЫЕ/ПЕРСОНАЛЬНЫЕ/ШАБЛОНЫ) */
+/* ========================================================== */
+#main-nav-switcher {
+    display: flex;
+    justify-content: space-around;
+    padding: 10px 16px 0; /* Отступ сверху */
+    background-color: #f2f2f7; /* Тот же фон, что и body */
+    gap: 1px; /* 🔥 Новое: Небольшой зазор между кнопками */
+}
+
+
+
+#nav-personal {
+    border-radius: 8px 0 0 8px; /* Скругление слева */
+}
+
+
+
+/* 🔥 Новое: Стиль для кнопки Шаблоны */
+#nav-templates {
+    border-left: none; /* Убираем двойную границу */
+    border-radius: 0 8px 8px 0; /* Скругление справа */
+}
+
+
+.nav-switch-btn.active {
+    background-color: #007aff;
+    color: white;
+}
+
+/* ========================================================== */
+/* КАРТОЧКИ, СПИСКИ И ПОЛЯ ВВОДА (LISTS & INPUTS) */
+/* ========================================================== */
+/* ... (Оставьте ваш существующий код, но убедитесь, что в нем есть следующие стили) ... */
+
+/* Добавьте в раздел "КНОПКИ" (если еще нет) */
+.program-item > div:last-child {
+    display: flex;
+    gap: 8px;
+    align-items: center; /* Выравнивание кнопок */
+}
+
+.list-item .go-btn {
+    background: #007aff; /* Синяя кнопка "Перейти" */
+    color: white;
+    padding: 5px 12px;
+    font-size: 14px;
+    border-radius: 8px;
+}
+
+/* ... (Остальной ваш CSS код) ... */
+
+/* Убедитесь, что в конце вашего файла есть следующие стили для toast и muted */
+
+.toast-message {
+    /* ... (ваши стили) ... */
+}
+
+.muted {
+    font-size: 15px;
+    color: #8e8e93;
+    text-align: center;
+    padding: 20px 0;
+}
+/* ЭКРАН АВТОРИЗАЦИИ */
+/* ========================================================== */
+.auth-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #f2f2f7;
+    z-index: 5000; /* Перекрывает все */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.auth-box {
+    width: 74%;
+    max-width: 350px;
+    padding: 30px;
+    background-color: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    text-align: center;
+}
+
+.auth-box h3 {
+    padding-top: 0;
+    margin-bottom: 25px;
+}
+
+#auth-email, #auth-password {
+    display: block;
+    width: 100%;
+    margin-bottom: 15px;
+    box-sizing: border-box;
+}
+
+#auth-login-btn {
+    width: 100%;
+    padding: 12px;
+    margin-bottom: 15px;
+}
+
+.auth-toggle-btn {
+    background: none;
+    color: #007aff;
+    font-size: 15px;
+    font-weight: 500;
+}
+
+/* ========================================================== */
+/* ЭКРАН ВЫБОРА РЕЖИМА (Mode Select Screen) */
+/* ========================================================== */
+#mode-select-screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #f2f2f7;
+    z-index: 4000; /* Должен быть ниже auth-screen */
+    display: none; /* Скрыто по умолчанию */
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.mode-select-box {
+    width: 100%;
+    max-width: 400px;
+    text-align: center;
+}
+
+.mode-select-box h3 {
+    padding-top: 0;
+    margin-bottom: 30px;
+}
+
+.mode-options {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    margin-bottom: 40px;
+}
+
+.mode-btn {
+    display: flex;
+    align-items: center;
+    text-align: left;
+    background-color: white;
+    border: 1px solid #e5e5ea;
+    border-radius: 12px;
+    padding: 15px;
+    width: 100%;
+    cursor: pointer;
+    transition: background-color 0.2s, box-shadow 0.2s;
+}
+
+.mode-btn:active {
+    background-color: #f0f0f5;
+    box-shadow: 0 0 0 2px #007aff;
+}
+
+.mode-icon {
+    font-size: 32px;
+    margin-right: 15px;
+}
+
+.mode-btn h4 {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0;
+    color: #1c1c1e;
+}
+
+.mode-btn p {
+    font-size: 13px;
+    color: #8e8e93;
+    margin: 2px 0 0 0;
+}
+
+/* ========================================================== */
+/* ИЗМЕНЕНИЯ СТАРЫХ СТИЛЕЙ */
+/* ========================================================== */
+
+/* 🔥 УДАЛИТЕ ВСЕ СТИЛИ, СВЯЗАННЫЕ С #main-nav-switcher и .top-nav-btn
+   Избавьтесь от этого блока полностью: */
+
+/*
+#main-nav-switcher {
+    ...
+}
+.nav-switch-btn {
+    ...
+}
+#nav-personal {
+    ...
+}
+#nav-own {
+    ...
+}
+.top-nav-btn.active {
+    ...
+}
+*/
+
+/* 🔥 В СТРАНИЦЕ КЛИЕНТОВ/ЦИКЛОВ: Добавляем кнопку "Сменить режим" */
+.logout-wrapper {
+    /* Меняем навигацию в верхнем правом углу */
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+}
+.logout-wrapper .logout-btn {
+    margin: 0; /* Убираем лишние отступы */
+    font-size: 15px;
+}
+.logout-wrapper .change-mode-btn {
+    background: none;
+    color: #007aff;
+    font-size: 15px;
+    font-weight: 500;
+    padding: 0;
+}
+
+/* ========================================================== */
+/* СТИЛИ ДЛЯ КОММЕНТАРИЕВ */
+/* ========================================================== */
+
+.comment-wrapper {
+    margin-top: 20px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #e5e5ea;
+}
+
+.comment-toggle-btn {
+    background: none;
+    color: #007aff;
+    border: none;
+    padding: 0;
+    margin-bottom: 10px;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.comment-input,
+.comment-edit-input {
+    width: 100%;
+    min-height: 80px;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    box-sizing: border-box;
+    font-size: 15px;
+    margin-top: 5px;
+    resize: vertical;
+}
+
+/* Стили в Дневнике */
+.comment-section {
+    padding: 10px;
+    background-color: #f2f2f7;
+    border-radius: 8px;
+    margin: 10px 0;
+}
+
+.comment-text {
+    margin: 0;
+    color: #333;
+    font-style: italic;
+    white-space: pre-wrap; /* Сохраняет переносы строк */
+}
+
+.edit-comment-btn {
+    background: none;
+    color: #5856d6; /* Фиолетовый оттенок для редактирования */
+    border: none;
+    padding: 0;
+    margin-top: 5px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.comment-edit-controls {
+    display: flex;
+    gap: 10px;
+    margin-top: 10px;
+}
+.comment-edit-controls .btn-small {
+    padding: 6px 12px;
+    font-size: 14px;
+}
+
+.journal-record {
+    border: 1px solid #ccc;
+    padding: 15px;
+    margin-bottom: 15px;
+    border-radius: 12px;
+    background-color: white;
+}
+
+/* Стили для двойного фильтра в дневнике */
+.category-filter.sub-filter {
+    background-color: #f0f0f5;
+    padding: 8px 10px;
+    border-radius: 8px;
+}
+
+div#auth-screen {
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    position: fixed;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: #f4f4f4;
+    z-index: 100;
+}
+
+/* ========================================================== */
+/* МОДАЛЬНОЕ ОКНО ДЛЯ КОММЕНТАРИЕВ К УПРАЖНЕНИЯМ */
+/* ========================================================== */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.4);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    z-index: 5000;
+    pointer-events: none;
+}
+
+.modal-overlay.active {
+    opacity: 1;
+    pointer-events: all;
+}
+
+.modal-content {
+    background-color: white;
+    padding: 20px;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 400px;
+    transform: scale(0.9);
+    transition: transform 0.3s ease;
+}
+
+.modal-overlay.active .modal-content {
+    transform: scale(1);
+}
+
+.modal-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin-top: 0;
+    margin-bottom: 15px;
+}
+
+.modal-controls {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+/* ========================================================== */
+/* СТИЛИ КОММЕНТАРИЕВ К УПРАЖНЕНИЮ */
+/* ========================================================== */
+/* Кнопка карандаша в заголовке упражнения */
+.edit-note-btn {
+    background: none;
+    color: #8e8e93; /* Серый карандаш */
+    font-size: 16px;
+    padding: 0 5px;
+}
+
+.edit-note-btn.has-note {
+    color: #8e8e93; /* Фиолетовый, если комментарий есть */
+}
+
+/* Контейнер для отображения комментария к упражнению */
+.exercise-note-display {
+    padding: 6px 17px 18px 20px; /* Отступ для свернутого состояния */
+    background-color: #ffffff;
+    border-bottom: 0.5px solid #e5e5ea;
+    font-size: 14px;
+}
+
+.sets-container.expanded + .exercise-note-display {
+    /* Если развернуто, скройте его из свернутого блока */
+    display: none;
+}
+
+.sets-container.expanded .exercise-note-display {
+    /* Внутри развернутого контейнера, если он там рендерится */
+    padding: 12px 16px;
+    border-top: none;
+    border-radius: 0 0 10px 10px;
+    background-color: #f7f7f7;
+}
+
+.exercise-note-display .comment-text {
+    font-style: italic;
+    color: #555;
+    margin: 0;
+}
+
+/* Отображение комментария к упражнению в дневнике */
+.journal-exercise-note {
+    font-size: 13px;
+    color: #555;
+    margin: 5px 0 0 0;
+    padding-left: 0; /* Убираем отступ для списка */
+    font-style: italic;
+    white-space: pre-wrap;
+    border-top: 0.5px dotted #e5e5ea;
+    padding-top: 5px;
+}
+
+/* ========================================================== */
+/* СТИЛИ ДЛЯ КОММЕНТАРИЯ К ТРЕНИРОВКЕ В PROGRAM DETAILS */
+/* ========================================================== */
+
+.comment-wrapper .comment-toggle-btn.has-note {
+    /* Фиолетовый, когда комментарий к тренировке существует */
+    color: #5856d6;
+}
+
+/* Стиль для отображения текста комментария к тренировке */
+.comment-text-display {
+    margin: 10px 0 0 0;
+    padding: 10px 15px;
+    background-color: #f7f7f7;
+    border-radius: 8px;
+    font-size: 14px;
+    color: #555;
+    white-space: pre-wrap;
+    font-style: italic;
+    border: 1px solid #e5e5ea;
+}
+
+
+
+/* Стили для новой группы управления неделями */
+.week-controls-group {
+    display: flex;
+    align-items: center;
+    gap: 5px; /* Уменьшаем расстояние между элементами */
+    margin-top: 15px;
+    margin-bottom: 10px;
+}
+
+.week-controls-group .btn {
+    padding: 8px 12px;
+    font-size: 16px;
+    font-weight: bold;
+    min-width: 40px; /* Чтобы кнопки были квадратными */
+}
+
+.week-controls-group .week-label {
+    font-size: 1.1em;
+    font-weight: 600;
+
+    padding: 0 5px;
+}
+
+/* Измененная обертка для элементов управления */
+.supplements-controls-wrapper {
+    display: flex;
+    flex-direction: column; /* Элементы в столбец */
+    gap: 10px; /* Расстояние между кнопкой добавления и группой недель */
+    margin-bottom: 20px;
+}
+
+/*Стилизация модального окна для добавления препарата*/
+
+/* 1. Общие стили для компактных модалок (как для ввода имени) */
+.modal-content.modal-compact {
+    max-width: 300px; /* Делаем модалку узкой, т.к. нужно только имя */
+}
+
+.modal-content.modal-compact .modal-title {
+    font-size: 1.1em;
+}
+
+/* 2. Стиль для поля ввода (поскольку в openCommentModal используется textarea) */
+.modal-content.modal-compact textarea.comment-edit-input {
+    /* Меняем стандартный textarea на вид обычного input */
+    min-height: 37px;
+    resize: none;
+    font-size: 16px;
+    padding: 8px 10px;
+    margin: 0 0;
+    text-align: center;
+}
+
+
+
+.modal-content.modal-compact .comment-edit-input {
+    height: 37px;
+}
+
+
+/* --- СТИЛИ ДЛЯ СТРАНИЦЫ ПЛАНА БАДОВ/ДОБАВОК (SUPPLEMENTS) --- */
+
+
+
+/* --- СТИЛИ ДЛЯ СТРАНИЦЫ ПЛАНА БАДОВ/ДОБАВОК (SUPPLEMENTS) --- */
+
+/* Контейнер для прокрутки таблицы */
+.supplement-table-wrapper {
+    overflow-x: auto;
+    border: 1px solid var(--color-border-light);
+    border-radius: 8px;
+    background-color: #fff;
+    max-height: calc(68vh); /* Еще сильнее уменьшаем высоту для мобильных */
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch; /* Для плавного скролла на iOS */
+}
+
+/* Общие стили для таблицы */
+.supplement-plan-table {
+    /* 🔥 КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Автоматическая ширина, чтобы min-width работал,
+       используем min-width для 6 столбцов (75px + 6*50px = 375px) */
+    width: auto;
+    border-collapse: collapse;
+    min-width: 375px;
+    font-size: 0.75em; /* Очень маленький базовый шрифт */
+    table-layout: fixed; /* ГАРАНТИЯ: столбцы не сжимаются */
+}
+
+.supplement-plan-table th,
+.supplement-plan-table td {
+    border: 1px solid #d1d1d1;
+    padding: 0; /* Убираем padding по умолчанию */
+    text-align: center;
+    white-space: normal;
+    position: relative;
+    box-sizing: border-box;
+    vertical-align: middle;
+}
+
+/* 1. Сжатие и фиксация ширины первых двух столбцов (еще агрессивнее) */
+
+/* 🔥 УЛЬТРА-СЖАТИЕ: Дата */
+.supplement-plan-table th.date-col,
+.supplement-plan-table td.date-col {
+    width: 45px; /* Очень узкий столбец даты */
+    min-width: 45px;
+    max-width: 45px; /* 🔥 НОВАЯ ФИКСАЦИЯ: Гарантирует, что столбец не расширится */
+    font-size: 0.7em; /* Очень маленький шрифт */
+    line-height: 1.1; /* Сжимаем межстрочный интервал */
+    padding: 2px 1px; /* Минимальный padding */
+}
+
+/* 🔥 УЛЬТРА-СЖАТИЕ: День недели */
+.supplement-plan-table th.day-col, .supplement-plan-table td.day-col {
+    width: 0%;
+    font-size: 11px;
+    font-weight: bold;
+    line-height: 1.1;
+    padding: 0px 1px;
+}
+/* Общая ширина закрепленных столбцов: 45px + 30px = 75px */
+
+
+/* Стили для заголовков таблицы (Дата, День) */
+.supplement-plan-table thead th {
+    background-color: #f8f8f8;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    padding: 0px 3px 9px 3px;
+    vertical-align: middle;
+    height: 43px;
+    font-size: 9px;
+}
+
+/* Стили для заголовка препарата (самый критичный элемент) */
+.supplement-plan-table .supplement-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding: 0 1px;
+    height: 100%;
+}
+
+/* 2. Обновленные значения для закрепления столбцов (левое смещение) */
+.supplement-plan-table th.date-col, .supplement-plan-table td.date-col {
+    position: sticky;
+    left: 0;
+    z-index: 20;
+    background-color: #e9e9e9;
+    width: 0%;
+}
+.supplement-plan-table th.day-col,
+.supplement-plan-table td.day-col {
+    position: sticky;
+    left: 45px; /* Сдвигаем на ширину date-col (45px) */
+    z-index: 20;
+    background-color: #e9e9e9;
+}
+
+/* Стили для даты и дня недели в теле таблицы */
+.supplement-plan-table td.date-col {
+    background-color: #f8f8f8;
+    z-index: 5;
+    line-height: 1.1; /* Сжимаем межстрочный интервал */
+}
+.supplement-plan-table td.day-col {
+    background-color: #f8f8f8;
+    z-index: 5;
+    line-height: 1.1;
+    padding: 0 7px;
+}
+
+/* Выходные дни */
+.supplement-plan-table td.weekend {
+    background-color: #ffeaea;
+}
+
+/* 3. Поле ввода дозировки (соответствует 50px ширине столбца) */
+.dose-col {
+    width: 50px; /* Ширина ячейки соответствует ширине столбца препарата */
+    min-width: 50px;
+    max-width: 50px; /* 🔥 НОВАЯ ФИКСАЦИЯ: Гарантирует, что столбец не расширится */
+    padding: 0; /* Убираем padding у самой ячейки */
+}
+.dose-input {
+    width: 100%;
+    height: 28px;
+    box-sizing: border-box;
+    border: none;
+    text-align: center;
+    padding: 2px;
+    font-size: 12px;
+    outline: none;
+    transition: background-color 0.2s;
+    background-color: transparent;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.dose-input:focus {
+    background-color: #d5d5d5;
+    border: 0 solid #ffd700;
+    box-shadow: none;
+}
+
+/* 4. Кнопка удаления препарата в заголовке (очень маленькая) */
+.delete-supplement-btn {
+    padding: 4px 0;
+    line-height: 1;
+    background: #f8f8f8;
+    color: #8a0d0d;
+}
+.delete-supplement-btn svg {
+    width: 14px; /* 🔥 Очень маленькая иконка */
+    height: 14px;
+    fill: currentColor;
+    display: block;
+}
+
+/* Стили для блока управления (кнопки добавить препарат, +/- неделя) */
+.supplements-controls-wrapper {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 6px;
+    margin-top: 19px;
+    align-items: center;
+    padding: 0 5px;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    flex-direction: row-reverse;
+}
+
+/* Стиль для группы +/- Неделя */
+.week-controls-group {
+    display: flex;
+    align-items: center;
+    gap: 3px; /* Очень маленький зазор */
+}
+.week-controls-group .btn {
+    padding: 5px 8px; /* Уменьшаем padding кнопок +/- */
+    font-size: 14px; /* Уменьшаем шрифт кнопок */
+    min-width: 30px; /* Минимальная ширина кнопок */
+    height: 30px; /* Фиксированная высота */
+}
+.week-controls-group .week-label {
+    font-size: 0.9em; /* Уменьшаем шрифт "Неделя" */
+    font-weight: 600;
+    color: var(--color-text-primary);
+    padding: 0 3px;
+}
+
+/* Кнопка "Добавить препарат" */
+.supplements-page .btn-primary {
+    padding: 8px 12px; /* Стандартный padding для основной кнопки */
+    font-size: 0.95em;
+    min-width: 150px;
+}
+
+/* Стиль для заголовка, разделяющего группы таблиц */
+.table-group-title {
+    font-size: 11pt;
+    color: #555;
+    margin-top: 20px;
+    margin-bottom: 5px;
+    padding: 3px 0;
+    text-align: center;
+    border-bottom: 1px solid #ddd;
+    page-break-after: avoid;
+}
