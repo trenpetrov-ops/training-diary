@@ -471,6 +471,19 @@ function renderCyclesPage() {
     contentContainer.append(header);
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
     // -----------------------------------------------------------
     // БЛОК ДОБАВЛЕНИЯ ЦИКЛА
     // -----------------------------------------------------------
@@ -522,10 +535,13 @@ function renderCyclesPage() {
                                      </div>`;
 
             const deleteBtn = cycleItem.querySelector('.delete-btn');
-            deleteBtn.addEventListener('click', async (e) => {
+            deleteBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                await deleteDoc(doc(getUserCyclesCollection(), cycle.id));
+                openConfirmModal("Удалить этот цикл?", async () => {
+                    await deleteDoc(doc(getUserCyclesCollection(), cycle.id));
+                });
             });
+
 
             const clickHandler = () => {
                 state.selectedCycleId = cycle.id;
@@ -635,13 +651,16 @@ function renderProgramsInCyclePage() {
                                      </div>`;
 
             const deleteBtn = programItem.querySelector('.delete-btn');
-            deleteBtn.addEventListener('click', async (e) => {
+            deleteBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                await deleteDoc(doc(getUserProgramsCollection(), program.id));
-                if (state.selectedProgramIdForDetails === program.id) {
-                    state.selectedProgramIdForDetails = null;
-                }
+                openConfirmModal("Удалить эту программу?", async () => {
+                    await deleteDoc(doc(getUserProgramsCollection(), program.id));
+                    if (state.selectedProgramIdForDetails === program.id) {
+                        state.selectedProgramIdForDetails = null;
+                    }
+                });
             });
+
 
             const clickHandler = () => {
                 state.selectedProgramIdForDetails = program.id;
@@ -842,7 +861,6 @@ function renderProgramDetailsPage() {
             const hasNote = exercise.note && exercise.note.trim() !== '';
 
             const exerciseItem = createElement('div', 'exercise-item');
-
             const exerciseHeader = createElement('div', `exercise-header ${isExpanded ? 'expanded' : ''}`);
 
             const exerciseTitle = createElement('div', 'exercise-title');
@@ -853,67 +871,40 @@ function renderProgramDetailsPage() {
 
             const controlButtons = createElement('div', 'control-buttons');
 
-            // Кнопка редактирования комментария к упражнению
-            const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-note' : ''}`);
-            editNoteBtn.innerHTML = ' <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="18" height="18">\n' +
-                '    <path d="M7 17.01l1-1h6l1 1h-8zm0-10.01l1-1h6l1 1h-8zM19 8.35L17.65 7 15 9.65 16.35 11zM12 18H5a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v7.5l-2-2V4H5v12h7z"/>\n' +
-                '</svg>';
-            editNoteBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                // Используем универсальное модальное окно
-                openCommentModal(
-                    exercise.id,
-                    exercise.note,
-                    `Комментарий к ${exercise.name}`,
-                    (newNote) => saveExerciseNote(selectedProgram.id, exercise.id, newNote)
-                );
-            });
-
-
+            // кнопка удаления (оставляем только её сверху)
             const deleteExerciseBtn = createElement('button', 'btn delete-exercise-btn');
             deleteExerciseBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><title>Ios-trash-outline SVG Icon</title><path d="M400 113.3h-80v-20c0-16.2-13.1-29.3-29.3-29.3h-69.5C205.1 64 192 77.1 192 93.3v20h-80V128h21.1l23.6 290.7c0 16.2 13.1 29.3 29.3 29.3h141c16.2 0 29.3-13.1 29.3-29.3L379.6 128H400v-14.7zm-193.4-20c0-8.1 6.6-14.7 14.6-14.7h69.5c8.1 0 14.6 6.6 14.6 14.7v20h-98.7v-20zm135 324.6v.8c0 8.1-6.6 14.7-14.6 14.7H186c-8.1 0-14.6-6.6-14.6-14.7v-.8L147.7 128h217.2l-23.3 289.9z" fill="currentColor"/><path d="M249 160h14v241h-14z" fill="currentColor"/><path d="M320 160h-14.6l-10.7 241h14.6z" fill="currentColor"/><path d="M206.5 160H192l10.7 241h14.6z" fill="currentColor"/></svg>';
 
-            controlButtons.append(editNoteBtn, deleteExerciseBtn);
+            controlButtons.append(deleteExerciseBtn);
             exerciseHeader.append(exerciseTitle, controlButtons);
 
-            deleteExerciseBtn.addEventListener('click', async (e) => {
+            deleteExerciseBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                const currentProgram = state.programs.find(p => p.id === state.selectedProgramIdForDetails);
-                if (currentProgram) {
-                    currentProgram.exercises = (currentProgram.exercises || []).filter(ex => ex.id !== exercise.id);
-                    state.expandedExerciseId = null;
-                    state.editingSetId = null;
-                    await updateDoc(doc(getUserProgramsCollection(), currentProgram.id), { exercises: currentProgram.exercises });
-                }
+                openConfirmModal("Удалить это упражнение?", async () => {
+                    const currentProgram = state.programs.find(p => p.id === state.selectedProgramIdForDetails);
+                    if (currentProgram) {
+                        currentProgram.exercises = (currentProgram.exercises || []).filter(ex => ex.id !== exercise.id);
+                        state.expandedExerciseId = null;
+                        state.editingSetId = null;
+                        await updateDoc(doc(getUserProgramsCollection(), currentProgram.id), {exercises: currentProgram.exercises});
+                    }
+                });
             });
-
-            const clickHandler = () => {
-                state.selectedProgramIdForDetails = program.id;
-                state.currentPage = 'programDetails';
-                state.expandedExerciseId = null;
-                state.editingSetId = null;
-                render();
-            };
-
-            if (state.programs.length > 0) {
-                // ... (остальной код обработчиков)
-            }
-
 
             const setsContainer = createElement('div', `sets-container ${isExpanded ? 'expanded' : ''}`);
 
-            // Контейнер для отображения комментария под подходами
+            // комментарий (показывается под подходами)
             const exerciseNoteContainer = createElement('div', 'exercise-note-display');
             if (hasNote) {
                 const noteText = createElement('p', 'comment-text', exercise.note);
                 exerciseNoteContainer.append(noteText);
             }
 
-
+            // свернутый вид (короткий список подходов)
             const summarySetsContainer = createElement('div', `summary-sets-container ${!isExpanded ? 'visible' : ''}`);
             const summarySets = (exercise.sets || []).filter(set => (set.weight && set.weight.trim() !== '') || (set.reps && set.reps.trim() !== ''));
             if (summarySets.length > 0) {
-                summarySets.forEach((set, setIndex) => {
+                summarySets.forEach((set) => {
                     const summarySpan = createElement('span', null, `${set.weight || '0'}x${set.reps || '0'}`);
                     summarySetsContainer.append(summarySpan);
                 });
@@ -952,15 +943,14 @@ function renderProgramDetailsPage() {
                     inputGroup.append(weightInput, repsInput);
                     setRow.append(inputGroup);
 
-
                     const setText = createElement('span', 'set-display');
                     const displayWeight = set.weight || '...';
                     const displayReps = set.reps || '...';
 
                     setText.innerHTML = `
-                        ${displayWeight} <small class="unit-label">кг</small> x 
-                        ${displayReps} <small class="unit-label">пов</small>
-                    `;
+                    ${displayWeight} <small class="unit-label">кг</small> x 
+                    ${displayReps} <small class="unit-label">пов</small>
+                `;
                     setRow.append(setText);
 
                     setRow.addEventListener('click', (e) => {
@@ -980,31 +970,27 @@ function renderProgramDetailsPage() {
                     });
 
                     const deleteSetBtn = createElement('button', 'btn delete-set-row-btn', '-');
-
-                    // 🔥 ИСПРАВЛЕНИЕ 2: Логика удаления подхода/упражнения
-                    deleteSetBtn.addEventListener('click', async (e) => {
+                    deleteSetBtn.addEventListener('click', (e) => {
                         e.stopPropagation();
-                        const currentProgram = state.programs.find(p => p.id === state.selectedProgramIdForDetails);
-                        if (currentProgram) {
-                            const currentExercise = (currentProgram.exercises || []).find(ex => ex.id === exercise.id);
-                            if (currentExercise) {
-
-                                if (currentExercise.sets.length === 1) {
-                                    // 🔥 НОВОЕ ПРАВИЛО: Если это последний подход, удаляем все упражнение
-                                    currentProgram.exercises = currentProgram.exercises.filter(ex => ex.id !== exercise.id);
-                                    showToast('Удалено последнее упражнение!');
-                                } else {
-                                    // Иначе, просто удаляем подход
-                                    currentExercise.sets.splice(setIndex, 1);
-                                    showToast('Подход удален!');
+                        openConfirmModal("Удалить этот подход?", async () => {
+                            const currentProgram = state.programs.find(p => p.id === state.selectedProgramIdForDetails);
+                            if (currentProgram) {
+                                const currentExercise = currentProgram.exercises.find(ex => ex.id === exercise.id);
+                                if (currentExercise) {
+                                    if (currentExercise.sets.length === 1) {
+                                        currentProgram.exercises = currentProgram.exercises.filter(ex => ex.id !== exercise.id);
+                                        showToast('Удалено последнее упражнение!');
+                                    } else {
+                                        currentExercise.sets.splice(setIndex, 1);
+                                        showToast('Подход удален!');
+                                    }
+                                    state.editingSetId = null;
+                                    await updateDoc(doc(getUserProgramsCollection(), currentProgram.id), {
+                                        exercises: currentProgram.exercises
+                                    });
                                 }
-
-                                state.editingSetId = null;
-                                await updateDoc(doc(getUserProgramsCollection(), currentProgram.id), {
-                                    exercises: currentProgram.exercises
-                                });
                             }
-                        }
+                        });
                     });
 
                     setRow.append(deleteSetBtn);
@@ -1012,6 +998,7 @@ function renderProgramDetailsPage() {
                 });
             }
 
+            // кнопка добавления подхода
             const addSetBtn = createElement('button', 'add-set-btn', '+');
             addSetBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
@@ -1023,23 +1010,38 @@ function renderProgramDetailsPage() {
                             currentExercise.sets = [];
                         }
                         const newSetIndex = currentExercise.sets.length;
-                        currentExercise.sets.push({ weight: '', reps: '' });
-                        // Устанавливаем редактирование на только что созданный подход
+                        currentExercise.sets.push({weight: '', reps: ''});
                         state.editingSetId = `${exercise.id}-${newSetIndex}`;
-                        await updateDoc(doc(getUserProgramsCollection(), currentProgram.id), { exercises: currentProgram.exercises });
+                        await updateDoc(doc(getUserProgramsCollection(), currentProgram.id), {exercises: currentProgram.exercises});
                     }
                 }
             });
-            setsContainer.append(addSetBtn);
 
-            // Отображение комментария в развернутом виде
+            // кнопка комментария (теперь рядом с +)
+            const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-note' : ''}`, '📝');
+            editNoteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openCommentModal(
+                    exercise.id,
+                    exercise.note,
+                    `Комментарий к ${exercise.name}`,
+                    (newNote) => saveExerciseNote(selectedProgram.id, exercise.id, newNote)
+                );
+            });
+
+            const bottomButtons = createElement('div', 'exercise-bottom-buttons');
+            bottomButtons.style.display = 'flex';
+            bottomButtons.style.gap = '5px';
+            bottomButtons.append(addSetBtn, editNoteBtn);
+
+            setsContainer.append(bottomButtons);
+
             if (isExpanded) {
                 setsContainer.append(exerciseNoteContainer);
             }
 
             exerciseItem.append(exerciseHeader, summarySetsContainer);
 
-            // Отображение комментария в свернутом виде (если есть)
             if (!isExpanded && hasNote) {
                 exerciseItem.append(exerciseNoteContainer);
             }
@@ -1049,6 +1051,7 @@ function renderProgramDetailsPage() {
         });
         contentContainer.append(exercisesListSection);
     }
+
 
     // -----------------------------------------------------------
     // 🔥 БЛОК КОММЕНТАРИЕВ К ТРЕНИРОВКЕ
@@ -1085,53 +1088,54 @@ function renderProgramDetailsPage() {
     const completeTrainingBtn = createElement('button', 'btn complete-training-btn', 'Завершить тренировку');
     contentContainer.append(completeTrainingBtn);
 
-    completeTrainingBtn.addEventListener('click', async () => {
-        // Теперь комментарий берем прямо из selectedProgram (он уже сохранен)
-        const trainingComment = selectedProgram.trainingNote || '';
-        const currentCycle = state.cycles.find(c => c.id === state.selectedCycleId);
+    completeTrainingBtn.addEventListener('click', () => {
+        openConfirmModal('Завершить и сохранить тренировку в дневник?', async () => {
+            const trainingComment = selectedProgram.trainingNote || '';
+            const currentCycle = state.cycles.find(c => c.id === state.selectedCycleId);
 
-        // 1. Фильтруем упражнения, оставляя только те, где есть подходы с данными ИЛИ комментарий
-        const exercisesToSave = selectedProgram.exercises
-            .filter(ex => ex.note || (ex.sets && ex.sets.some(set => set.weight || set.reps)))
-            .map(ex => ({
-                ...ex,
-                note: ex.note || '',
-                sets: (ex.sets || []).map(set => ({
-                    weight: set.weight || '',
-                    reps: set.reps || '',
-                    note: set.note || ''
-                }))
-            }));
+            // 1. Фильтруем упражнения, оставляя только те, где есть подходы с данными ИЛИ комментарий
+            const exercisesToSave = selectedProgram.exercises
+                .filter(ex => ex.note || (ex.sets && ex.sets.some(set => set.weight || set.reps)))
+                .map(ex => ({
+                    ...ex,
+                    note: ex.note || '',
+                    sets: (ex.sets || []).map(set => ({
+                        weight: set.weight || '',
+                        reps: set.reps || '',
+                        note: set.note || ''
+                    }))
+                }));
 
-        if (exercisesToSave.length === 0 && trainingComment === '') {
-            showToast('Нечего сохранять: нет подходов с данными или комментариев к тренировке/упражнениям!');
-            return;
-        }
+            if (exercisesToSave.length === 0 && trainingComment === '') {
+                showToast('Нечего сохранять: нет подходов с данными или комментариев к тренировке/упражнениям!');
+                return;
+            }
 
-        const trainingRecord = {
-            date: new Date().toLocaleDateString('ru-RU'),
-            time: new Date().toLocaleTimeString('ru-RU'),
-            programName: selectedProgram.name,
-            category: currentCycle ? currentCycle.name : selectedProgram.name,
-            cycleName: currentCycle ? currentCycle.name : 'Без цикла',
-            comment: trainingComment, // Используем сохраненный trainingNote
-            exercises: exercisesToSave
-        };
+            const trainingRecord = {
+                date: new Date().toLocaleDateString('ru-RU'),
+                time: new Date().toLocaleTimeString('ru-RU'),
+                programName: selectedProgram.name,
+                category: currentCycle ? currentCycle.name : selectedProgram.name,
+                cycleName: currentCycle ? currentCycle.name : 'Без цикла',
+                comment: trainingComment,
+                exercises: exercisesToSave
+            };
 
-        try {
-            await addDoc(getUserJournalCollection(), trainingRecord);
-            showToast('Тренировка сохранена в дневнике!');
+            try {
+                await addDoc(getUserJournalCollection(), trainingRecord);
+                showToast('Тренировка сохранена в дневнике!');
 
-            // Вернуться к списку программ цикла
-            state.currentPage = 'programsInCycle';
-            state.selectedProgramIdForDetails = null;
-            state.expandedExerciseId = null;
-            render();
+                // Вернуться к списку программ цикла
+                state.currentPage = 'programsInCycle';
+                state.selectedProgramIdForDetails = null;
+                state.expandedExerciseId = null;
+                render();
 
-        } catch (error) {
-            console.error("Ошибка при завершении тренировки:", error);
-            showToast('Ошибка сохранения записи дневника.');
-        }
+            } catch (error) {
+                console.error("Ошибка при завершении тренировки:", error);
+                showToast('Ошибка сохранения записи дневника.');
+            }
+        });
     });
 
     root.append(contentContainer);
@@ -1279,11 +1283,17 @@ function renderJournalPage() {
             const dateText = createElement('h4', null, `${record.date} в ${record.time}`);
 
             const deleteBtn = createElement('button', 'btn delete-btn');
-            deleteBtn.addEventListener('click', async () => {
-                await deleteDoc(doc(getUserJournalCollection(), record.id));
+            deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><title>Ios-trash-outline SVG Icon</title><path d="M400 113.3h-80v-20c0-16.2-13.1-29.3-29.3-29.3h-69.5C205.1 64 192 77.1 192 93.3v20h-80V128h21.1l23.6 290.7c0 16.2 13.1 29.3 29.3 29.3h141c16.2 0 29.3-13.1 29.3-29.3L379.6 128H400v-14.7zm-193.4-20c0-8.1 6.6-14.7 14.6-14.7h69.5c8.1 0 14.6 6.6 14.6 14.7v20h-98.7v-20zm135 324.6v.8c0 8.1-6.6 14.7-14.6 14.7H186c-8.1 0-14.6-6.6-14.6-14.7v-.8L147.7 128h217.2l-23.3 289.9z" fill="currentColor"/><path d="M249 160h14v241h-14z" fill="currentColor"/><path d="M320 160h-14.6l-10.7 241h14.6z" fill="currentColor"/><path d="M206.5 160H192l10.7 241h14.6z" fill="currentColor"/></svg>';
+
+            deleteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openConfirmModal("Удалить эту запись из дневника?", async () => {
+                    await deleteDoc(doc(getUserJournalCollection(), record.id));
+                });
             });
 
-            deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><title>Ios-trash-outline SVG Icon</title><path d="M400 113.3h-80v-20c0-16.2-13.1-29.3-29.3-29.3h-69.5C205.1 64 192 77.1 192 93.3v20h-80V128h21.1l23.6 290.7c0 16.2 13.1 29.3 29.3 29.3h141c16.2 0 29.3-13.1 29.3-29.3L379.6 128H400v-14.7zm-193.4-20c0-8.1 6.6-14.7 14.6-14.7h69.5c8.1 0 14.6 6.6 14.6 14.7v20h-98.7v-20zm135 324.6v.8c0 8.1-6.6 14.7-14.6 14.7H186c-8.1 0-14.6-6.6-14.6-14.7v-.8L147.7 128h217.2l-23.3 289.9z" fill="currentColor"/><path d="M249 160h14v241h-14z" fill="currentColor"/><path d="M320 160h-14.6l-10.7 241h14.6z" fill="currentColor"/><path d="M206.5 160H192l10.7 241h14.6z" fill="currentColor"/></svg></button>'
+
+
             journalHeader.append(dateText, deleteBtn);
 
             const programName = createElement('div', 'journal-program-name', `${record.programName}`);
@@ -2461,19 +2471,22 @@ function renderMetricsList(metrics, container, focusLast = false) {
         nameInput.placeholder = 'Название';
         nameInput.value = metric.name || '';
 
+        const separator = createElement('span', 'metric-separator', '-');
+
         const valueInput = createElement('input', 'metric-value-input');
         valueInput.type = 'text';
         valueInput.placeholder = 'Значение';
         valueInput.value = metric.value || '';
 
         // кнопка удаления замера
-        const removeBtn = createElement('button', 'btn btn-small btn-danger', '✖');
+        const removeBtn = createElement('button', 'btn btn-small btn-danger', 'удалить');
         removeBtn.addEventListener('click', () => {
             metrics.splice(index, 1);
             renderMetricsList(metrics, container);
         });
 
         row.appendChild(nameInput);
+        row.appendChild(separator);
         row.appendChild(valueInput);
         row.appendChild(removeBtn);
 
@@ -2542,16 +2555,7 @@ function renderPhotoControls(photos, container, reportId) {
         // Кнопка удаления
         const deleteBtn = createElement('button', 'btn btn-delete-photo');
         deleteBtn.innerHTML = '×';
-        deleteBtn.style.position = 'absolute';
-        deleteBtn.style.top = '-5px';
-        deleteBtn.style.right = '-5px';
-        deleteBtn.style.height = '18px';
-        deleteBtn.style.width = '18px';
-        deleteBtn.style.lineHeight = '1';
-        deleteBtn.style.backgroundColor = 'red';
-        deleteBtn.style.color = 'white';
-        deleteBtn.style.borderRadius = '50%';
-        deleteBtn.style.border = 'none';
+
 
         deleteBtn.addEventListener('click', () => {
             if (!confirm('Вы уверены, что хотите удалить это фото?')) return;
@@ -2575,7 +2579,7 @@ function renderPhotoControls(photos, container, reportId) {
     fileInput.multiple = true;
     fileInput.style.display = 'none';
 
-    const addPhotoBtn = createElement('button', 'btn btn-secondary btn-small', '📸 Добавить Фото');
+    const addPhotoBtn = createElement('button', 'btn btn-secondary btn-small', '+');
     addPhotoBtn.addEventListener('click', () => fileInput.click());
 
     fileInput.addEventListener('change', async (e) => {
@@ -2749,13 +2753,13 @@ function openProgressReportModal(reportData = null, isDuplicate = false) {
     // СЕКЦИЯ 1: ЗАМЕРЫ (МЕТРИКИ)
     // -----------------------------------------------------------
     const metricsContainer = createElement('div', 'metrics-editor-container');
-    metricsContainer.innerHTML = '<h4>📊 Замеры</h4>';
+    metricsContainer.innerHTML = '<h4>Замеры</h4>';
 
     const metricsListDiv = createElement('div', 'metrics-list');
     metricsContainer.appendChild(metricsListDiv);
 
     // Кнопка "Добавить замер"
-    const addMetricBtn = createElement('button', 'btn btn-secondary btn-small', '➕ Новый Замер');
+    const addMetricBtn = createElement('button', 'btn btn-secondary btn-small', '+');
     addMetricBtn.style.marginTop = '10px';
 
     addMetricBtn.addEventListener('click', () => {
@@ -2776,7 +2780,7 @@ function openProgressReportModal(reportData = null, isDuplicate = false) {
     // СЕКЦИЯ 2: ФОТО
     // -----------------------------------------------------------
     const photosContainer = createElement('div', 'photos-editor-container');
-    photosContainer.innerHTML = '<h4 style="margin-top: 20px;">📸 Фотографии</h4>';
+    photosContainer.innerHTML = '<h4 style="margin-top: 20px;">Фото</h4>';
     const photosControlsDiv = createElement('div', 'photos-controls-div');
     photosContainer.appendChild(photosControlsDiv);
 
@@ -2792,7 +2796,7 @@ function openProgressReportModal(reportData = null, isDuplicate = false) {
     commentInput.style.minHeight = '80px';
     commentInput.style.width = '100%';
 
-    modalContent.appendChild(createElement('h4', null, '✏️ Комментарий'));
+    modalContent.appendChild(createElement('h4', null, 'Комментарий'));
     modalContent.appendChild(commentInput);
 
 
@@ -2804,7 +2808,7 @@ function openProgressReportModal(reportData = null, isDuplicate = false) {
     // Это гарантирует, что при любом вводе в любое поле ввода, массив reportToEdit.metrics
     // будет обновлен с актуальными значениями из DOM.
     metricsListDiv.addEventListener('input', (e) => {
-        if (e.target.classList.contains('metric-name-input') || e.target.classList.contains('metric-value-input')) {
+        if (e.target.classList.contains('metric-name-input')  || e.target.classList.contains('metric-value-input')) {
             reportToEdit.metrics = collectCurrentMetrics(metricsListDiv);
             // Примечание: renderMetricsList здесь не вызываем, чтобы не сбивать фокус
         }
@@ -2992,8 +2996,15 @@ function renderReportsPage() {
             editBtn.addEventListener('click', () => openProgressReportModal(report));
             const duplicateBtn = createElement('button', 'btn btn-small btn-secondary', '📋 Дублировать');
             duplicateBtn.addEventListener('click', () => openProgressReportModal(report, true));
+
             const deleteBtn = createElement('button', 'btn btn-small btn-danger', '🗑️ Удалить');
-            deleteBtn.addEventListener('click', () => deleteReport(report.id));
+            deleteBtn.addEventListener('click', () => {
+                openConfirmModal("Удалить этот отчет?", async () => {
+                    await deleteReport(report.id);
+                    showToast("Отчет удален!");
+                });
+            });
+
 
             actionsDiv.append(editBtn, duplicateBtn, deleteBtn);
             reportItem.appendChild(actionsDiv);
@@ -3483,6 +3494,37 @@ function setupDynamicListeners() {
     }
 }
 
+// -----------------------------------------------------------
+// универсальную функция подтверждения удаления
+// -----------------------------------------------------------
+
+function openConfirmModal(message, onConfirm) {
+    const modal = createElement('div', 'modal-overlay');
+    const modalContent = createElement('div', 'modal-content modal-compact');
+    modalContent.innerHTML = `
+        <p>${message}</p>
+        <div class="modal-controls">
+            <button class="btn btn-secondary cancel-btn">Нет</button>
+            <button class="btn btn-danger confirm-btn">Да</button>
+        </div>
+    `;
+    modal.append(modalContent);
+    document.body.append(modal);
+
+    // Активация анимации
+    setTimeout(() => modal.classList.add('active'), 50);
+
+    const closeModal = () => {
+        modal.classList.remove('active');
+        setTimeout(() => modal.remove(), 300);
+    };
+
+    modal.querySelector('.cancel-btn').addEventListener('click', closeModal);
+    modal.querySelector('.confirm-btn').addEventListener('click', async () => {
+        await onConfirm();
+        closeModal();
+    });
+}
 
 
 // =================================================================
