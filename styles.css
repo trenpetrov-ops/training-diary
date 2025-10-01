@@ -2425,3 +2425,115 @@ div#auth-screen {
     border-bottom: 1px solid #ddd;
     page-break-after: avoid;
 }
+
+/* Стиль для модального окна ОТЧЕТЫ */
+
+
+.modal-content.modal-progress-report {
+    overflow: scroll;
+}
+
+.modal-content.modal-progress-report {
+    width: 84%;
+    height: 88%;
+}
+
+.modal-content.modal-progress-report .modal-title {
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 7px;
+}
+
+.modal-content.modal-progress-report p.report-date-display {
+    font-size: 14px;
+    margin: 0 0 0 0;
+}
+
+.metrics-editor-container h4 {
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.metric-row {
+    margin-bottom: 6px;
+    border-bottom: 1px solid #c7c7c7;
+    padding-bottom: 9px;
+    padding-left: 26px;
+    width: 79%;
+}
+input.metric-name-input {
+    width: 82px;
+    padding: 0;
+    font-size: 15px;
+    border-radius: 0;
+    box-shadow: none;
+}
+input.metric-value-input {
+    width: 67px;
+    border-radius: 0;
+    padding: 0px 0px 0px 14px;
+    font-size: 15px;
+    box-shadow: none;
+}
+.metric-row button.btn.btn-small.btn-danger {
+    background: #ffffff;
+    font-size: 10px;
+    color: #b41414;
+    height: 27px;
+    width: 61px;
+    padding: 0;
+    margin-left: 11px;
+}
+
+button.btn.btn-delete-photo {
+    position: absolute;
+    top: -7px;
+    right: -7px;
+    height: 19px;
+    width: 19px;
+    line-height: 1;
+    background-color: #ffffff;
+    color: #b41414;
+    border-radius: 50%;
+    font-size: 17px;
+    border: none;
+    padding: 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
