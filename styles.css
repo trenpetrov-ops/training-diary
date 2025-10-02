@@ -3,26 +3,35 @@
 /* ========================================================== */
 @import url('https://fonts.googleapis.com/css2?family=SF+Pro+Text:wght@400;500;600;700&display=swap');
 
-body {
-    font-family: 'SF Pro Text', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    background-color: #f2f2f7; /* Светлый фон iOS */
-    color: #1c1c1e; /* Темный текст iOS */
-    padding: 0;
+html, body {
+    height: 100%;
     margin: 0;
-    min-height: 100vh;
+    padding: 0;
 }
 
 .container {
-    width: 100%;
-    max-width: 500px; /* Ограничение для мобильного экрана */
-    margin: 0 auto;
+    display: flex !important;
+    flex-direction: column;
+    min-height: 100vh;
     background-color: #f2f2f7;
-    padding-bottom: 80px; /* Отступ для нижней навигации */
 }
 
+/* Контент выше навигации */
 #root {
-    padding: 0 16px;
+    flex: 1; /* растягивается на всю оставшуюся высоту */
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
 }
+
+/* Страница циклов */
+.programs-list-page {
+    flex: 1; /* растягиваем список на всю доступную высоту */
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+}
+
 
 /* ========================================================== */
 /* НАВИГАЦИОННАЯ ПАНЕЛЬ (TAB BAR) */
@@ -139,25 +148,9 @@ button.btn.delete-btn svg {
 /* КАРТОЧКИ, СПИСКИ И ПОЛЯ ВВОДА (LISTS & INPUTS) */
 /* ========================================================== */
 
-/* Общий стиль для всех секций-списков */
-.list-section {
-    background-color: white;
-    border-radius: 10px;
-    overflow: hidden;
-    box-shadow: 0 0.5px 0 0 rgba(0, 0, 0, 0.05); /* Легкая тень */
-    margin-bottom: 20px;
-}
 
-/* Общий стиль для строк списка */
-.list-item, .journal-record, .set-row {
-    display: flex;
-    align-items: center;
-    /* justify-content: space-between;*/
-    padding: 12px 16px;
-    border-bottom: 0.5px solid #c7c7cc; /* Разделитель iOS */
-    background-color: white;
-    cursor: pointer;
-}
+
+
 
 .list-item:last-child, .journal-record:last-child {
     border-bottom: none;
@@ -188,15 +181,51 @@ input:focus {
 }
 
 /* ========================================================== */
-/* СТРАНИЦА ПРОГРАММ */
+/* СТРАНИЦА ПРОГРАММ  + клиенты*/
 /* ========================================================== */
-.programs-list {
+.clients-list.list-section,
+.programs-list{
+    display: flex;
+    padding: 0;
+    background-color: #f2f2f7;
+    border-radius: 10px;
     margin-top: 16px;
+    margin-bottom: 20px;
+    box-shadow: none;
+    flex-wrap: wrap;
 }
-
-.program-item {
-    font-size: 17px;
+button.btn.btn-primary.add-client-btn,
+.list-item.client-item,
+button.btn.btn-primary.add-program-btn,
+.list-item.program-item, .add-cycle-btn {
+    height: 68px;
+    width: 88px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-evenly;
+    background-color: #f9f9f9;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+    cursor: pointer;
+    margin: 2px 3px !important;
+    font-size: 16px;
+    text-align: left;
+    padding: 12px 9px 0px 13px;
     font-weight: 500;
+}
+.list-item.client-item,
+.programs-list-page .list-item.program-item{
+    font-size: 14px;
+}
+button.btn.btn-primary.add-client-btn,
+button.btn.btn-primary.add-program-btn,
+.add-cycle-btn{
+    height: 80.67px;
+    width: 110px;
+    padding-bottom: 10px;
+    text-align: center;
+    font-size: 26px;
+    background-color: #7fbcff;
 }
 
 .program-item > div:first-child {
@@ -206,6 +235,114 @@ input:focus {
 .program-item > div:last-child {
     display: flex;
     gap: 8px;
+}
+
+/* ========================================================== */
+/* модалка Циклы ,Программы */
+/* ========================================================== */
+.modal-overlay-exercise,
+.modal-overlay-cicle,
+.modal-overlay{
+    display: flex;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgb(0 0 0 / 68%);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-cicle {
+    background: #fff;
+    padding: 20px;
+    border-radius: 12px;
+    max-width: 320px;
+    width: 90%;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+    text-align: center;
+}
+
+
+.modal-cicle h3 {
+    font-size: 21px;
+    text-align: left;
+}
+
+.modal-cicle .modal-input {
+    width: 94%;
+    padding: 8px;
+    margin: 11px 0;
+    font-size: 16px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+}
+.modal-cicle .modal-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 3px;
+}
+
+
+/* модалка Циклы ,Программы удалить править*/
+.modal-overlay-remove-edit {
+    display: flex;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgb(0 0 0 / 68%);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+}
+.modal-remove-edit {
+    background: #fff;
+    padding: 20px;
+    border-radius: 12px;
+    max-width: 320px;
+    width: 90%;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+    text-align: center;
+    transform: scale(1);
+    transition: transform 0.3s ease;
+}
+.active.modal-remove-editХ{
+    transform: scale(0.9);
+}
+    /* модалка Циклы ,Программы править*/
+button.btn.menu-btn {
+    padding: 0px 9px 0px 15px;
+    margin-left: 53px;
+    background: #f9f9f9;
+    line-height: 1;
+    color: #828282;
+    border-radius: 8px;
+}
+.modal-overlay-edit {
+    display: flex;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgb(0 0 0 / 68%);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+}
+.modal-edit {
+    background: #fff;
+    padding: 20px;
+    border-radius: 12px;
+    max-width: 320px;
+    width: 90%;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+    text-align: center;
 }
 
 /* ========================================================== */
@@ -476,12 +613,13 @@ small.unit-label {
 }
 
 .muted {
-    font-size: 15px;
+    font-size: 13px;
     color: #8e8e93;
     text-align: center;
-    padding: 20px 0;
+    padding: 24px 0;
+    width: 100%;
+    font-weight: 300;
 }
-
 /* ========================================================== */
 /* ВЕРХНЯЯ НАВИГАЦИЯ (ЛИЧНЫЕ/ПЕРСОНАЛЬНЫЕ/ШАБЛОНЫ) */
 /* ========================================================== */
@@ -541,12 +679,7 @@ small.unit-label {
     /* ... (ваши стили) ... */
 }
 
-.muted {
-    font-size: 15px;
-    color: #8e8e93;
-    text-align: center;
-    padding: 20px 0;
-}
+
 /* ЭКРАН АВТОРИЗАЦИИ */
 /* ========================================================== */
 .auth-screen {
@@ -817,21 +950,7 @@ div#auth-screen {
 /* ========================================================== */
 /* МОДАЛЬНОЕ ОКНО ДЛЯ КОММЕНТАРИЕВ К УПРАЖНЕНИЯМ */
 /* ========================================================== */
-.modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(0, 0, 0, 0.4);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    opacity: 0;
-    transition: opacity 0.3s ease;
-    z-index: 5000;
-    pointer-events: none;
-}
+
 
 .modal-overlay.active {
     opacity: 1;
@@ -1219,33 +1338,13 @@ body {
     min-height: 100vh;
 }
 
-.container {
-    width: 100%;
-    max-width: 500px; /* Ограничение для мобильного экрана */
-    margin: 0 auto;
-    background-color: #f2f2f7;
-    padding-bottom: 80px; /* Отступ для нижней навигации */
-}
 
-#root {
-    padding: 0 16px;
-}
+
 
 /* ========================================================== */
 /* НАВИГАЦИОННАЯ ПАНЕЛЬ (TAB BAR) */
 /* ========================================================== */
-.navigation {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    display: flex;
-    height: 65px; /* Высота таб-бара */
-    background-color: #f9f9f9;
-    border-top: 1px solid #c7c7cc;
-    box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.05);
-    z-index: 1000;
-}
+
 
 .nav-btn {
     flex: 1;
@@ -1295,26 +1394,21 @@ h3 {
 }
 
 .btn {
-    padding: 8px 16px;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    font-weight: 600;
-    font-size: 16px;
-    transition: opacity 0.2s;
-    white-space: nowrap;
+    /*padding: 8px 16px;*/
+    /*border: none;*/
+    /*border-radius: 8px;*/
+    /*cursor: pointer;*/
+    /*font-weight: 600;*/
+    /*font-size: 16px;*/
+    /*transition: opacity 0.2s;*/
+    /*white-space: nowrap;*/
 }
 
 .btn:active {
     opacity: 0.7;
 }
 
-/* Основная синяя кнопка (для 'Создать', 'Добавить') */
-.btn-primary {
-    background-color: #2c90fe;
-    color: white;
-    flex-shrink: 0;
-}
+
 
 /* Кнопка 'Назад' */
 .back-btn {
@@ -1346,25 +1440,8 @@ button.btn.delete-btn svg {
 /* КАРТОЧКИ, СПИСКИ И ПОЛЯ ВВОДА (LISTS & INPUTS) */
 /* ========================================================== */
 
-/* Общий стиль для всех секций-списков */
-.list-section {
-    background-color: white;
-    border-radius: 10px;
-    overflow: hidden;
-    box-shadow: 0 0.5px 0 0 rgba(0, 0, 0, 0.05); /* Легкая тень */
-    margin-bottom: 20px;
-}
 
-/* Общий стиль для строк списка */
-.list-item, .journal-record, .set-row {
-    display: flex;
-    align-items: center;
-    /* justify-content: space-between;*/
-    padding: 12px 16px;
-    border-bottom: 0.5px solid #c7c7cc; /* Разделитель iOS */
-    background-color: white;
-    cursor: pointer;
-}
+
 
 .list-item:last-child, .journal-record:last-child {
     border-bottom: none;
@@ -1397,14 +1474,9 @@ input:focus {
 /* ========================================================== */
 /* СТРАНИЦА ПРОГРАММ */
 /* ========================================================== */
-.programs-list {
-    margin-top: 16px;
-}
 
-.program-item {
-    font-size: 17px;
-    font-weight: 500;
-}
+
+
 
 .program-item > div:first-child {
     flex-grow: 1;
@@ -1682,12 +1754,7 @@ small.unit-label {
     transform: translateX(-50%) translateY(0);
 }
 
-.muted {
-    font-size: 15px;
-    color: #8e8e93;
-    text-align: center;
-    padding: 20px 0;
-}
+
 
 /* ========================================================== */
 /* ВЕРХНЯЯ НАВИГАЦИЯ (ЛИЧНЫЕ/ПЕРСОНАЛЬНЫЕ/ШАБЛОНЫ) */
@@ -1748,12 +1815,7 @@ small.unit-label {
     /* ... (ваши стили) ... */
 }
 
-.muted {
-    font-size: 15px;
-    color: #8e8e93;
-    text-align: center;
-    padding: 20px 0;
-}
+
 /* ЭКРАН АВТОРИЗАЦИИ */
 /* ========================================================== */
 .auth-screen {
@@ -2021,111 +2083,7 @@ div#auth-screen {
     z-index: 100;
 }
 
-/* ========================================================== */
-/* МОДАЛЬНОЕ ОКНО ДЛЯ КОММЕНТАРИЕВ К УПРАЖНЕНИЯМ */
-/* ========================================================== */
-.modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(0, 0, 0, 0.4);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    opacity: 0;
-    transition: opacity 0.3s ease;
-    z-index: 5000;
-    pointer-events: none;
-}
 
-.modal-overlay.active {
-    opacity: 1;
-    pointer-events: all;
-}
-
-.modal-content {
-    background-color: white;
-    padding: 20px;
-    border-radius: 12px;
-    width: 90%;
-    max-width: 400px;
-    transform: scale(0.9);
-    transition: transform 0.3s ease;
-}
-
-.modal-overlay.active .modal-content {
-    transform: scale(1);
-}
-
-.modal-title {
-    font-size: 18px;
-    font-weight: 600;
-    margin-top: 0;
-    margin-bottom: 15px;
-}
-
-.modal-controls {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-    margin-top: 20px;
-}
-
-/* ========================================================== */
-/* СТИЛИ КОММЕНТАРИЕВ К УПРАЖНЕНИЮ */
-/* ========================================================== */
-/* Кнопка карандаша в заголовке упражнения */
-.edit-note-btn {
-    background: none;
-    color: #8e8e93; /* Серый карандаш */
-    font-size: 16px;
-    padding: 0 5px;
-}
-
-.edit-note-btn.has-note {
-    color: #8e8e93; /* Фиолетовый, если комментарий есть */
-}
-
-/* Контейнер для отображения комментария к упражнению */
-.exercise-note-display {
-    padding: 6px 17px 18px 20px; /* Отступ для свернутого состояния */
-    background-color: #ffffff;
-    border-bottom: 0.5px solid #e5e5ea;
-    font-size: 14px;
-}
-
-.sets-container.expanded + .exercise-note-display {
-    /* Если развернуто, скройте его из свернутого блока */
-    display: none;
-}
-
-.sets-container.expanded .exercise-note-display {
-    /* Внутри развернутого контейнера, если он там рендерится */
-    padding: 12px 16px;
-    border-top: none;
-    border-radius: 0 0 10px 10px;
-    background-color: #f7f7f7;
-}
-
-.exercise-note-display .comment-text {
-    font-style: italic;
-    color: #555;
-    margin: 0;
-}
-
-/* Отображение комментария к упражнению в дневнике */
-.journal-exercise-note {
-    font-size: 13px;
-    color: #555;
-    margin: 5px 0 0 0;
-    padding-left: 0; /* Убираем отступ для списка */
-    font-style: italic;
-    white-space: pre-wrap;
-    border-top: 0.5px dotted #e5e5ea;
-    padding-top: 5px;
-}
 
 /* ========================================================== */
 /* СТИЛИ ДЛЯ КОММЕНТАРИЯ К ТРЕНИРОВКЕ В PROGRAM DETAILS */
@@ -2499,6 +2457,9 @@ button.btn.btn-delete-photo {
     border: none;
     padding: 0;
 }
+
+
+
 
 
 
