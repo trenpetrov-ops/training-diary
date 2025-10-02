@@ -350,41 +350,18 @@ function renderModeChangeButton(contentContainer) {
 // 🌟 ЛОГИКА СТРАНИЦЫ КЛИЕНТОВ (ClientList)
 // =================================================================
 function renderClientsPage() {
-    // ... (Остальной код renderClientsPage без изменений) ...
     const contentContainer = document.createElement('div');
     contentContainer.id = 'clients-content';
     contentContainer.className = 'clients-list-page';
 
     renderModeChangeButton(contentContainer);
 
-    const header = createElement('h3', null, 'Персональные тренировки');
+    const header = createElement('h3', null, 'список клиентов');
     contentContainer.append(header);
 
-
-    const clientInputGroup = createElement('div', 'input-group');
-    const clientInput = createElement('input', null);
-    clientInput.placeholder = 'Имя клиента';
-    const addClientBtn = createElement('button', 'btn btn-primary', 'Добавить');
-    clientInputGroup.append(clientInput, addClientBtn);
-    contentContainer.append(clientInputGroup);
-
-    addClientBtn.addEventListener('click', async () => {
-        const name = clientInput.value.trim();
-        if (name) {
-            const newClient = {
-                name: name,
-                createdAt: Date.now()
-            };
-            try {
-                await addDoc(getClientsCollection(), newClient);
-                clientInput.value = '';
-            } catch (error) {
-                console.error("Ошибка при добавлении клиента:", error);
-                showToast('Ошибка сохранения. Проверьте правила Firebase!');
-            }
-        }
-    });
-
+    // -----------------------------------------------------------
+    // СПИСОК КЛИЕНТОВ
+    // -----------------------------------------------------------
     const clientsList = createElement('div', 'clients-list list-section');
 
     if (state.clients.length === 0) {
@@ -394,23 +371,28 @@ function renderClientsPage() {
             const clientItem = createElement('div', 'list-item client-item');
             clientItem.dataset.id = client.id;
 
-            clientItem.innerHTML = `<div>${client.name}</div>
-                                     <div>
-                                         <button class="btn delete-btn"><svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><title>Ios-trash-outline SVG Icon</title><path d="M400 113.3h-80v-20c0-16.2-13.1-29.3-29.3-29.3h-69.5C205.1 64 192 77.1 192 93.3v20h-80V128h21.1l23.6 290.7c0 16.2 13.1 29.3 29.3 29.3h141c16.2 0 29.3-13.1 29.3-29.3L379.6 128H400v-14.7zm-193.4-20c0-8.1 6.6-14.7 14.6-14.7h69.5c8.1 0 14.6 6.6 14.6 14.7v20h-98.7v-20zm135 324.6v.8c0 8.1-6.6 14.7-14.6 14.7H186c-8.1 0-14.6-6.6-14.6-14.7v-.8L147.7 128h217.2l-23.3 289.9z" fill="currentColor"/><path d="M249 160h14v241h-14z" fill="currentColor"/><path d="M320 160h-14.6l-10.7 241h14.6z" fill="currentColor"/><path d="M206.5 160H192l10.7 241h14.6z" fill="currentColor"/></svg></button>
-                                     </div>`;
+            clientItem.innerHTML = `
+                <div>${client.name}</div>
+                <div>
+                    <button class="btn menu-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            <circle cx="5" cy="12" r="2"/>
+                            <circle cx="12" cy="12" r="2"/>
+                            <circle cx="19" cy="12" r="2"/>
+                        </svg>
+                    </button>
+                </div>`;
 
-            const deleteBtn = clientItem.querySelector('.delete-btn');
-            deleteBtn.addEventListener('click', async (e) => {
+            // Кнопка ⋯ (меню)
+            const menuBtn = clientItem.querySelector('.menu-btn');
+            menuBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                await deleteDoc(doc(getClientsCollection(), client.id));
-                if (state.selectedClientId === client.id) {
-                    state.selectedClientId = null;
-                }
+                openClientMenuModal(client);
             });
 
-            // Обработчик клика для перехода к циклам клиента
+            // Клик по карточке → переход к циклам клиента
             clientItem.addEventListener('click', (e) => {
-                if (!e.target.closest('.delete-btn')) {
+                if (!e.target.closest('.menu-btn')) {
                     state.selectedClientId = client.id;
                     state.currentPage = 'programs';
                     state.selectedCycleId = null;
@@ -419,7 +401,6 @@ function renderClientsPage() {
                     state.editingSetId = null;
 
                     setupDynamicListeners();
-
                     render();
                 }
             });
@@ -428,15 +409,167 @@ function renderClientsPage() {
         });
     }
 
+    // -----------------------------------------------------------
+    // Кнопка "Добавить клиента"
+    // -----------------------------------------------------------
+    const addClientBtn = createElement('button', 'btn btn-primary add-client-btn', '+');
+    addClientBtn.style.margin = '12px';
+    addClientBtn.addEventListener('click', () => {
+        openAddClientModal(async (name) => {
+            const newClient = {
+                name: name,
+                createdAt: Date.now()
+            };
+            try {
+                await addDoc(getClientsCollection(), newClient);
+            } catch (error) {
+                console.error("Ошибка при добавлении клиента:", error);
+                showToast('Ошибка сохранения. Проверьте правила Firebase!');
+            }
+        });
+    });
+    clientsList.append(addClientBtn);
+
     contentContainer.append(clientsList);
     root.append(contentContainer);
+}
+
+// =================================================================
+// 🔥 МОДАЛКА МЕНЮ КЛИЕНТА (Редактировать / Удалить)
+// =================================================================
+function openClientMenuModal(client) {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay-remove-edit';
+
+    const modalContent = document.createElement('div');
+    modalContent.className = 'modal-remove-edit';
+
+    // Редактировать
+    const editBtn = createElement('button', 'btn btn-primary', '✏️ Редактировать');
+    editBtn.addEventListener('click', () => {
+        document.body.removeChild(modal);
+        openEditClientModal(client);
+    });
+
+    // Удалить
+    const deleteBtn = createElement('button', 'btn cancel-btn', '🗑 Удалить');
+    deleteBtn.addEventListener('click', async () => {
+        document.body.removeChild(modal);
+        openConfirmModal("Удалить этого клиента?", async () => {
+            await deleteDoc(doc(getClientsCollection(), client.id));
+            if (state.selectedClientId === client.id) {
+                state.selectedClientId = null;
+            }
+        });
+    });
+
+    modalContent.append(editBtn, deleteBtn);
+    modal.append(modalContent);
+    document.body.appendChild(modal);
+
+    // Закрыть при клике мимо
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) document.body.removeChild(modal);
+    });
+}
+
+// =================================================================
+// 🔥 МОДАЛКА РЕДАКТИРОВАНИЯ КЛИЕНТА
+// =================================================================
+function openEditClientModal(client) {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay-edit';
+
+    const modalContent = document.createElement('div');
+    modalContent.className = 'modal-edit';
+
+    const title = document.createElement('h3');
+    title.textContent = 'Редактировать клиента';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = client.name;
+    input.className = 'modal-input';
+
+    const btnGroup = document.createElement('div');
+    btnGroup.className = 'modal-buttons';
+
+    const saveBtn = createElement('button', 'btn btn-primary', 'Сохранить');
+
+    saveBtn.addEventListener('click', async () => {
+        const newName = input.value.trim();
+        if (!newName) {
+            showToast('Введите имя клиента!');
+            return;
+        }
+        try {
+            await updateDoc(doc(getClientsCollection(), client.id), { name: newName });
+            document.body.removeChild(modal);
+        } catch (error) {
+            console.error("Ошибка при обновлении клиента:", error);
+            showToast('Ошибка сохранения');
+        }
+    });
+
+    btnGroup.append(saveBtn);
+    modalContent.append(title, input, btnGroup);
+    modal.append(modalContent);
+    document.body.appendChild(modal);
+
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) document.body.removeChild(modal);
+    });
+
+    input.focus();
+}
+
+// =================================================================
+// 🌟 МОДАЛКА: ДОБАВЛЕНИЕ КЛИЕНТА
+// =================================================================
+function openAddClientModal(onConfirm) {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay-cicle';
+
+    const modalContent = document.createElement('div');
+    modalContent.className = 'modal-cicle';
+
+    const title = document.createElement('h3');
+    title.textContent = 'Добавление клиента';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'Введите имя клиента...';
+    input.className = 'modal-input';
+
+    const btnGroup = document.createElement('div');
+    btnGroup.className = 'modal-buttons';
+
+    const cancelBtn = createElement('button', 'btn cancel-btn', 'Отмена');
+    const confirmBtn = createElement('button', 'btn btn-primary', 'Добавить');
+
+    cancelBtn.addEventListener('click', () => document.body.removeChild(modal));
+    confirmBtn.addEventListener('click', async () => {
+        const name = input.value.trim();
+        if (!name) {
+            showToast('Введите имя клиента!');
+            return;
+        }
+        await onConfirm(name);
+        document.body.removeChild(modal);
+    });
+
+    btnGroup.append(cancelBtn, confirmBtn);
+    modalContent.append(title, input, btnGroup);
+    modal.append(modalContent);
+    document.body.appendChild(modal);
+
+    input.focus();
 }
 
 // =================================================================
 // 🔥 ФУНКЦИЯ: Отображение списка Тренировочных ЦИКЛОВ
 // =================================================================
 function renderCyclesPage() {
-    // Если мы в режиме 'personal' и клиент не выбран, рендерим список клиентов.
     if (state.currentMode === 'personal' && state.selectedClientId === null) {
         renderClientsPage();
         return;
@@ -447,7 +580,7 @@ function renderCyclesPage() {
     contentContainer.className = 'programs-list-page';
 
     // -----------------------------------------------------------
-    // Кнопка "Сменить режим" или "Назад" к клиентам
+    // Кнопка "Назад" к клиентам или смена режима
     // -----------------------------------------------------------
     if (state.currentMode === 'personal') {
         const backToClientsBtn = createElement('button', 'btn back-btn', '← К клиентам');
@@ -460,62 +593,13 @@ function renderCyclesPage() {
         });
         contentContainer.append(backToClientsBtn);
     } else {
-        // Если 'own' режим, показываем кнопку смены режима
         renderModeChangeButton(contentContainer);
     }
 
-
-    let headerText = state.currentMode === 'own' ? 'Личные циклы' :
+    const headerText = state.currentMode === 'own' ? 'Личные циклы' :
         `Циклы клиента: ${state.clients.find(c => c.id === state.selectedClientId)?.name || 'Неизвестно'}`;
     const header = createElement('h3', null, headerText);
     contentContainer.append(header);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    // -----------------------------------------------------------
-    // БЛОК ДОБАВЛЕНИЯ ЦИКЛА
-    // -----------------------------------------------------------
-    const cycleInputGroup = createElement('div', 'input-group');
-    const cycleInput = createElement('input', null);
-    cycleInput.placeholder = 'Название цикла (Набор массы, Сушка...)';
-    const addCycleBtn = createElement('button', 'btn btn-primary', 'Создать цикл');
-    cycleInputGroup.append(cycleInput, addCycleBtn);
-    contentContainer.append(cycleInputGroup);
-
-    addCycleBtn.addEventListener('click', async () => {
-        const name = cycleInput.value.trim();
-        if (name) {
-            // 🔥 ДОБАВЛЕНО: Инициализация пустого supplementPlan при создании цикла
-            const newCycle = {
-                name: name,
-                startDate: Date.now(),
-                startDateString: new Date().toLocaleDateString('ru-RU'),
-                supplementPlan: {
-                    supplements: [], // Названия препаратов
-                    data: [] // Данные по неделям
-                }
-            };
-            try {
-                await addDoc(getUserCyclesCollection(), newCycle);
-                cycleInput.value = '';
-            } catch (error) {
-                console.error("Ошибка при добавлении цикла:", error);
-                showToast('Ошибка сохранения. Проверьте правила Firebase!');
-            }
-        }
-    });
 
     // -----------------------------------------------------------
     // СПИСОК ЦИКЛОВ
@@ -529,37 +613,34 @@ function renderCyclesPage() {
             const cycleItem = createElement('div', 'list-item program-item');
             cycleItem.dataset.id = cycle.id;
 
-            cycleItem.innerHTML = `<div>${cycle.name} <small class="muted">(${cycle.startDateString})</small></div>
-                                     <div>
-                                         <button class="btn delete-btn "><svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><title>Ios-trash-outline SVG Icon</title><path d="M400 113.3h-80v-20c0-16.2-13.1-29.3-29.3-29.3h-69.5C205.1 64 192 77.1 192 93.3v20h-80V128h21.1l23.6 290.7c0 16.2 13.1 29.3 29.3 29.3h141c16.2 0 29.3-13.1 29.3-29.3L379.6 128H400v-14.7zm-193.4-20c0-8.1 6.6-14.7 14.6-14.7h69.5c8.1 0 14.6 6.6 14.6 14.7v20h-98.7v-20zm135 324.6v.8c0 8.1-6.6 14.7-14.6 14.7H186c-8.1 0-14.6-6.6-14.6-14.7v-.8L147.7 128h217.2l-23.3 289.9z" fill="currentColor"/><path d="M249 160h14v241h-14z" fill="currentColor"/><path d="M320 160h-14.6l-10.7 241h14.6z" fill="currentColor"/><path d="M206.5 160H192l10.7 241h14.6z" fill="currentColor"/></svg></button>
-                                     </div>`;
+            // карточка с кнопкой ⋮
+            cycleItem.innerHTML = `
+                <div>${cycle.name} <small class="muted">(${cycle.startDateString})</small></div>
+                <div>
+                    <button class="btn menu-btn"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+    <circle cx="5" cy="12" r="2"/>
+    <circle cx="12" cy="12" r="2"/>
+    <circle cx="19" cy="12" r="2"/></button>
+                </div>`;
 
-            const deleteBtn = cycleItem.querySelector('.delete-btn');
-            deleteBtn.addEventListener('click', (e) => {
+            // Открываем меню (редактировать / удалить)
+            const menuBtn = cycleItem.querySelector('.menu-btn');
+            menuBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                openConfirmModal("Удалить этот цикл?", async () => {
-                    await deleteDoc(doc(getUserCyclesCollection(), cycle.id));
-                });
+                openCycleMenuModal(cycle);
             });
 
-
-            const clickHandler = () => {
-                state.selectedCycleId = cycle.id;
-                state.currentPage = 'programsInCycle';
-                // Сбрасываем все, что может быть связано с другим циклом
-                state.selectedProgramIdForDetails = null;
-                state.expandedExerciseId = null;
-                state.editingSetId = null;
-                state.supplementPlan = null;
-                setupDynamicListeners();
-                render();
-            };
-
-
-
+            // Клик по карточке → открыть программы в цикле
             cycleItem.addEventListener('click', (e) => {
-                if (!e.target.closest('.delete-btn')) {
-                    clickHandler();
+                if (!e.target.closest('.menu-btn')) {
+                    state.selectedCycleId = cycle.id;
+                    state.currentPage = 'programsInCycle';
+                    state.selectedProgramIdForDetails = null;
+                    state.expandedExerciseId = null;
+                    state.editingSetId = null;
+                    state.supplementPlan = null;
+                    setupDynamicListeners();
+                    render();
                 }
             });
 
@@ -567,16 +648,175 @@ function renderCyclesPage() {
         });
     }
 
+    // -----------------------------------------------------------
+    // Кнопка "Добавить цикл"
+    // -----------------------------------------------------------
+    const addCycleBtn = createElement('button', 'btn btn-primary add-cycle-btn', '+');
+    addCycleBtn.style.margin = '12px';
+    addCycleBtn.addEventListener('click', () => {
+        openAddCycleModal(async (name) => {
+            const newCycle = {
+                name: name,
+                startDate: Date.now(),
+                startDateString: new Date().toLocaleDateString('ru-RU'),
+                supplementPlan: { supplements: [], data: [] }
+            };
+            try {
+                await addDoc(getUserCyclesCollection(), newCycle);
+            } catch (error) {
+                console.error("Ошибка при добавлении цикла:", error);
+                showToast('Ошибка сохранения. Проверьте правила Firebase!');
+            }
+        });
+    });
+    cyclesList.append(addCycleBtn);
+
     contentContainer.append(cyclesList);
     root.append(contentContainer);
 }
+
+// =================================================================
+// 🔥 МОДАЛКА МЕНЮ ЦИКЛА (Редактировать / Удалить)
+// =================================================================
+function openCycleMenuModal(cycle) {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay-remove-edit';
+
+    const modalContent = document.createElement('div');
+    modalContent.className = 'modal-remove-edit';
+
+
+
+    // Кнопка "Редактировать"
+    const editBtn = createElement('button', 'btn btn-primary', '✏️ Редактировать');
+    editBtn.addEventListener('click', () => {
+        document.body.removeChild(modal);
+        openEditCycleModal(cycle);
+    });
+
+    // Кнопка "Удалить"
+    const deleteBtn = createElement('button', 'btn cancel-btn', '🗑 Удалить');
+    deleteBtn.addEventListener('click', () => {
+        document.body.removeChild(modal);
+        openConfirmModal("Удалить этот цикл?", async () => {
+            await deleteDoc(doc(getUserCyclesCollection(), cycle.id));
+        });
+    });
+
+    modalContent.append( editBtn, deleteBtn);
+    modal.append(modalContent);
+    document.body.appendChild(modal);
+
+    // Закрытие при клике вне модалки
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) document.body.removeChild(modal);
+    });
+}
+
+// =================================================================
+// 🔥 МОДАЛКА РЕДАКТИРОВАНИЯ НАЗВАНИЯ ЦИКЛА
+// =================================================================
+function openEditCycleModal(cycle) {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay-edit';
+
+    const modalContent = document.createElement('div');
+    modalContent.className = 'modal-edit';
+
+    const title = document.createElement('h3');
+    title.textContent = 'Редактировать цикл';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = cycle.name;
+    input.className = 'modal-input';
+
+    const btnGroup = document.createElement('div');
+    btnGroup.className = 'modal-buttons';
+
+    const saveBtn = createElement('button', 'btn btn-primary', 'Сохранить');
+
+    saveBtn.addEventListener('click', async () => {
+        const newName = input.value.trim();
+        if (!newName) {
+            showToast('Введите название!');
+            return;
+        }
+        try {
+            await updateDoc(doc(getUserCyclesCollection(), cycle.id), { name: newName });
+            document.body.removeChild(modal);
+        } catch (error) {
+            console.error("Ошибка при обновлении цикла:", error);
+            showToast('Ошибка сохранения');
+        }
+    });
+
+    btnGroup.append(saveBtn);
+    modalContent.append(title, input, btnGroup);
+    modal.append(modalContent);
+    document.body.appendChild(modal);
+
+    // Закрытие при клике вне модалки
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) document.body.removeChild(modal);
+    });
+
+    input.focus();
+}
+
+
+// =================================================================
+// 🌟 МОДАЛКА: ДОБАВЛЕНИЕ ЦИКЛА
+// =================================================================
+function openAddCycleModal(onConfirm) {
+    console.log('Модалка должна открыться'); // проверка
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay-cicle';
+
+    const modalContent = document.createElement('div');
+    modalContent.className = 'modal-cicle';
+
+    const title = document.createElement('h3');
+    title.textContent = 'Создание нового цикла';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'Введите название цикла...';
+    input.className = 'modal-input';
+
+    const btnGroup = document.createElement('div');
+    btnGroup.className = 'modal-buttons';
+
+    const cancelBtn = createElement('button', 'btn cancel-btn', 'Отмена');
+    const confirmBtn = createElement('button', 'btn btn-primary', 'Создать');
+
+    cancelBtn.addEventListener('click', () => document.body.removeChild(modal));
+    confirmBtn.addEventListener('click', async () => {
+        const name = input.value.trim();
+        if (!name) {
+            showToast('Введите название цикла!');
+            return;
+        }
+        await onConfirm(name);
+        document.body.removeChild(modal);
+    });
+
+    btnGroup.append(cancelBtn, confirmBtn);
+    modalContent.append(title, input, btnGroup);
+    modal.append(modalContent);
+    document.body.appendChild(modal);
+
+    input.focus();
+}
+
+
+
 
 
 // =================================================================
 // 🔥 ФУНКЦИЯ: Отображение программ внутри выбранного цикла
 // =================================================================
 function renderProgramsInCyclePage() {
-    // ... (Остальной код renderProgramsInCyclePage без изменений) ...
     const currentCycle = state.cycles.find(c => c.id === state.selectedCycleId);
 
     if (!currentCycle) {
@@ -590,7 +830,9 @@ function renderProgramsInCyclePage() {
     contentContainer.id = 'programs-content';
     contentContainer.className = 'programs-list-page';
 
+    // -----------------------------------------------------------
     // Кнопка "Назад" к циклам
+    // -----------------------------------------------------------
     const backButtonText = state.currentMode === 'own' ? '← К циклам' : `← К циклам клиента`;
     const backButton = createElement('button', 'btn back-btn', backButtonText);
 
@@ -601,37 +843,9 @@ function renderProgramsInCyclePage() {
     });
     contentContainer.append(backButton);
 
-
-    const header = createElement('h3', null, `${currentCycle.name}: Программы`);
+    // Заголовок
+    const header = createElement('h3', null, `${currentCycle.name} - программы`);
     contentContainer.append(header);
-
-    // -----------------------------------------------------------
-    // БЛОК ДОБАВЛЕНИЯ ПРОГРАММЫ
-    // -----------------------------------------------------------
-    const programInputGroup = createElement('div', 'input-group');
-    const programInput = createElement('input', null);
-    programInput.placeholder = 'Название программы (Ноги, Руки...)';
-    const addProgramBtn = createElement('button', 'btn btn-primary', 'Создать');
-    programInputGroup.append(programInput, addProgramBtn);
-    contentContainer.append(programInputGroup);
-
-    addProgramBtn.addEventListener('click', async () => {
-        const name = programInput.value.trim();
-        if (name) {
-            const newProgram = {
-                name: name,
-                exercises: [],
-                trainingNote: '' // 🔥 ИНИЦИАЛИЗАЦИЯ: Поле для комментария к тренировке
-            };
-            try {
-                await addDoc(getUserProgramsCollection(), newProgram);
-                programInput.value = '';
-            } catch (error) {
-                console.error("Ошибка при добавлении программы:", error);
-                showToast('Ошибка сохранения. Проверьте правила Firebase!');
-            }
-        }
-    });
 
     // -----------------------------------------------------------
     // СПИСОК ПРОГРАММ
@@ -645,34 +859,33 @@ function renderProgramsInCyclePage() {
             const programItem = createElement('div', 'list-item program-item');
             programItem.dataset.id = program.id;
 
-            programItem.innerHTML = `<div>${program.name}</div>
-                                     <div>
-                                         <button class="btn delete-btn"><svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><title>Ios-trash-outline SVG Icon</title><path d="M400 113.3h-80v-20c0-16.2-13.1-29.3-29.3-29.3h-69.5C205.1 64 192 77.1 192 93.3v20h-80V128h21.1l23.6 290.7c0 16.2 13.1 29.3 29.3 29.3h141c16.2 0 29.3-13.1 29.3-29.3L379.6 128H400v-14.7zm-193.4-20c0-8.1 6.6-14.7 14.6-14.7h69.5c8.1 0 14.6 6.6 14.6 14.7v20h-98.7v-20zm135 324.6v.8c0 8.1-6.6 14.7-14.6 14.7H186c-8.1 0-14.6-6.6-14.6-14.7v-.8L147.7 128h217.2l-23.3 289.9z" fill="currentColor"/><path d="M249 160h14v241h-14z" fill="currentColor"/><path d="M320 160h-14.6l-10.7 241h14.6z" fill="currentColor"/><path d="M206.5 160H192l10.7 241h14.6z" fill="currentColor"/></svg></button>
-                                     </div>`;
+            programItem.innerHTML = `
+                <div>${program.name}</div>
+                <div>
+                    <button class="btn menu-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            <circle cx="5" cy="12" r="2"/>
+                            <circle cx="12" cy="12" r="2"/>
+                            <circle cx="19" cy="12" r="2"/>
+                        </svg>
+                    </button>
+                </div>`;
 
-            const deleteBtn = programItem.querySelector('.delete-btn');
-            deleteBtn.addEventListener('click', (e) => {
+            // Кнопка ⋯ (меню)
+            const menuBtn = programItem.querySelector('.menu-btn');
+            menuBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                openConfirmModal("Удалить эту программу?", async () => {
-                    await deleteDoc(doc(getUserProgramsCollection(), program.id));
-                    if (state.selectedProgramIdForDetails === program.id) {
-                        state.selectedProgramIdForDetails = null;
-                    }
-                });
+                openProgramMenuModal(program);
             });
 
-
-            const clickHandler = () => {
-                state.selectedProgramIdForDetails = program.id;
-                state.currentPage = 'programDetails';
-                state.expandedExerciseId = null;
-                state.editingSetId = null;
-                render();
-            };
-
+            // Клик по карточке → открыть детали
             programItem.addEventListener('click', (e) => {
-                if (!e.target.closest('.delete-btn')) {
-                    clickHandler();
+                if (!e.target.closest('.menu-btn')) {
+                    state.selectedProgramIdForDetails = program.id;
+                    state.currentPage = 'programDetails';
+                    state.expandedExerciseId = null;
+                    state.editingSetId = null;
+                    render();
                 }
             });
 
@@ -680,35 +893,251 @@ function renderProgramsInCyclePage() {
         });
     }
 
+    // -----------------------------------------------------------
+    // Кнопка "Добавить программу"
+    // -----------------------------------------------------------
+    const addProgramBtn = createElement('button', 'btn btn-primary add-program-btn', '+');
+    addProgramBtn.style.margin = '12px';
+    addProgramBtn.addEventListener('click', () => {
+        openAddProgramModal(async (name) => {
+            const newProgram = {
+                name: name,
+                exercises: [],
+                trainingNote: ''
+            };
+            try {
+                await addDoc(getUserProgramsCollection(), newProgram);
+            } catch (error) {
+                console.error("Ошибка при добавлении программы:", error);
+                showToast('Ошибка сохранения. Проверьте правила Firebase!');
+            }
+        });
+    });
+    programsList.append(addProgramBtn);
+
     contentContainer.append(programsList);
     root.append(contentContainer);
 }
 
+// =================================================================
+// 🔥 МОДАЛКА МЕНЮ ПРОГРАММЫ (Редактировать / Удалить)
+// =================================================================
+function openProgramMenuModal(program) {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay-remove-edit';
+
+    const modalContent = document.createElement('div');
+    modalContent.className = 'modal-remove-edit';
+
+    // Редактировать
+    const editBtn = createElement('button', 'btn btn-primary', '✏️ Редактировать');
+    editBtn.addEventListener('click', () => {
+        document.body.removeChild(modal);
+        openEditProgramModal(program);
+    });
+
+    // Удалить
+    const deleteBtn = createElement('button', 'btn cancel-btn', '🗑 Удалить');
+    deleteBtn.addEventListener('click', () => {
+        document.body.removeChild(modal);
+        openConfirmModal("Удалить эту программу?", async () => {
+            await deleteDoc(doc(getUserProgramsCollection(), program.id));
+            if (state.selectedProgramIdForDetails === program.id) {
+                state.selectedProgramIdForDetails = null;
+            }
+        });
+    });
+
+    modalContent.append(editBtn, deleteBtn);
+    modal.append(modalContent);
+    document.body.appendChild(modal);
+
+    // Закрыть при клике мимо
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) document.body.removeChild(modal);
+    });
+}
 
 // =================================================================
-// 🚀 ЛОГИКА ДЛЯ СТРАНИЦЫ ДЕТАЛЕЙ ПРОГРАММЫ
+// 🔥 МОДАЛКА РЕДАКТИРОВАНИЯ ПРОГРАММЫ
 // =================================================================
+function openEditProgramModal(program) {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay-edit';
 
+    const modalContent = document.createElement('div');
+    modalContent.className = 'modal-edit';
+
+    const title = document.createElement('h3');
+    title.textContent = 'Редактировать программу';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = program.name;
+    input.className = 'modal-input';
+
+    const btnGroup = document.createElement('div');
+    btnGroup.className = 'modal-buttons';
+
+    const saveBtn = createElement('button', 'btn btn-primary', 'Сохранить');
+
+    saveBtn.addEventListener('click', async () => {
+        const newName = input.value.trim();
+        if (!newName) {
+            showToast('Введите название!');
+            return;
+        }
+        try {
+            await updateDoc(doc(getUserProgramsCollection(), program.id), { name: newName });
+            document.body.removeChild(modal);
+        } catch (error) {
+            console.error("Ошибка при обновлении программы:", error);
+            showToast('Ошибка сохранения');
+        }
+    });
+
+    btnGroup.append(saveBtn);
+    modalContent.append(title, input, btnGroup);
+    modal.append(modalContent);
+    document.body.appendChild(modal);
+
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) document.body.removeChild(modal);
+    });
+
+    input.focus();
+}
+
+// =================================================================
+// 🌟 МОДАЛКА: ДОБАВЛЕНИЕ ПРОГРАММЫ
+// =================================================================
+function openAddProgramModal(onConfirm) {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay-cicle';
+
+    const modalContent = document.createElement('div');
+    modalContent.className = 'modal-cicle';
+
+    const title = document.createElement('h3');
+    title.textContent = 'Создание новой программы';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'Введите название программы...';
+    input.className = 'modal-input';
+
+    const btnGroup = document.createElement('div');
+    btnGroup.className = 'modal-buttons';
+
+    const cancelBtn = createElement('button', 'btn cancel-btn', 'Отмена');
+    const confirmBtn = createElement('button', 'btn btn-primary', 'Создать');
+
+    cancelBtn.addEventListener('click', () => document.body.removeChild(modal));
+    confirmBtn.addEventListener('click', async () => {
+        const name = input.value.trim();
+        if (!name) {
+            showToast('Введите название программы!');
+            return;
+        }
+        await onConfirm(name);
+        document.body.removeChild(modal);
+    });
+
+    btnGroup.append(cancelBtn, confirmBtn);
+    modalContent.append(title, input, btnGroup);
+    modal.append(modalContent);
+    document.body.appendChild(modal);
+
+    input.focus();
+}
+
+
+// =================================================================
+// 🌟 Модалка для редактирования подхода
+// =================================================================
+function openEditSetModal(programId, exerciseId, setIndex, currentSet) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+
+    const title = createElement('h3', null, `Редактировать подход ${setIndex + 1}`);
+
+    const weightInput = createElement('input');
+    weightInput.type = 'number';
+    weightInput.placeholder = 'Вес (кг)';
+    weightInput.value = currentSet.weight || '';
+
+    const repsInput = createElement('input');
+    repsInput.type = 'number';
+    repsInput.placeholder = 'Повторения';
+    repsInput.value = currentSet.reps || '';
+
+    // Чекбокс для основного подхода
+    const isMainCheckboxLabel = createElement('label', null, ' Рабочий подход');
+    const isMainCheckbox = createElement('input');
+    isMainCheckbox.type = 'checkbox';
+    isMainCheckbox.checked = !!currentSet.isMain; // сохраняем текущее состояние
+    isMainCheckboxLabel.prepend(isMainCheckbox);
+
+    // Кнопка "ОК"
+    const btnOk = createElement('button', 'btn btn-primary', 'ОК');
+
+    btnOk.addEventListener('click', async () => {
+        const newWeight = weightInput.value.trim();
+        const newReps = repsInput.value.trim();
+
+        const program = state.programs.find(p => p.id === programId);
+        if (program) {
+            const exercise = program.exercises.find(ex => ex.id === exerciseId);
+            if (exercise) {
+                // обновляем текущий подход
+                exercise.sets[setIndex].weight = newWeight;
+                exercise.sets[setIndex].reps = newReps;
+                exercise.sets[setIndex].isMain = isMainCheckbox.checked; // можно несколько true
+
+                await updateDoc(doc(getUserProgramsCollection(), program.id), {
+                    exercises: program.exercises
+                });
+
+                render();
+            }
+        }
+        document.body.removeChild(overlay);
+    });
+
+    modal.append(title, weightInput, repsInput, isMainCheckboxLabel, btnOk);
+    overlay.append(modal);
+    document.body.append(overlay);
+
+    // Закрытие кликом по фону
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+            document.body.removeChild(overlay);
+        }
+    });
+}
+
+
+// =================================================================
+// 🌟 МОДАЛКА: Комментарий к упражнению или тренировке
+// =================================================================
 function openCommentModal(itemId, currentNote, title, saveCallback) {
     const modalId = `modal-comment-${itemId}`;
     let modal = document.getElementById(modalId);
+    if (modal) modal.remove();
 
-    // Удаляем старую модалку, если она была, чтобы избежать дублирования
-    if (modal) {
-        modal.remove();
-    }
-
-    modal = createElement('div', 'modal-overlay', '');
+    modal = document.createElement('div');
+    modal.className = 'modal-overlay-exercise';
     modal.id = modalId;
 
-    // 🔥 ИЗМЕНЕНИЕ: Добавляем класс 'modal-compact' для модальных окон с одним полем
-    const isCompact = itemId === 'new-supplement';
-    const modalContent = createElement('div', `modal-content ${isCompact ? 'modal-compact' : ''}`);
+    const modalContent = document.createElement('div');
+    modalContent.className = 'modal-content';
     modalContent.innerHTML = `
         <h4 class="modal-title">${title}</h4>
         <textarea id="comment-input-${itemId}" class="comment-edit-input" placeholder="Введите комментарий...">${currentNote || ''}</textarea>
         <div class="modal-controls">
-            <button class="btn btn-secondary modal-cancel-btn">Отмена</button>
             <button class="btn btn-primary modal-save-btn">Сохранить</button>
         </div>
     `;
@@ -716,42 +1145,24 @@ function openCommentModal(itemId, currentNote, title, saveCallback) {
     modal.append(modalContent);
     document.body.append(modal);
 
-    const closeModal = () => modal.classList.remove('active');
-
-    // Активируем модальное окно (для CSS перехода)
-    setTimeout(() => modal.classList.add('active'), 50);
-
-    modal.querySelector('.modal-cancel-btn').addEventListener('click', () => {
-        closeModal();
-        setTimeout(() => modal.remove(), 300); // Удаляем после анимации
+    // Закрытие при клике вне модалки
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.remove();
     });
 
-    modal.querySelector('.modal-save-btn').addEventListener('click', async () => {
+    const saveBtn = modal.querySelector('.modal-save-btn');
+    saveBtn.addEventListener('click', async () => {
         const newNote = modal.querySelector(`#comment-input-${itemId}`).value.trim();
-        await saveCallback(newNote); // Используем переданную функцию сохранения
-        closeModal();
-        setTimeout(() => modal.remove(), 300);
+        await saveCallback(newNote);
+        modal.remove();
     });
+
+    modal.querySelector(`#comment-input-${itemId}`).focus();
 }
 
-async function saveExerciseNote(programId, exerciseId, note) {
-    const currentProgram = state.programs.find(p => p.id === programId);
-    if (currentProgram) {
-        const currentExercise = (currentProgram.exercises || []).find(ex => ex.id === exerciseId);
-        if (currentExercise) {
-            currentExercise.note = note;
-
-            try {
-                await updateDoc(doc(getUserProgramsCollection(), currentProgram.id), { exercises: currentProgram.exercises });
-                showToast('Комментарий к упражнению сохранен!');
-            } catch (error) {
-                console.error("Ошибка при сохранении комментария к упражнению:", error);
-                showToast('Ошибка сохранения комментария.');
-            }
-        }
-    }
-}
-
+// =================================================================
+// 🌟 ФУНКЦИЯ: Сохранение комментария к тренировке
+// =================================================================
 async function saveTrainingNote(programId, note) {
     try {
         await updateDoc(doc(getUserProgramsCollection(), programId), { trainingNote: note });
@@ -762,26 +1173,33 @@ async function saveTrainingNote(programId, note) {
     }
 }
 
-
-const debouncedSaveSetData = debounce(async (programId, exerciseId, setIndex, field, value) => {
+// =================================================================
+// 🌟 ФУНКЦИЯ: Сохранение комментария к упражнению
+// =================================================================
+async function saveExerciseNote(programId, exerciseId, note) {
     const currentProgram = state.programs.find(p => p.id === programId);
-    if (currentProgram) {
-        const currentExercise = (currentProgram.exercises || []).find(ex => ex.id === exerciseId);
-        if (currentExercise) {
-            if (!currentExercise.sets) {
-                currentExercise.sets = [];
-            }
-            currentExercise.sets[setIndex][field] = value;
-            try {
-                await updateDoc(doc(getUserProgramsCollection(), currentProgram.id), { exercises: currentProgram.exercises });
-                // render() здесь не нужен, так как сработает Firebase listener
-            } catch (error) {
-                console.error("Ошибка при отложенном сохранении:", error);
-            }
-        }
-    }
-}, 1000);
+    if (!currentProgram) return;
 
+    const exercise = (currentProgram.exercises || []).find(ex => ex.id === exerciseId);
+    if (!exercise) return;
+
+    exercise.note = note;
+
+    try {
+        await updateDoc(doc(getUserProgramsCollection(), currentProgram.id), { exercises: currentProgram.exercises });
+        showToast('Комментарий к упражнению сохранен!');
+    } catch (error) {
+        console.error("Ошибка при сохранении комментария к упражнению:", error);
+        showToast('Ошибка сохранения комментария.');
+    }
+}
+
+
+
+
+// =================================================================
+// 🌟 ФУНКЦИЯ: Отображение деталей программы с упражнениями
+// =================================================================
 function renderProgramDetailsPage() {
     const selectedProgram = state.programs.find(p => p.id === state.selectedProgramIdForDetails);
 
@@ -792,13 +1210,12 @@ function renderProgramDetailsPage() {
         return;
     }
 
-    const contentContainer = document.createElement('div');
+    const contentContainer = createElement('div', 'program-details-page');
     contentContainer.id = 'program-details-content';
-    contentContainer.className = 'program-details-page';
 
-    const backButtonText = '← К программам цикла';
-    const backButton = createElement('button', 'btn back-btn', backButtonText);
 
+    // Кнопка "Назад"
+    const backButton = createElement('button', 'btn back-btn', '← К программам цикла');
     backButton.addEventListener('click', () => {
         state.currentPage = 'programsInCycle';
         state.selectedProgramIdForDetails = null;
@@ -806,48 +1223,9 @@ function renderProgramDetailsPage() {
     });
     contentContainer.append(backButton);
 
-    // Обработчик клика для сброса режима редактирования (скрытие полей ввода)
-    contentContainer.addEventListener('click', (e) => {
-        if (!e.target.closest('.set-row') && state.editingSetId !== null) {
-            state.editingSetId = null;
-            render();
-        }
-    });
-
     contentContainer.append(createElement('h3', null, selectedProgram.name));
 
-    // -----------------------------------------------------------
-    // БЛОК ДОБАВЛЕНИЯ УПРАЖНЕНИЯ
-    // -----------------------------------------------------------
-    const exerciseInputGroup = createElement('div', 'input-group exercise-input-group');
-    const exerciseInput = createElement('input', null);
-    exerciseInput.placeholder = 'Название упражнения';
-    const addExerciseBtn = createElement('button', 'btn btn-primary', 'Добавить');
-    exerciseInputGroup.append(exerciseInput, addExerciseBtn);
-    contentContainer.append(exerciseInputGroup);
 
-    addExerciseBtn.addEventListener('click', async () => {
-        const name = exerciseInput.value.trim();
-        if (name) {
-            const newExercise = {
-                id: Date.now().toString(),
-                name: name,
-                sets: [{ weight: '', reps: '' }],
-                note: ''
-            };
-            const currentProgram = state.programs.find(p => p.id === state.selectedProgramIdForDetails);
-            if (currentProgram) {
-                if (!currentProgram.exercises) {
-                    currentProgram.exercises = [];
-                }
-                currentProgram.exercises.push(newExercise);
-                exerciseInput.value = '';
-                state.expandedExerciseId = newExercise.id;
-                state.editingSetId = null;
-                await updateDoc(doc(getUserProgramsCollection(), currentProgram.id), { exercises: currentProgram.exercises });
-            }
-        }
-    });
 
     // -----------------------------------------------------------
     // СПИСОК УПРАЖНЕНИЙ
@@ -856,6 +1234,7 @@ function renderProgramDetailsPage() {
         contentContainer.append(createElement('div', 'muted', 'Нет упражнений. Добавьте первое!'));
     } else {
         const exercisesListSection = createElement('div', 'list-section');
+
         selectedProgram.exercises.forEach((exercise, index) => {
             const isExpanded = state.expandedExerciseId === exercise.id;
             const hasNote = exercise.note && exercise.note.trim() !== '';
@@ -866,158 +1245,94 @@ function renderProgramDetailsPage() {
             const exerciseTitle = createElement('div', 'exercise-title');
             const exerciseNumber = createElement('span', 'exercise-number', `${index + 1}.`);
             const exerciseName = createElement('span', 'exercise-name', exercise.name);
-
             exerciseTitle.append(exerciseNumber, exerciseName);
 
             const controlButtons = createElement('div', 'control-buttons');
 
-            // кнопка удаления (оставляем только её сверху)
-            const deleteExerciseBtn = createElement('button', 'btn delete-exercise-btn');
-            deleteExerciseBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><title>Ios-trash-outline SVG Icon</title><path d="M400 113.3h-80v-20c0-16.2-13.1-29.3-29.3-29.3h-69.5C205.1 64 192 77.1 192 93.3v20h-80V128h21.1l23.6 290.7c0 16.2 13.1 29.3 29.3 29.3h141c16.2 0 29.3-13.1 29.3-29.3L379.6 128H400v-14.7zm-193.4-20c0-8.1 6.6-14.7 14.6-14.7h69.5c8.1 0 14.6 6.6 14.6 14.7v20h-98.7v-20zm135 324.6v.8c0 8.1-6.6 14.7-14.6 14.7H186c-8.1 0-14.6-6.6-14.6-14.7v-.8L147.7 128h217.2l-23.3 289.9z" fill="currentColor"/><path d="M249 160h14v241h-14z" fill="currentColor"/><path d="M320 160h-14.6l-10.7 241h14.6z" fill="currentColor"/><path d="M206.5 160H192l10.7 241h14.6z" fill="currentColor"/></svg>';
+            // Кнопка меню (⋮)
+            const menuBtn = createElement('button', 'btn menu-btn', '⋮');
+            menuBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openExerciseMenuModal(selectedProgram, exercise);
+            });
 
-            controlButtons.append(deleteExerciseBtn);
+            controlButtons.append(menuBtn);
             exerciseHeader.append(exerciseTitle, controlButtons);
 
-            deleteExerciseBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                openConfirmModal("Удалить это упражнение?", async () => {
-                    const currentProgram = state.programs.find(p => p.id === state.selectedProgramIdForDetails);
-                    if (currentProgram) {
-                        currentProgram.exercises = (currentProgram.exercises || []).filter(ex => ex.id !== exercise.id);
-                        state.expandedExerciseId = null;
-                        state.editingSetId = null;
-                        await updateDoc(doc(getUserProgramsCollection(), currentProgram.id), {exercises: currentProgram.exercises});
-                    }
-                });
+            // Клик на заголовок → раскрыть / свернуть подходы
+            exerciseHeader.addEventListener('click', () => {
+                state.expandedExerciseId = (state.expandedExerciseId === exercise.id ? null : exercise.id);
+                render();
             });
 
             const setsContainer = createElement('div', `sets-container ${isExpanded ? 'expanded' : ''}`);
 
-            // комментарий (показывается под подходами)
-            const exerciseNoteContainer = createElement('div', 'exercise-note-display');
-            if (hasNote) {
-                const noteText = createElement('p', 'comment-text', exercise.note);
-                exerciseNoteContainer.append(noteText);
-            }
-
-            // свернутый вид (короткий список подходов)
+            // Свернутый вид подходов
             const summarySetsContainer = createElement('div', `summary-sets-container ${!isExpanded ? 'visible' : ''}`);
             const summarySets = (exercise.sets || []).filter(set => (set.weight && set.weight.trim() !== '') || (set.reps && set.reps.trim() !== ''));
-            if (summarySets.length > 0) {
-                summarySets.forEach((set) => {
-                    const summarySpan = createElement('span', null, `${set.weight || '0'}x${set.reps || '0'}`);
-                    summarySetsContainer.append(summarySpan);
-                });
-            }
-
-            exerciseHeader.addEventListener('click', () => {
-                if (state.expandedExerciseId === exercise.id) {
-                    state.expandedExerciseId = null;
-                } else {
-                    state.expandedExerciseId = exercise.id;
-                }
-                state.editingSetId = null;
-                render();
+            summarySets.forEach((set) => {
+                const summarySpan = createElement('span', set.isMain ? 'main-set' : '', `${set.weight || '0'}x${set.reps || '0'}`);
+                summarySetsContainer.append(summarySpan);
             });
 
+            // Полный список подходов
             if (Array.isArray(exercise.sets)) {
                 exercise.sets.forEach((set, setIndex) => {
-                    const setId = `${exercise.id}-${setIndex}`;
-                    const isEditing = state.editingSetId === setId;
+                    const setRow = createElement('div', `set-row ${set.isMain ? 'main-set' : ''}`);
 
-                    const setRow = createElement('div', `set-row ${isEditing ? 'editing' : ''}`);
                     const setNumberLabel = createElement('span', 'set-label', `${setIndex + 1}.`);
                     setRow.append(setNumberLabel);
-
-                    const inputGroup = createElement('div', 'set-input-group');
-                    const weightInput = createElement('input', 'weight-input');
-                    weightInput.type = 'number';
-                    weightInput.placeholder = 'Вес';
-                    weightInput.value = set.weight;
-
-                    const repsInput = createElement('input', 'reps-input');
-                    repsInput.type = 'number';
-                    repsInput.placeholder = 'Пов';
-                    repsInput.value = set.reps;
-
-                    inputGroup.append(weightInput, repsInput);
-                    setRow.append(inputGroup);
 
                     const setText = createElement('span', 'set-display');
                     const displayWeight = set.weight || '...';
                     const displayReps = set.reps || '...';
-
-                    setText.innerHTML = `
-                    ${displayWeight} <small class="unit-label">кг</small> x 
-                    ${displayReps} <small class="unit-label">пов</small>
-                `;
+                    setText.innerHTML = `${displayWeight} <small>кг</small> x ${displayReps} <small>пов</small>`;
                     setRow.append(setText);
 
+                    // 📌 При клике → редактируем подход
                     setRow.addEventListener('click', (e) => {
                         e.stopPropagation();
-                        state.editingSetId = setId;
-                        render();
+                        openEditSetModal(selectedProgram.id, exercise.id, setIndex, set);
                     });
 
-                    weightInput.addEventListener('click', (e) => e.stopPropagation());
-                    repsInput.addEventListener('click', (e) => e.stopPropagation());
-
-                    weightInput.addEventListener('input', (e) => {
-                        debouncedSaveSetData(selectedProgram.id, exercise.id, setIndex, 'weight', e.target.value);
-                    });
-                    repsInput.addEventListener('input', (e) => {
-                        debouncedSaveSetData(selectedProgram.id, exercise.id, setIndex, 'reps', e.target.value);
-                    });
-
-                    const deleteSetBtn = createElement('button', 'btn delete-set-row-btn', '-');
+                    // 🗑 Кнопка удаления подхода
+                    const deleteSetBtn = createElement('button', 'btn delete-set-btn', '🗑');
                     deleteSetBtn.addEventListener('click', (e) => {
                         e.stopPropagation();
-                        openConfirmModal("Удалить этот подход?", async () => {
-                            const currentProgram = state.programs.find(p => p.id === state.selectedProgramIdForDetails);
-                            if (currentProgram) {
-                                const currentExercise = currentProgram.exercises.find(ex => ex.id === exercise.id);
-                                if (currentExercise) {
-                                    if (currentExercise.sets.length === 1) {
-                                        currentProgram.exercises = currentProgram.exercises.filter(ex => ex.id !== exercise.id);
-                                        showToast('Удалено последнее упражнение!');
-                                    } else {
-                                        currentExercise.sets.splice(setIndex, 1);
-                                        showToast('Подход удален!');
-                                    }
-                                    state.editingSetId = null;
-                                    await updateDoc(doc(getUserProgramsCollection(), currentProgram.id), {
-                                        exercises: currentProgram.exercises
-                                    });
+
+                        openConfirmModal('Удалить этот подход?', async () => {
+                            exercise.sets.splice(setIndex, 1);
+
+                            // Если после удаления подходов массив пустой, удаляем и упражнение
+                            if (exercise.sets.length === 0) {
+                                const currentProgram = state.programs.find(p => p.id === selectedProgram.id);
+                                if (currentProgram) {
+                                    currentProgram.exercises = currentProgram.exercises.filter(ex => ex.id !== exercise.id);
                                 }
                             }
+
+                            await updateDoc(doc(getUserProgramsCollection(), selectedProgram.id), {
+                                exercises: selectedProgram.exercises
+                            });
+                            render();
                         });
                     });
-
                     setRow.append(deleteSetBtn);
+
                     setsContainer.append(setRow);
                 });
             }
 
-            // кнопка добавления подхода
+            // Добавление нового подхода
             const addSetBtn = createElement('button', 'add-set-btn', '+');
-            addSetBtn.addEventListener('click', async (e) => {
+            addSetBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                const currentProgram = state.programs.find(p => p.id === state.selectedProgramIdForDetails);
-                if (currentProgram) {
-                    const currentExercise = (currentProgram.exercises || []).find(ex => ex.id === exercise.id);
-                    if (currentExercise) {
-                        if (!currentExercise.sets) {
-                            currentExercise.sets = [];
-                        }
-                        const newSetIndex = currentExercise.sets.length;
-                        currentExercise.sets.push({weight: '', reps: ''});
-                        state.editingSetId = `${exercise.id}-${newSetIndex}`;
-                        await updateDoc(doc(getUserProgramsCollection(), currentProgram.id), {exercises: currentProgram.exercises});
-                    }
-                }
+                const currentExercise = selectedProgram.exercises.find(ex => ex.id === exercise.id);
+                currentExercise.sets.push({ weight: '', reps: '', isMain: false });
+                updateDoc(doc(getUserProgramsCollection(), selectedProgram.id), { exercises: selectedProgram.exercises }).then(render);
             });
 
-            // кнопка комментария (теперь рядом с +)
+            // Комментарий к упражнению
             const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-note' : ''}`, '📝');
             editNoteBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -1036,40 +1351,48 @@ function renderProgramDetailsPage() {
 
             setsContainer.append(bottomButtons);
 
-            if (isExpanded) {
+            // Отображение комментария под подходами
+            if (isExpanded && hasNote) {
+                const exerciseNoteContainer = createElement('div', 'exercise-note-display');
+                const noteText = createElement('p', 'comment-text', exercise.note);
+                exerciseNoteContainer.append(noteText);
                 setsContainer.append(exerciseNoteContainer);
             }
 
-            exerciseItem.append(exerciseHeader, summarySetsContainer);
-
-            if (!isExpanded && hasNote) {
-                exerciseItem.append(exerciseNoteContainer);
-            }
-
-            exerciseItem.append(setsContainer);
+            exerciseItem.append(exerciseHeader, summarySetsContainer, setsContainer);
             exercisesListSection.append(exerciseItem);
         });
+
         contentContainer.append(exercisesListSection);
     }
 
 
+
     // -----------------------------------------------------------
-    // 🔥 БЛОК КОММЕНТАРИЕВ К ТРЕНИРОВКЕ
+    // КНОПКА "ДОБАВИТЬ УПРАЖНЕНИЕ"
+    // -----------------------------------------------------------
+    const addExerciseBtn = createElement('button', 'btn btn-primary add-exercise-btn', '+ Добавить упражнение');
+    addExerciseBtn.addEventListener('click', () => {
+        openAddExerciseModal(selectedProgram);
+    });
+    contentContainer.append(addExerciseBtn);
+
+
+
+
+    // -----------------------------------------------------------
+    // КОММЕНТАРИЙ К ТРЕНИРОВКЕ
     // -----------------------------------------------------------
     const hasTrainingNote = selectedProgram.trainingNote && selectedProgram.trainingNote.trim() !== '';
-
     const commentWrapper = createElement('div', 'comment-wrapper');
     const commentBtn = createElement('button', `btn comment-toggle-btn ${hasTrainingNote ? 'has-note' : ''}`, `✏️ ${hasTrainingNote ? 'Редактировать комментарий' : 'Добавить комментарий'}`);
 
-    // Отображение комментария, если он есть
     if (hasTrainingNote) {
         const noteDisplay = createElement('p', 'comment-text-display', selectedProgram.trainingNote);
         commentWrapper.append(noteDisplay);
     }
 
-
     commentBtn.addEventListener('click', () => {
-        // Вызываем универсальное модальное окно для комментария к тренировке
         openCommentModal(
             selectedProgram.id,
             selectedProgram.trainingNote,
@@ -1078,68 +1401,204 @@ function renderProgramDetailsPage() {
         );
     });
 
-    commentWrapper.prepend(commentBtn); // Кнопка должна быть сверху
+    commentWrapper.prepend(commentBtn);
     contentContainer.append(commentWrapper);
-
 
     // -----------------------------------------------------------
     // КНОПКА ЗАВЕРШЕНИЯ ТРЕНИРОВКИ
     // -----------------------------------------------------------
     const completeTrainingBtn = createElement('button', 'btn complete-training-btn', 'Завершить тренировку');
-    contentContainer.append(completeTrainingBtn);
-
     completeTrainingBtn.addEventListener('click', () => {
         openConfirmModal('Завершить и сохранить тренировку в дневник?', async () => {
-            const trainingComment = selectedProgram.trainingNote || '';
-            const currentCycle = state.cycles.find(c => c.id === state.selectedCycleId);
-
-            // 1. Фильтруем упражнения, оставляя только те, где есть подходы с данными ИЛИ комментарий
             const exercisesToSave = selectedProgram.exercises
                 .filter(ex => ex.note || (ex.sets && ex.sets.some(set => set.weight || set.reps)))
-                .map(ex => ({
-                    ...ex,
-                    note: ex.note || '',
-                    sets: (ex.sets || []).map(set => ({
-                        weight: set.weight || '',
-                        reps: set.reps || '',
-                        note: set.note || ''
-                    }))
-                }));
+                .map(ex => ({ ...ex }));
 
-            if (exercisesToSave.length === 0 && trainingComment === '') {
-                showToast('Нечего сохранять: нет подходов с данными или комментариев к тренировке/упражнениям!');
+            if (exercisesToSave.length === 0 && !selectedProgram.trainingNote) {
+                showToast('Нечего сохранять!');
                 return;
             }
 
+            const currentCycle = state.cycles.find(c => c.id === state.selectedCycleId);
             const trainingRecord = {
                 date: new Date().toLocaleDateString('ru-RU'),
                 time: new Date().toLocaleTimeString('ru-RU'),
                 programName: selectedProgram.name,
                 category: currentCycle ? currentCycle.name : selectedProgram.name,
                 cycleName: currentCycle ? currentCycle.name : 'Без цикла',
-                comment: trainingComment,
+                comment: selectedProgram.trainingNote || '',
                 exercises: exercisesToSave
             };
 
             try {
                 await addDoc(getUserJournalCollection(), trainingRecord);
                 showToast('Тренировка сохранена в дневнике!');
-
-                // Вернуться к списку программ цикла
                 state.currentPage = 'programsInCycle';
                 state.selectedProgramIdForDetails = null;
                 state.expandedExerciseId = null;
                 render();
-
             } catch (error) {
-                console.error("Ошибка при завершении тренировки:", error);
+                console.error("Ошибка при сохранении тренировки:", error);
                 showToast('Ошибка сохранения записи дневника.');
             }
         });
     });
 
+    contentContainer.append(completeTrainingBtn);
     root.append(contentContainer);
 }
+
+
+
+
+// =================================================================
+// 🌟 МОДАЛКА: Добавление нового упражнения
+// =================================================================
+function openAddExerciseModal(program) {
+    const modal = createElement('div', 'modal-overlay');
+    const modalContent = createElement('div', 'modal-content');
+
+    const title = createElement('h3', null, 'Добавить упражнение');
+    const input = createElement('input', 'modal-input');
+    input.placeholder = 'Название упражнения';
+
+    const btnGroup = createElement('div', 'modal-buttons');
+    const cancelBtn = createElement('button', 'btn cancel-btn', 'Отмена');
+    const saveBtn = createElement('button', 'btn btn-primary', 'Добавить');
+
+    cancelBtn.addEventListener('click', () => document.body.removeChild(modal));
+    saveBtn.addEventListener('click', async () => {
+        const name = input.value.trim();
+        if (!name) return showToast('Введите название упражнения!');
+
+        const newExercise = { id: Date.now().toString(), name, sets: [{ weight: '', reps: '' }], note: '' };
+        program.exercises = program.exercises || [];
+        program.exercises.push(newExercise);
+
+        await updateDoc(doc(getUserProgramsCollection(), program.id), { exercises: program.exercises });
+        document.body.removeChild(modal);
+        render();
+    });
+
+    btnGroup.append(cancelBtn, saveBtn);
+    modalContent.append(title, input, btnGroup);
+    modal.append(modalContent);
+    document.body.append(modal);
+    input.focus();
+}
+
+
+// =================================================================
+// 🌟 МОДАЛКА: Меню упражнения (Редактировать / Удалить)
+// =================================================================
+function openExerciseMenuModal(program, exercise) {
+    if (!program || !exercise) return;
+
+    // Создаём оверлей
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay-remove-edit';
+
+    // Контент модалки
+    const modalContent = document.createElement('div');
+    modalContent.className = 'modal-remove-edit';
+
+    // Кнопка Редактировать
+    const editBtn = createElement('button', 'btn btn-primary', '✏️ Редактировать');
+    editBtn.addEventListener('click', () => {
+        document.body.removeChild(modal);
+        openEditExerciseModal(program, exercise); // передаём программу и упражнение
+    });
+
+    // Кнопка Удалить
+    const deleteBtn = createElement('button', 'btn cancel-btn', '🗑 Удалить');
+    deleteBtn.addEventListener('click', () => {
+        document.body.removeChild(modal);
+        openConfirmModal("Удалить это упражнение?", async () => {
+            program.exercises = (program.exercises || []).filter(ex => ex.id !== exercise.id);
+            state.expandedExerciseId = null;
+            state.editingSetId = null;
+            await updateDoc(doc(getUserProgramsCollection(), program.id), { exercises: program.exercises });
+            render(); // рендерим после удаления
+        });
+    });
+
+    // Добавляем кнопки в модалку
+    modalContent.append(editBtn, deleteBtn);
+    modal.append(modalContent);
+    document.body.append(modal);
+
+    // Закрытие при клике вне модалки
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            document.body.removeChild(modal);
+        }
+    });
+}
+
+
+// =================================================================
+// 🌟 МОДАЛКА: Редактирование упражнения
+// =================================================================
+// =================================================================
+// 🌟 МОДАЛКА: Редактирование упражнения
+// =================================================================
+function openEditExerciseModal(program, exercise) {
+    if (!exercise || !program) return; // проверка
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay-edit';
+
+    const modalContent = document.createElement('div');
+    modalContent.className = 'modal-edit';
+
+    const title = document.createElement('h3');
+    title.textContent = `Редактировать упражнение`;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = exercise.name; // текущее имя
+    input.className = 'modal-input';
+
+    const saveBtn = createElement('button', 'btn btn-primary', 'Сохранить');
+
+    saveBtn.addEventListener('click', async () => {
+        const newName = input.value.trim();
+        if (!newName) {
+            showToast('Введите название упражнения!');
+            return;
+        }
+
+        // Находим упражнение в выбранной программе
+        const ex = program.exercises.find(ex => ex.id === exercise.id);
+        if (!ex) return;
+
+        // Обновляем имя
+        ex.name = newName;
+
+        try {
+            // Сохраняем изменения в Firebase
+            await updateDoc(doc(getUserProgramsCollection(), program.id), { exercises: program.exercises });
+            document.body.removeChild(modal);
+            render();
+        } catch (error) {
+            console.error("Ошибка при обновлении упражнения:", error);
+            showToast('Ошибка сохранения упражнения.');
+        }
+    });
+
+    modalContent.append(title, input, saveBtn);
+    modal.append(modalContent);
+    document.body.appendChild(modal);
+
+    // Закрытие при клике вне модалки
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) document.body.removeChild(modal);
+    });
+
+    input.focus();
+}
+
+
 
 // =================================================================
 // 🌟 ЛОГИКА СТРАНИЦЫ ДНЕВНИКА
