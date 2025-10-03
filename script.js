@@ -1296,7 +1296,15 @@ function renderProgramDetailsPage() {
                     });
 
                     // 🗑 Кнопка удаления подхода
-                    const deleteSetBtn = createElement('button', 'btn delete-set-btn', '🗑');
+                    const deleteSetBtn = createElement('button', 'btn delete-set-btn');
+
+
+
+
+                    deleteSetBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 32 32"><title>Close SVG Icon</title><path fill="currentColor" d="M17.414 16L24 9.414L22.586 8L16 14.586L9.414 8L8 9.414L14.586 16L8 22.586L9.414 24L16 17.414L22.586 24L24 22.586z"/></svg>';
+
+
+
                     deleteSetBtn.addEventListener('click', (e) => {
                         e.stopPropagation();
 
@@ -1371,7 +1379,7 @@ function renderProgramDetailsPage() {
     // -----------------------------------------------------------
     // КНОПКА "ДОБАВИТЬ УПРАЖНЕНИЕ"
     // -----------------------------------------------------------
-    const addExerciseBtn = createElement('button', 'btn btn-primary add-exercise-btn', '+ Добавить упражнение');
+    const addExerciseBtn = createElement('button', 'btn btn-primary add-exercise-btn', 'добавить упражнение');
     addExerciseBtn.addEventListener('click', () => {
         openAddExerciseModal(selectedProgram);
     });
@@ -1385,7 +1393,10 @@ function renderProgramDetailsPage() {
     // -----------------------------------------------------------
     const hasTrainingNote = selectedProgram.trainingNote && selectedProgram.trainingNote.trim() !== '';
     const commentWrapper = createElement('div', 'comment-wrapper');
-    const commentBtn = createElement('button', `btn comment-toggle-btn ${hasTrainingNote ? 'has-note' : ''}`, `✏️ ${hasTrainingNote ? 'Редактировать комментарий' : 'Добавить комментарий'}`);
+    const commentBtn = createElement('button', `btn comment-toggle-btn ${hasTrainingNote ? 'has-note' : ''}`);
+
+    commentBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 16 16"><title>Pencil-square SVG Icon</title><g fill="currentColor"><path d="M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456l-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.814z"/><path fill-rule="evenodd" d="M1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5z"/></g></svg>';
+
 
     if (hasTrainingNote) {
         const noteDisplay = createElement('p', 'comment-text-display', selectedProgram.trainingNote);
@@ -1503,14 +1514,30 @@ function openExerciseMenuModal(program, exercise) {
     modalContent.className = 'modal-remove-edit';
 
     // Кнопка Редактировать
-    const editBtn = createElement('button', 'btn btn-primary', '✏️ Редактировать');
+    const editBtn = createElement('button', 'btn btn-primary');
+
+// SVG-код для иконки редактирования (карандаша)
+    const editSvgIcon = `
+    <svg xmlns="http://www.w3.org/2000/svg"  viewBox="0 0 26 26"><title>Create-new SVG Icon</title><path fill="currentColor" d="M22.438-.063c-.375 0-.732.17-1.032.47l-.718.687l4.218 4.218l.688-.718c.6-.6.6-1.494 0-2.094L23.5.406c-.3-.3-.688-.469-1.063-.469zM20 1.688l-1.094.907l4.5 4.5l1-1zm-1.688 1.625l-9.03 8.938a.975.975 0 0 0-.126.125l-.062.031a.975.975 0 0 0-.219.438l-1.219 4.281a.975.975 0 0 0 1.219 1.219l4.281-1.219a.975.975 0 0 0 .656-.531l8.876-8.782L21 6v.094l-1.188-1.188h.094l-1.593-1.593zM.813 4A1 1 0 0 0 0 5v20a1 1 0 0 0 1 1h20a1 1 0 0 0 1-1V14a1 1 0 1 0-2 0v10H2V6h10a1 1 0 1 0 0-2H1a1 1 0 0 0-.094 0a1 1 0 0 0-.094 0zm9.813 9.813l1.375.093l.094 1.5l-1.375.406l-.531-.53z"/></svg>
+`;
+
+// Вставляем SVG, а затем добавляем текст
+    editBtn.innerHTML = editSvgIcon + '';
+
     editBtn.addEventListener('click', () => {
         document.body.removeChild(modal);
         openEditExerciseModal(program, exercise); // передаём программу и упражнение
     });
 
     // Кнопка Удалить
-    const deleteBtn = createElement('button', 'btn cancel-btn', '🗑 Удалить');
+    const deleteBtn = createElement('button', 'btn cancel-btn');
+    const deleteSvgIcon = `
+<svg xmlns="http://www.w3.org/2000/svg"  viewBox="0 0 16 16"><title>Trash3-fill SVG Icon</title><path fill="currentColor" d="M11 1.5v1h3.5a.5.5 0 0 1 0 1h-.538l-.853 10.66A2 2 0 0 1 11.115 16h-6.23a2 2 0 0 1-1.994-1.84L2.038 3.5H1.5a.5.5 0 0 1 0-1H5v-1A1.5 1.5 0 0 1 6.5 0h3A1.5 1.5 0 0 1 11 1.5m-5 0v1h4v-1a.5.5 0 0 0-.5-.5h-3a.5.5 0 0 0-.5.5M4.5 5.029l.5 8.5a.5.5 0 1 0 .998-.06l-.5-8.5a.5.5 0 1 0-.998.06m6.53-.528a.5.5 0 0 0-.528.47l-.5 8.5a.5.5 0 0 0 .998.058l.5-8.5a.5.5 0 0 0-.47-.528M8 4.5a.5.5 0 0 0-.5.5v8.5a.5.5 0 0 0 1 0V5a.5.5 0 0 0-.5-.5"/></svg>
+`;
+    // Вставляем SVG, а затем добавляем текст
+    deleteBtn.innerHTML = deleteSvgIcon + '';
+
+
     deleteBtn.addEventListener('click', () => {
         document.body.removeChild(modal);
         openConfirmModal("Удалить это упражнение?", async () => {
@@ -1552,7 +1579,7 @@ function openEditExerciseModal(program, exercise) {
     modalContent.className = 'modal-edit';
 
     const title = document.createElement('h3');
-    title.textContent = `Редактировать упражнение`;
+    title.textContent = `Редактировать`;
 
     const input = document.createElement('input');
     input.type = 'text';
