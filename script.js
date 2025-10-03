@@ -445,14 +445,16 @@ function openClientMenuModal(client) {
     modalContent.className = 'modal-remove-edit';
 
     // Редактировать
-    const editBtn = createElement('button', 'btn btn-primary', '✏️ Редактировать');
+    const editBtn = createElement('button', 'btn btn-primary');
+    editBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><title>Pen-to-square SVG Icon</title><path fill="currentColor" d="M471.6 21.7c-21.9-21.9-57.3-21.9-79.2 0l-30.1 30l97.9 97.9l30.1-30.1c21.9-21.9 21.9-57.3 0-79.2zm-299.2 220c-6.1 6.1-10.8 13.6-13.5 21.9l-29.6 88.8c-2.9 8.6-.6 18.1 5.8 24.6s15.9 8.7 24.6 5.8l88.8-29.6c8.2-2.7 15.7-7.4 21.9-13.5l167.3-167.4l-98-98zM96 64c-53 0-96 43-96 96v256c0 53 43 96 96 96h256c53 0 96-43 96-96v-96c0-17.7-14.3-32-32-32s-32 14.3-32 32v96c0 17.7-14.3 32-32 32H96c-17.7 0-32-14.3-32-32V160c0-17.7 14.3-32 32-32h96c17.7 0 32-14.3 32-32s-14.3-32-32-32z"/></svg>';
     editBtn.addEventListener('click', () => {
         document.body.removeChild(modal);
         openEditClientModal(client);
     });
 
     // Удалить
-    const deleteBtn = createElement('button', 'btn cancel-btn', '🗑 Удалить');
+    const deleteBtn = createElement('button', 'btn cancel-btn');
+    deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><title>Trash3-fill SVG Icon</title><path fill="currentColor" d="M11 1.5v1h3.5a.5.5 0 0 1 0 1h-.538l-.853 10.66A2 2 0 0 1 11.115 16h-6.23a2 2 0 0 1-1.994-1.84L2.038 3.5H1.5a.5.5 0 0 1 0-1H5v-1A1.5 1.5 0 0 1 6.5 0h3A1.5 1.5 0 0 1 11 1.5m-5 0v1h4v-1a.5.5 0 0 0-.5-.5h-3a.5.5 0 0 0-.5.5M4.5 5.029l.5 8.5a.5.5 0 1 0 .998-.06l-.5-8.5a.5.5 0 1 0-.998.06m6.53-.528a.5.5 0 0 0-.528.47l-.5 8.5a.5.5 0 0 0 .998.058l.5-8.5a.5.5 0 0 0-.47-.528M8 4.5a.5.5 0 0 0-.5.5v8.5a.5.5 0 0 0 1 0V5a.5.5 0 0 0-.5-.5"></path></svg>';
     deleteBtn.addEventListener('click', async () => {
         document.body.removeChild(modal);
         openConfirmModal("Удалить этого клиента?", async () => {
@@ -688,14 +690,16 @@ function openCycleMenuModal(cycle) {
 
 
     // Кнопка "Редактировать"
-    const editBtn = createElement('button', 'btn btn-primary', '✏️ Редактировать');
+    const editBtn = createElement('button', 'btn btn-primary');
+    editBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><title>Pen-to-square SVG Icon</title><path fill="currentColor" d="M471.6 21.7c-21.9-21.9-57.3-21.9-79.2 0l-30.1 30l97.9 97.9l30.1-30.1c21.9-21.9 21.9-57.3 0-79.2zm-299.2 220c-6.1 6.1-10.8 13.6-13.5 21.9l-29.6 88.8c-2.9 8.6-.6 18.1 5.8 24.6s15.9 8.7 24.6 5.8l88.8-29.6c8.2-2.7 15.7-7.4 21.9-13.5l167.3-167.4l-98-98zM96 64c-53 0-96 43-96 96v256c0 53 43 96 96 96h256c53 0 96-43 96-96v-96c0-17.7-14.3-32-32-32s-32 14.3-32 32v96c0 17.7-14.3 32-32 32H96c-17.7 0-32-14.3-32-32V160c0-17.7 14.3-32 32-32h96c17.7 0 32-14.3 32-32s-14.3-32-32-32z"/></svg>';
     editBtn.addEventListener('click', () => {
         document.body.removeChild(modal);
         openEditCycleModal(cycle);
     });
 
     // Кнопка "Удалить"
-    const deleteBtn = createElement('button', 'btn cancel-btn', '🗑 Удалить');
+    const deleteBtn = createElement('button', 'btn cancel-btn');
+    deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><title>Trash3-fill SVG Icon</title><path fill="currentColor" d="M11 1.5v1h3.5a.5.5 0 0 1 0 1h-.538l-.853 10.66A2 2 0 0 1 11.115 16h-6.23a2 2 0 0 1-1.994-1.84L2.038 3.5H1.5a.5.5 0 0 1 0-1H5v-1A1.5 1.5 0 0 1 6.5 0h3A1.5 1.5 0 0 1 11 1.5m-5 0v1h4v-1a.5.5 0 0 0-.5-.5h-3a.5.5 0 0 0-.5.5M4.5 5.029l.5 8.5a.5.5 0 1 0 .998-.06l-.5-8.5a.5.5 0 1 0-.998.06m6.53-.528a.5.5 0 0 0-.528.47l-.5 8.5a.5.5 0 0 0 .998.058l.5-8.5a.5.5 0 0 0-.47-.528M8 4.5a.5.5 0 0 0-.5.5v8.5a.5.5 0 0 0 1 0V5a.5.5 0 0 0-.5-.5"></path></svg>';
     deleteBtn.addEventListener('click', () => {
         document.body.removeChild(modal);
         openConfirmModal("Удалить этот цикл?", async () => {
@@ -930,14 +934,16 @@ function openProgramMenuModal(program) {
     modalContent.className = 'modal-remove-edit';
 
     // Редактировать
-    const editBtn = createElement('button', 'btn btn-primary', '✏️ Редактировать');
+    const editBtn = createElement('button', 'btn btn-primary');
+    editBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><title>Pen-to-square SVG Icon</title><path fill="currentColor" d="M471.6 21.7c-21.9-21.9-57.3-21.9-79.2 0l-30.1 30l97.9 97.9l30.1-30.1c21.9-21.9 21.9-57.3 0-79.2zm-299.2 220c-6.1 6.1-10.8 13.6-13.5 21.9l-29.6 88.8c-2.9 8.6-.6 18.1 5.8 24.6s15.9 8.7 24.6 5.8l88.8-29.6c8.2-2.7 15.7-7.4 21.9-13.5l167.3-167.4l-98-98zM96 64c-53 0-96 43-96 96v256c0 53 43 96 96 96h256c53 0 96-43 96-96v-96c0-17.7-14.3-32-32-32s-32 14.3-32 32v96c0 17.7-14.3 32-32 32H96c-17.7 0-32-14.3-32-32V160c0-17.7 14.3-32 32-32h96c17.7 0 32-14.3 32-32s-14.3-32-32-32z"/></svg>';
     editBtn.addEventListener('click', () => {
         document.body.removeChild(modal);
         openEditProgramModal(program);
     });
 
     // Удалить
-    const deleteBtn = createElement('button', 'btn cancel-btn', '🗑 Удалить');
+    const deleteBtn = createElement('button', 'btn cancel-btn');
+    deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><title>Trash3-fill SVG Icon</title><path fill="currentColor" d="M11 1.5v1h3.5a.5.5 0 0 1 0 1h-.538l-.853 10.66A2 2 0 0 1 11.115 16h-6.23a2 2 0 0 1-1.994-1.84L2.038 3.5H1.5a.5.5 0 0 1 0-1H5v-1A1.5 1.5 0 0 1 6.5 0h3A1.5 1.5 0 0 1 11 1.5m-5 0v1h4v-1a.5.5 0 0 0-.5-.5h-3a.5.5 0 0 0-.5.5M4.5 5.029l.5 8.5a.5.5 0 1 0 .998-.06l-.5-8.5a.5.5 0 1 0-.998.06m6.53-.528a.5.5 0 0 0-.528.47l-.5 8.5a.5.5 0 0 0 .998.058l.5-8.5a.5.5 0 0 0-.47-.528M8 4.5a.5.5 0 0 0-.5.5v8.5a.5.5 0 0 0 1 0V5a.5.5 0 0 0-.5-.5"></path></svg>';
     deleteBtn.addEventListener('click', () => {
         document.body.removeChild(modal);
         openConfirmModal("Удалить эту программу?", async () => {
@@ -1060,26 +1066,41 @@ function openEditSetModal(programId, exerciseId, setIndex, currentSet) {
     overlay.className = 'modal-overlay';
 
     const modal = document.createElement('div');
-    modal.className = 'modal';
+    modal.className = 'modal-set';
 
-    const title = createElement('h3', null, `Редактировать подход ${setIndex + 1}`);
+    const title = createElement('h3', null, ` ${setIndex + 1} .подход`);
 
     const weightInput = createElement('input');
     weightInput.type = 'number';
-    weightInput.placeholder = 'Вес (кг)';
+    weightInput.placeholder = 'Вес';
     weightInput.value = currentSet.weight || '';
 
     const repsInput = createElement('input');
     repsInput.type = 'number';
-    repsInput.placeholder = 'Повторения';
+    repsInput.placeholder = 'Повт';
     repsInput.value = currentSet.reps || '';
 
     // Чекбокс для основного подхода
-    const isMainCheckboxLabel = createElement('label', null, ' Рабочий подход');
+    // Чекбокс для основного подхода
+    const isMainCheckboxLabel = createElement('label'); // Создаем пустую метку
+
+// 1. Создаем SPAN, который будет служить контейнером для чекбокса
+    const checkboxSpan = createElement('span', 'checkbox-container');
+
     const isMainCheckbox = createElement('input');
     isMainCheckbox.type = 'checkbox';
     isMainCheckbox.checked = !!currentSet.isMain; // сохраняем текущее состояние
-    isMainCheckboxLabel.prepend(isMainCheckbox);
+    const SpanX = createElement('span', 'SpanX', ' x');
+// 2. Добавляем чекбокс ВНУТРЬ SPAN
+    checkboxSpan.prepend(isMainCheckbox);
+
+// 3. Создаем SPAN для слова "рабочий"
+    const workerSpan = createElement('span', null, ' рабочий');
+// Обратите внимание на пробел перед словом "рабочий"
+
+// 4. Добавляем SPAN с чекбоксом, а затем SPAN с текстом в LABEL
+    isMainCheckboxLabel.append(checkboxSpan);
+    isMainCheckboxLabel.append(workerSpan);
 
     // Кнопка "ОК"
     const btnOk = createElement('button', 'btn btn-primary', 'ОК');
@@ -1107,7 +1128,7 @@ function openEditSetModal(programId, exerciseId, setIndex, currentSet) {
         document.body.removeChild(overlay);
     });
 
-    modal.append(title, weightInput, repsInput, isMainCheckboxLabel, btnOk);
+    modal.append(title, weightInput, SpanX, repsInput, btnOk, isMainCheckboxLabel);
     overlay.append(modal);
     document.body.append(overlay);
 
@@ -1118,6 +1139,7 @@ function openEditSetModal(programId, exerciseId, setIndex, currentSet) {
         }
     });
 }
+
 
 
 // =================================================================
@@ -1250,7 +1272,15 @@ function renderProgramDetailsPage() {
             const controlButtons = createElement('div', 'control-buttons');
 
             // Кнопка меню (⋮)
-            const menuBtn = createElement('button', 'btn menu-btn', '⋮');
+            const menuBtn = createElement('button', 'btn menu-btn');
+
+            menuBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">\n' +
+                '    <circle cx="5" cy="12" r="2"></circle>\n' +
+                '    <circle cx="12" cy="12" r="2"></circle>\n' +
+                '    <circle cx="19" cy="12" r="2"></circle></svg>';
+
+
+
             menuBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 openExerciseMenuModal(selectedProgram, exercise);
@@ -1341,7 +1371,8 @@ function renderProgramDetailsPage() {
             });
 
             // Комментарий к упражнению
-            const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-note' : ''}`, '📝');
+            const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-note' : ''}`);
+            editNoteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 512 512"><title>Pen-to-square SVG Icon</title><path fill="currentColor" d="M471.6 21.7c-21.9-21.9-57.3-21.9-79.2 0l-30.1 30l97.9 97.9l30.1-30.1c21.9-21.9 21.9-57.3 0-79.2zm-299.2 220c-6.1 6.1-10.8 13.6-13.5 21.9l-29.6 88.8c-2.9 8.6-.6 18.1 5.8 24.6s15.9 8.7 24.6 5.8l88.8-29.6c8.2-2.7 15.7-7.4 21.9-13.5l167.3-167.4l-98-98zM96 64c-53 0-96 43-96 96v256c0 53 43 96 96 96h256c53 0 96-43 96-96v-96c0-17.7-14.3-32-32-32s-32 14.3-32 32v96c0 17.7-14.3 32-32 32H96c-17.7 0-32-14.3-32-32V160c0-17.7 14.3-32 32-32h96c17.7 0 32-14.3 32-32s-14.3-32-32-32z"/></svg>';
             editNoteBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 openCommentModal(
@@ -1395,8 +1426,8 @@ function renderProgramDetailsPage() {
     const commentWrapper = createElement('div', 'comment-wrapper');
     const commentBtn = createElement('button', `btn comment-toggle-btn ${hasTrainingNote ? 'has-note' : ''}`);
 
-    commentBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 16 16"><title>Pencil-square SVG Icon</title><g fill="currentColor"><path d="M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456l-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.814z"/><path fill-rule="evenodd" d="M1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5z"/></g></svg>';
 
+    commentBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 512 512"><title>Pen-to-square SVG Icon</title><path fill="currentColor" d="M471.6 21.7c-21.9-21.9-57.3-21.9-79.2 0l-30.1 30l97.9 97.9l30.1-30.1c21.9-21.9 21.9-57.3 0-79.2zm-299.2 220c-6.1 6.1-10.8 13.6-13.5 21.9l-29.6 88.8c-2.9 8.6-.6 18.1 5.8 24.6s15.9 8.7 24.6 5.8l88.8-29.6c8.2-2.7 15.7-7.4 21.9-13.5l167.3-167.4l-98-98zM96 64c-53 0-96 43-96 96v256c0 53 43 96 96 96h256c53 0 96-43 96-96v-96c0-17.7-14.3-32-32-32s-32 14.3-32 32v96c0 17.7-14.3 32-32 32H96c-17.7 0-32-14.3-32-32V160c0-17.7 14.3-32 32-32h96c17.7 0 32-14.3 32-32s-14.3-32-32-32z"/></svg>';
 
     if (hasTrainingNote) {
         const noteDisplay = createElement('p', 'comment-text-display', selectedProgram.trainingNote);
@@ -1518,7 +1549,7 @@ function openExerciseMenuModal(program, exercise) {
 
 // SVG-код для иконки редактирования (карандаша)
     const editSvgIcon = `
-    <svg xmlns="http://www.w3.org/2000/svg"  viewBox="0 0 26 26"><title>Create-new SVG Icon</title><path fill="currentColor" d="M22.438-.063c-.375 0-.732.17-1.032.47l-.718.687l4.218 4.218l.688-.718c.6-.6.6-1.494 0-2.094L23.5.406c-.3-.3-.688-.469-1.063-.469zM20 1.688l-1.094.907l4.5 4.5l1-1zm-1.688 1.625l-9.03 8.938a.975.975 0 0 0-.126.125l-.062.031a.975.975 0 0 0-.219.438l-1.219 4.281a.975.975 0 0 0 1.219 1.219l4.281-1.219a.975.975 0 0 0 .656-.531l8.876-8.782L21 6v.094l-1.188-1.188h.094l-1.593-1.593zM.813 4A1 1 0 0 0 0 5v20a1 1 0 0 0 1 1h20a1 1 0 0 0 1-1V14a1 1 0 1 0-2 0v10H2V6h10a1 1 0 1 0 0-2H1a1 1 0 0 0-.094 0a1 1 0 0 0-.094 0zm9.813 9.813l1.375.093l.094 1.5l-1.375.406l-.531-.53z"/></svg>
+ <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 512 512"><title>Pen-to-square SVG Icon</title><path fill="currentColor" d="M471.6 21.7c-21.9-21.9-57.3-21.9-79.2 0l-30.1 30l97.9 97.9l30.1-30.1c21.9-21.9 21.9-57.3 0-79.2zm-299.2 220c-6.1 6.1-10.8 13.6-13.5 21.9l-29.6 88.8c-2.9 8.6-.6 18.1 5.8 24.6s15.9 8.7 24.6 5.8l88.8-29.6c8.2-2.7 15.7-7.4 21.9-13.5l167.3-167.4l-98-98zM96 64c-53 0-96 43-96 96v256c0 53 43 96 96 96h256c53 0 96-43 96-96v-96c0-17.7-14.3-32-32-32s-32 14.3-32 32v96c0 17.7-14.3 32-32 32H96c-17.7 0-32-14.3-32-32V160c0-17.7 14.3-32 32-32h96c17.7 0 32-14.3 32-32s-14.3-32-32-32z"/></svg>
 `;
 
 // Вставляем SVG, а затем добавляем текст
