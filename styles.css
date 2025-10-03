@@ -954,9 +954,7 @@ div#auth-screen {
     transition: transform 0.3s ease;
 }
 
-.modal-overlay.active .modal-content {
-    transform: scale(1);
-}
+
 
 .modal-title {
     font-size: 18px;
@@ -986,7 +984,10 @@ div#auth-screen {
 .edit-note-btn.has-note {
     color: #8e8e93; /* Фиолетовый, если комментарий есть */
 }
-
+button.btn.edit-note-btn.has-note svg {
+    width: 17px;
+    height: 17px;
+}
 /* Контейнер для отображения комментария к упражнению */
 .exercise-note-display {
     padding: 6px 17px 18px 20px; /* Отступ для свернутого состояния */
@@ -1562,6 +1563,57 @@ div#program-details-content h3 {
     color: #d93c3c;
     font-weight: 500;
 }
+
+.modal-set h3 {
+    font-size: 17px;
+}
+
+/* ***************************** МОДАЛКА ПОДХОДА *************************************** */
+.modal-set, .modal-content {
+    background-color: white;
+    padding: 20px;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 400px;
+    transform: scale(0.9);
+    transition: transform 0.3s ease;
+}
+.modal-set {
+    width: 75%;
+}
+.modal-set h3 {
+    font-size: 17px;
+    margin-left: 3px;
+    padding-top: 12px;
+}
+.modal-set input[type="number"] {
+    width: 52px;
+    text-align: center;
+    margin-left: 5px;
+    margin-top: 2px;
+}
+.modal-set label {
+    display: flex;
+    margin-top: 7px;
+    flex-direction: row;
+}
+.modal-set span {
+    line-height: 1.5;
+    margin-left: 4px;
+}
+.modal-set button.btn.btn-primary {
+    width: 82px;
+    margin-left: 18px;
+    margin-bottom: 7px;
+    padding: 9px 16px;
+}
+
+
+
+
+
+
+
 
 button.btn.delete-set-btn {
     background: none;
