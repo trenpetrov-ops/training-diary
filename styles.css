@@ -43,7 +43,7 @@ html, body {
     right: 0;
     display: flex;
     height: 65px; /* Высота таб-бара */
-    background-color: #f9f9f9;
+    background-color: #ffffff;
     border-top: 1px solid #c7c7cc;
     box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.05);
     z-index: 1000;
@@ -102,7 +102,7 @@ h3 {
     border-radius: 8px;
     cursor: pointer;
     font-weight: 600;
-    font-size: 16px;
+    font-size: 15px;
     transition: opacity 0.2s;
     white-space: nowrap;
 }
@@ -225,7 +225,7 @@ button.btn.btn-primary.add-program-btn,
     padding-bottom: 10px;
     text-align: center;
     font-size: 26px;
-    background-color: #7fbcff;
+    background-color: #97caf4;
 }
 
 .program-item > div:first-child {
@@ -300,25 +300,12 @@ button.btn.btn-primary.add-program-btn,
     align-items: center;
     justify-content: center;
 }
-.modal-remove-edit {
-    background: #fff;
-    padding: 20px;
-    border-radius: 12px;
-    max-width: 320px;
-    width: 90%;
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
-    text-align: center;
-    transform: scale(1);
-    transition: transform 0.3s ease;
-}
-.active.modal-remove-editХ{
-    transform: scale(0.9);
-}
+
     /* модалка Циклы ,Программы править*/
 button.btn.menu-btn {
     padding: 0px 9px 0px 15px;
     margin-left: 53px;
-    background: #f9f9f9;
+    background: #f9f9f900;
     line-height: 1;
     color: #828282;
     border-radius: 8px;
@@ -1453,7 +1440,7 @@ input {
     border: none;
     background-color: white;
     border-radius: 10px;
-    font-size: 16px;
+    font-size: 15px;
     color: #1c1c1e;
     /* iOS-style field */
     box-shadow: inset 0 0 0 0.5px #c7c7cc;
@@ -1490,13 +1477,21 @@ input:focus {
 /* ========================================================== */
 /* СТРАНИЦА ДЕТАЛЕЙ ПРОГРАММЫ */
 /* ========================================================== */
+div#program-details-content h3 {
+    font-size: 20px;
+    border-bottom: 1px solid #000000;
+    width: 88%;
+    overflow-wrap: break-word;
+    margin-bottom: 18px;
+}
 
 .exercise-item {
     display: block;
-    margin-bottom: 12px;
+    margin-bottom: 5px;
     padding: 0;
     border: none;
-    background-color: transparent;
+    background-color: #ffffff;
+    border-radius: 8px;
 }
 
 .exercise-header {
@@ -1540,9 +1535,9 @@ input:focus {
 
 .summary-sets-container {
     display: none;
-    font-size: 15px;
+    font-size: 12px;
     color: #8e8e93;
-    padding: 0 16px 12px 35px;
+    padding: 0 16px 11px 35px;
     flex-wrap: wrap;
 }
 
@@ -1557,9 +1552,20 @@ input:focus {
 
 /* Строка подхода (Set Row) */
 .set-row {
-    padding: 8px 98px 8px 69px;
+    padding: 0px 86px 6px 69px;
     border-bottom: 0.5px solid #e5e5ea;
     font-size: 15px;
+    display: flex;
+    align-items: center;
+}
+.main-set {
+    color: #d93c3c;
+    font-weight: 500;
+}
+
+button.btn.delete-set-btn {
+    background: none;
+    color: #ed392f;
 }
 span.set-label {
     font-size: 13px;
@@ -1614,30 +1620,130 @@ small.unit-label {
 
 .add-set-btn {
     display: block;
-    background-color: #ffffff;
-    color: #007aff;
-    padding: 3px 30px;
-    font-size: 14px;
-    border: 1px solid #007aff;
+    background: none;
+    color: #078bef;
+    padding: 0px 78px;
+    font-size: 22px;
+    border: none;
     border-radius: 8px;
-    margin: 13px auto;
-
+    margin: 6px auto;
+    font-weight: 600;
 }
+
 .add-set-btn:active {
     background-color: #e5e5ea;
 }
+/* кнопка редактировать и удалить  */
+.modal-remove-edit {
+    background: #ffffff00;
+    text-align: center;
+}
+
+
+.modal-remove-edit button.btn.btn-primary, .modal-remove-edit button.btn.cancel-btn {
+    background: #ffffff;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+    padding: 15px;
+    margin-right: 13px;
+}
+
+.modal-remove-edit button.btn.cancel-btn svg {
+    color: #cd3931;
+    height: 34px;
+    width: 34px;
+}
+
+.modal-remove-edit button.btn.btn-primary svg {
+    color: #515151;
+    height: 34px;
+    width: 34px;
+}
+/* редактировать окно  */
+.modal-edit {
+    background: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    max-width: 320px;
+    width: 90%;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+    display: flex;
+    flex-direction: column;
+}
+.modal-edit h3 {
+    font-size: 19px;
+    padding: 8px 0 9px 0;
+}
+
+.modal-edit button.btn.btn-primary {
+    background: #078bef;
+    margin-top: 7px;
+}
+/* Кнопка "добавить упр"  */
+button.btn.btn-primary.add-exercise-btn {
+    width: 100%;
+    background: #ffffff;
+    color: #078bef;
+}
+/* коменты */
+
+.comment-wrapper {
+    margin-top: 13px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #d9d9d9;
+    display: flex;
+    flex-wrap: nowrap;
+    flex-direction: row-reverse;
+    align-items: flex-end;
+}
+
+.comment-toggle-btn {
+    background: none;
+    color: #6f6f6f;
+    border: none;
+    padding: 0;
+    margin-bottom: 10px;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    margin-left: 19px;
+}
+button.btn.comment-toggle-btn.has-note svg {
+    width: 26px;
+}
+
+.comment-text-display {
+    margin: 10px 0 0 0;
+    padding: 10px 15px;
+    background-color: #f7f7f7;
+    border-radius: 8px;
+    font-size: 14px;
+    color: #555;
+    white-space: pre-wrap;
+    font-style: italic;
+    border: 1px solid #e5e5ea;
+    width: 100%;
+}
+
+
+
+
+
+
+
 
 /* Кнопка "Завершить тренировку" - Floats */
 .complete-training-btn {
     display: block;
-    width: 100%;
-    margin-top: 30px;
-    padding: 16px;
-    font-size: 18px;
-    background-color: #54ce74; /* Зеленый iOS */
+    width: 79%;
+    padding: 11px;
+    font-size: 15px;
+    background-color: #078bef;
     color: white;
-    border-radius: 12px;
+    border-radius: 10px;
+    margin: 0 auto;
 }
+}
+
 
 /* ========================================================== */
 /* СТРАНИЦА ДНЕВНИКА */
@@ -1995,16 +2101,7 @@ small.unit-label {
     border-bottom: 1px solid #e5e5ea;
 }
 
-.comment-toggle-btn {
-    background: none;
-    color: #007aff;
-    border: none;
-    padding: 0;
-    margin-bottom: 10px;
-    font-size: 15px;
-    font-weight: 500;
-    cursor: pointer;
-}
+
 
 .comment-input,
 .comment-edit-input {
