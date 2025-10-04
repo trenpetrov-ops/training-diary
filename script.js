@@ -496,7 +496,7 @@ function openEditClientModal(client) {
     const btnGroup = document.createElement('div');
     btnGroup.className = 'modal-buttons';
 
-    const saveBtn = createElement('button', 'btn btn-primary', 'Сохранить');
+    const saveBtn = createElement('button', 'btn btn-primary', 'изменить');
 
     saveBtn.addEventListener('click', async () => {
         const newName = input.value.trim();
@@ -514,7 +514,7 @@ function openEditClientModal(client) {
     });
 
     btnGroup.append(saveBtn);
-    modalContent.append(title, input, btnGroup);
+    modalContent.append( input, btnGroup);
     modal.append(modalContent);
     document.body.appendChild(modal);
 
@@ -547,7 +547,7 @@ function openAddClientModal(onConfirm) {
     btnGroup.className = 'modal-buttons';
 
     const cancelBtn = createElement('button', 'btn cancel-btn', 'Отмена');
-    const confirmBtn = createElement('button', 'btn btn-primary', 'Добавить');
+    const confirmBtn = createElement('button', 'btn btn-primary', 'добавить');
 
     cancelBtn.addEventListener('click', () => document.body.removeChild(modal));
     confirmBtn.addEventListener('click', async () => {
@@ -560,10 +560,15 @@ function openAddClientModal(onConfirm) {
         document.body.removeChild(modal);
     });
 
-    btnGroup.append(cancelBtn, confirmBtn);
-    modalContent.append(title, input, btnGroup);
+    btnGroup.append( confirmBtn);
+    modalContent.append( input, btnGroup);
     modal.append(modalContent);
     document.body.appendChild(modal);
+
+    // Закрытие при клике вне модалки
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) document.body.removeChild(modal);
+    });
 
     input.focus();
 }
@@ -738,7 +743,7 @@ function openEditCycleModal(cycle) {
     const btnGroup = document.createElement('div');
     btnGroup.className = 'modal-buttons';
 
-    const saveBtn = createElement('button', 'btn btn-primary', 'Сохранить');
+    const saveBtn = createElement('button', 'btn btn-primary', 'изменить');
 
     saveBtn.addEventListener('click', async () => {
         const newName = input.value.trim();
@@ -756,7 +761,7 @@ function openEditCycleModal(cycle) {
     });
 
     btnGroup.append(saveBtn);
-    modalContent.append(title, input, btnGroup);
+    modalContent.append( input, btnGroup);
     modal.append(modalContent);
     document.body.appendChild(modal);
 
@@ -791,10 +796,10 @@ function openAddCycleModal(onConfirm) {
     const btnGroup = document.createElement('div');
     btnGroup.className = 'modal-buttons';
 
-    const cancelBtn = createElement('button', 'btn cancel-btn', 'Отмена');
-    const confirmBtn = createElement('button', 'btn btn-primary', 'Создать');
 
-    cancelBtn.addEventListener('click', () => document.body.removeChild(modal));
+    const confirmBtn = createElement('button', 'btn btn-primary', 'добавить');
+
+
     confirmBtn.addEventListener('click', async () => {
         const name = input.value.trim();
         if (!name) {
@@ -805,10 +810,16 @@ function openAddCycleModal(onConfirm) {
         document.body.removeChild(modal);
     });
 
-    btnGroup.append(cancelBtn, confirmBtn);
-    modalContent.append(title, input, btnGroup);
+    btnGroup.append( confirmBtn);
+    modalContent.append( input, btnGroup);
     modal.append(modalContent);
     document.body.appendChild(modal);
+
+
+    // Закрытие при клике вне модалки
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) document.body.removeChild(modal);
+    });
 
     input.focus();
 }
@@ -985,7 +996,7 @@ function openEditProgramModal(program) {
     const btnGroup = document.createElement('div');
     btnGroup.className = 'modal-buttons';
 
-    const saveBtn = createElement('button', 'btn btn-primary', 'Сохранить');
+    const saveBtn = createElement('button', 'btn btn-primary', 'изменить');
 
     saveBtn.addEventListener('click', async () => {
         const newName = input.value.trim();
@@ -1003,7 +1014,7 @@ function openEditProgramModal(program) {
     });
 
     btnGroup.append(saveBtn);
-    modalContent.append(title, input, btnGroup);
+    modalContent.append( input, btnGroup);
     modal.append(modalContent);
     document.body.appendChild(modal);
 
@@ -1035,10 +1046,9 @@ function openAddProgramModal(onConfirm) {
     const btnGroup = document.createElement('div');
     btnGroup.className = 'modal-buttons';
 
-    const cancelBtn = createElement('button', 'btn cancel-btn', 'Отмена');
-    const confirmBtn = createElement('button', 'btn btn-primary', 'Создать');
+    const confirmBtn = createElement('button', 'btn btn-primary', 'добавить');
 
-    cancelBtn.addEventListener('click', () => document.body.removeChild(modal));
+
     confirmBtn.addEventListener('click', async () => {
         const name = input.value.trim();
         if (!name) {
@@ -1049,10 +1059,15 @@ function openAddProgramModal(onConfirm) {
         document.body.removeChild(modal);
     });
 
-    btnGroup.append(cancelBtn, confirmBtn);
-    modalContent.append(title, input, btnGroup);
+    btnGroup.append(confirmBtn);
+    modalContent.append(input, btnGroup);
     modal.append(modalContent);
     document.body.appendChild(modal);
+
+    // Закрытие при клике вне модалки
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) document.body.removeChild(modal);
+    });
 
     input.focus();
 }
@@ -1497,18 +1512,18 @@ function renderProgramDetailsPage() {
 // 🌟 МОДАЛКА: Добавление нового упражнения
 // =================================================================
 function openAddExerciseModal(program) {
-    const modal = createElement('div', 'modal-overlay');
+    const modal = createElement('div', 'modal-overlay program-details');
     const modalContent = createElement('div', 'modal-content');
 
-    const title = createElement('h3', null, 'Добавить упражнение');
+    const title = createElement('h3', null);
     const input = createElement('input', 'modal-input');
     input.placeholder = 'Название упражнения';
 
     const btnGroup = createElement('div', 'modal-buttons');
-    const cancelBtn = createElement('button', 'btn cancel-btn', 'Отмена');
-    const saveBtn = createElement('button', 'btn btn-primary', 'Добавить');
 
-    cancelBtn.addEventListener('click', () => document.body.removeChild(modal));
+    const saveBtn = createElement('button', 'btn btn-primary', 'добавить');
+
+
     saveBtn.addEventListener('click', async () => {
         const name = input.value.trim();
         if (!name) return showToast('Введите название упражнения!');
@@ -1522,11 +1537,18 @@ function openAddExerciseModal(program) {
         render();
     });
 
-    btnGroup.append(cancelBtn, saveBtn);
+    btnGroup.append(saveBtn);
     modalContent.append(title, input, btnGroup);
     modal.append(modalContent);
     document.body.append(modal);
     input.focus();
+
+    // Закрытие при клике вне модалки
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            document.body.removeChild(modal);
+        }
+    });
 }
 
 
@@ -1617,7 +1639,7 @@ function openEditExerciseModal(program, exercise) {
     input.value = exercise.name; // текущее имя
     input.className = 'modal-input';
 
-    const saveBtn = createElement('button', 'btn btn-primary', 'Сохранить');
+    const saveBtn = createElement('button', 'btn btn-primary', 'изменить');
 
     saveBtn.addEventListener('click', async () => {
         const newName = input.value.trim();
@@ -1644,7 +1666,7 @@ function openEditExerciseModal(program, exercise) {
         }
     });
 
-    modalContent.append(title, input, saveBtn);
+    modalContent.append( input, saveBtn);
     modal.append(modalContent);
     document.body.appendChild(modal);
 
