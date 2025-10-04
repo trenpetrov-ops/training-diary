@@ -75,8 +75,18 @@ html, body {
     margin-bottom: 4px;
 }
 
-#programs-btn::before { content: '🏋️'; }
-#journal-btn::before { content: '📖'; }
+.nav-btn svg {
+    color: #767676;
+    width: 36px;
+    height: 36px;
+}
+.nav-btn.active svg {
+    color: #007aff;
+    width: 43px;
+    height: 43px;
+}
+/*#programs-btn::before { content: '🏋️'; }*/
+/*#journal-btn::before { content: '📖'; }*/
 
 /* ========================================================== */
 /* ЗАГОЛОВКИ И КНОПКИ (iOS BUTTONS & HEADERS) */
@@ -256,36 +266,22 @@ button.btn.btn-primary.add-program-btn,
 }
 
 .modal-cicle {
-    background: #fff;
+    display: flex;
+    background-color: white;
     padding: 20px;
     border-radius: 12px;
-    max-width: 320px;
     width: 90%;
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
-    text-align: center;
+    max-width: 400px;
+    transform: scale(0.9);
+    transition: transform 0.3s ease;
 }
 
 
-.modal-cicle h3 {
-    font-size: 21px;
-    text-align: left;
-}
 
-.modal-cicle .modal-input {
-    width: 94%;
-    padding: 8px;
-    margin: 11px 0;
-    font-size: 16px;
-    border: 1px solid #ccc;
-    border-radius: 8px;
+button.btn.btn-primary {
+    margin-left: 10px;
+    padding: 10px 15px;
 }
-.modal-cicle .modal-buttons {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-    margin-top: 3px;
-}
-
 
 /* модалка Циклы ,Программы удалить править*/
 .modal-overlay-remove-edit {
@@ -1360,8 +1356,8 @@ body {
     margin-bottom: 4px;
 }
 
-#programs-btn::before { content: '🏋️'; }
-#journal-btn::before { content: '📖'; }
+/*#programs-btn::before { content: '🏋️'; }*/
+/*#journal-btn::before { content: '📖'; }*/
 
 /* ========================================================== */
 /* ЗАГОЛОВКИ И КНОПКИ (iOS BUTTONS & HEADERS) */
@@ -1712,23 +1708,21 @@ small.unit-label {
 }
 /* редактировать окно  */
 .modal-edit {
-    background: #fff;
+    display: flex
+;
+    background-color: white;
     padding: 20px;
-    border-radius: 8px;
-    max-width: 320px;
+    border-radius: 12px;
     width: 90%;
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
-    display: flex;
-    flex-direction: column;
+    max-width: 400px;
+    transform: scale(0.9);
+    transition: transform 0.3s ease;
 }
-.modal-edit h3 {
-    font-size: 19px;
-    padding: 8px 0 9px 0;
-}
+
 
 .modal-edit button.btn.btn-primary {
     background: #078bef;
-    margin-top: 7px;
+
 }
 /* Кнопка "добавить упр"  */
 button.btn.btn-primary.add-exercise-btn {
@@ -1736,6 +1730,17 @@ button.btn.btn-primary.add-exercise-btn {
     background: #ffffff;
     color: #078bef;
 }
+
+.modal-overlay.program-details .modal-content {
+    display: flex;
+}
+
+.modal-overlay.program-details .modal-content .modal-buttons button {
+    margin-left: 10px;
+    padding: 10px 15px;
+}
+
+
 /* коменты */
 
 .comment-wrapper {
@@ -2294,8 +2299,12 @@ div#auth-screen {
 /* 1. Общие стили для компактных модалок (как для ввода имени) */
 .modal-content.modal-compact {
     max-width: 300px; /* Делаем модалку узкой, т.к. нужно только имя */
-}
 
+}
+button.btn.btn-danger.confirm-btn {
+    background: #d64242;
+    color: white;
+}
 .modal-content.modal-compact .modal-title {
     font-size: 1.1em;
 }
