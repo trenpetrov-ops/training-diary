@@ -14,7 +14,7 @@ html, body {
     flex-direction: column;
     min-height: 100vh;
     background-color: #f2f2f7;
-    padding-bottom: 65px;
+    
 }
 
 /* Контент выше навигации */
@@ -32,7 +32,9 @@ html, body {
     flex-direction: column;
     box-sizing: border-box;
 }
-
+.program-details-page{
+    padding-bottom: 65px;
+}
 
 /* ========================================================== */
 /* НАВИГАЦИОННАЯ ПАНЕЛЬ (TAB BAR) */
