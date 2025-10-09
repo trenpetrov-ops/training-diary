@@ -1228,7 +1228,8 @@ button.btn.edit-note-btn.has-note svg {
 }
 
 /* Выходные дни */
-.supplement-plan-table .weekend .day-col{
+.supplement-plan-table .weekend .day-col,
+.supplement-plan-table .weekend .date-col{
     background-color: #ffeaea;
 }
 
@@ -1314,7 +1315,7 @@ button.btn.edit-note-btn.has-note svg {
 }
 
 .today-highlight{
-     background: #FFE4E1;
+     background: #DCDCDC;
 }
 
 
