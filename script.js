@@ -1085,41 +1085,35 @@ function openEditSetModal(programId, exerciseId, setIndex, currentSet) {
 
     const title = createElement('h3', null, ` ${setIndex + 1} .подход`);
 
+    // Поле ввода веса
     const weightInput = createElement('input');
     weightInput.type = 'number';
     weightInput.placeholder = 'Вес';
     weightInput.value = currentSet.weight || '';
 
+    // "x"
+    const SpanX = createElement('span', 'SpanX', ' x');
+
+    // Поле ввода повторений
     const repsInput = createElement('input');
     repsInput.type = 'number';
     repsInput.placeholder = 'Повт';
     repsInput.value = currentSet.reps || '';
 
-    // Чекбокс для основного подхода
-    // Чекбокс для основного подхода
-    const isMainCheckboxLabel = createElement('label'); // Создаем пустую метку
+    // ✅ Кастомный чекбокс "рабочий подход"
+    const checkboxWrapper = createElement('label', 'checkbox-wrapper');
 
-// 1. Создаем SPAN, который будет служить контейнером для чекбокса
-    const checkboxSpan = createElement('span', 'checkbox-container');
-
-    const isMainCheckbox = createElement('input');
+    const isMainCheckbox = createElement('input', 'checkbox-input');
     isMainCheckbox.type = 'checkbox';
-    isMainCheckbox.checked = !!currentSet.isMain; // сохраняем текущее состояние
-    const SpanX = createElement('span', 'SpanX', ' x');
-// 2. Добавляем чекбокс ВНУТРЬ SPAN
-    checkboxSpan.prepend(isMainCheckbox);
+    isMainCheckbox.checked = !!currentSet.isMain; // Сохранение текущего состояния
 
-// 3. Создаем SPAN для слова "рабочий"
-    const workerSpan = createElement('span', null, ' рабочий');
-// Обратите внимание на пробел перед словом "рабочий"
+    const customCheckbox = createElement('span', 'checkbox-custom');
+    const checkboxLabel = createElement('span', 'checkbox-text', ' рабочий');
 
-// 4. Добавляем SPAN с чекбоксом, а затем SPAN с текстом в LABEL
-    isMainCheckboxLabel.append(checkboxSpan);
-    isMainCheckboxLabel.append(workerSpan);
+    checkboxWrapper.append(isMainCheckbox, customCheckbox, checkboxLabel);
 
-    // Кнопка "ОК"
+    // Кнопка OK
     const btnOk = createElement('button', 'btn btn-primary', 'ОК');
-
     btnOk.addEventListener('click', async () => {
         const newWeight = weightInput.value.trim();
         const newReps = repsInput.value.trim();
@@ -1128,10 +1122,10 @@ function openEditSetModal(programId, exerciseId, setIndex, currentSet) {
         if (program) {
             const exercise = program.exercises.find(ex => ex.id === exerciseId);
             if (exercise) {
-                // обновляем текущий подход
+                // Обновляем значения подхода
                 exercise.sets[setIndex].weight = newWeight;
                 exercise.sets[setIndex].reps = newReps;
-                exercise.sets[setIndex].isMain = isMainCheckbox.checked; // можно несколько true
+                exercise.sets[setIndex].isMain = isMainCheckbox.checked; // Save checkbox state
 
                 await updateDoc(doc(getUserProgramsCollection(), program.id), {
                     exercises: program.exercises
@@ -1143,18 +1137,18 @@ function openEditSetModal(programId, exerciseId, setIndex, currentSet) {
         document.body.removeChild(overlay);
     });
 
-    modal.append(title, weightInput, SpanX, repsInput, btnOk, isMainCheckboxLabel);
+    // Добавляем элементы в модалку
+    modal.append(title, weightInput, SpanX, repsInput, btnOk, checkboxWrapper);
     overlay.append(modal);
     document.body.append(overlay);
 
-    // Закрытие кликом по фону
+    // Закрытие при клике по фону
     overlay.addEventListener('click', (e) => {
         if (e.target === overlay) {
             document.body.removeChild(overlay);
         }
     });
 }
-
 
 
 // =================================================================
@@ -1617,66 +1611,100 @@ function openExerciseMenuModal(program, exercise) {
 
 
 // =================================================================
-// 🌟 МОДАЛКА: Редактирование упражнения
+// ✏️ Модалка редактирования упражнения: имя + позиция
 // =================================================================
-// =================================================================
-// 🌟 МОДАЛКА: Редактирование упражнения
-// =================================================================
-function openEditExerciseModal(program, exercise) {
-    if (!exercise || !program) return; // проверка
+function openEditExerciseModal(selectedProgram, exercise) {
+    const overlay = createElement('div', 'modal-overlay');
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) document.body.removeChild(overlay);
+    });
 
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay-edit';
+    const modal = createElement('div', 'modal-content modal-compact');
+    const title = createElement('h3', 'modal-title', 'Редактировать упражнение');
 
-    const modalContent = document.createElement('div');
-    modalContent.className = 'modal-edit';
+    // === Поле Названия ===
+    const nameLabel = createElement('label', null, 'Название');
+    const nameInput = createElement('input');
+    nameInput.type = 'text';
+    nameInput.value = exercise.name;
 
-    const title = document.createElement('h3');
-    title.textContent = `Редактировать`;
 
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.value = exercise.name; // текущее имя
-    input.className = 'modal-input';
+    // === Горизонтальный Wheel Picker (позиции) ===
+    const total = selectedProgram.exercises.length;
+    let currentIndex = selectedProgram.exercises.findIndex(ex => ex.id === exercise.id); // 0-based
 
-    const saveBtn = createElement('button', 'btn btn-primary', 'изменить');
+    const posWrapper = createElement('div', 'h-wheel-wrapper');
+    const leftBtn = createElement('button', 'h-wheel-arrow', '◀');
+    const rightBtn = createElement('button', 'h-wheel-arrow', '▶');
+    const wheel = createElement('div', 'h-wheel');
 
-    saveBtn.addEventListener('click', async () => {
-        const newName = input.value.trim();
-        if (!newName) {
-            showToast('Введите название упражнения!');
-            return;
-        }
+    // Добавляем цифры
+    for (let i = 1; i <= total; i++) {
+        const item = createElement('div', 'h-wheel-item', i.toString());
+        wheel.append(item);
+    }
 
-        // Находим упражнение в выбранной программе
-        const ex = program.exercises.find(ex => ex.id === exercise.id);
-        if (!ex) return;
+    // Центрируем текущую позицию
+    function updateWheelPosition() {
+        const itemWidth = wheel.children[0].offsetWidth;
+        wheel.scrollTo({
+            left: (currentIndex * itemWidth) - wheel.offsetWidth / 2 + itemWidth / 2,
+            behavior: 'smooth'
+        });
+        Array.from(wheel.children).forEach((el, idx) => {
+            el.classList.toggle('active', idx === currentIndex);
+        });
+    }
 
-        // Обновляем имя
-        ex.name = newName;
+    leftBtn.addEventListener('click', () => {
+        if (currentIndex > 0) { currentIndex--; updateWheelPosition(); }
+    });
 
-        try {
-            // Сохраняем изменения в Firebase
-            await updateDoc(doc(getUserProgramsCollection(), program.id), { exercises: program.exercises });
-            document.body.removeChild(modal);
-            render();
-        } catch (error) {
-            console.error("Ошибка при обновлении упражнения:", error);
-            showToast('Ошибка сохранения упражнения.');
+    rightBtn.addEventListener('click', () => {
+        if (currentIndex < total - 1) { currentIndex++; updateWheelPosition(); }
+    });
+
+    wheel.addEventListener('scroll', () => {
+        const itemWidth = wheel.children[0].offsetWidth;
+        const idx = Math.round((wheel.scrollLeft + wheel.offsetWidth / 2 - itemWidth / 2) / itemWidth);
+        if (idx >= 0 && idx < total) {
+            currentIndex = idx;
+            Array.from(wheel.children).forEach((el, i) => el.classList.toggle('active', i === currentIndex));
         }
     });
 
-    modalContent.append( input, saveBtn);
-    modal.append(modalContent);
-    document.body.appendChild(modal);
+    posWrapper.append(leftBtn, wheel, rightBtn);
+    setTimeout(updateWheelPosition, 100);
 
-    // Закрытие при клике вне модалки
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) document.body.removeChild(modal);
+    // === Кнопки сохранить/отменить ===
+    const controls = createElement('div', 'modal-controls');
+    const cancel = createElement('button', 'btn cancel-btn', 'Отмена');
+    const save = createElement('button', 'btn btn-primary', 'Сохранить');
+
+    cancel.addEventListener('click', () => document.body.removeChild(overlay));
+    save.addEventListener('click', async () => {
+        exercise.name = nameInput.value.trim() || exercise.name;
+        const toIndex = currentIndex;
+        const fromIndex = selectedProgram.exercises.findIndex(ex => ex.id === exercise.id);
+
+        if (fromIndex !== toIndex) {
+            const moved = selectedProgram.exercises.splice(fromIndex, 1)[0];
+            selectedProgram.exercises.splice(toIndex, 0, moved);
+        }
+
+        await updateDoc(doc(getUserProgramsCollection(), selectedProgram.id), { exercises: selectedProgram.exercises });
+        showToast('Обновлено');
+        document.body.removeChild(overlay);
+        render();
     });
 
-    input.focus();
+    controls.append( save);
+
+    modal.append( nameInput, createElement('label', null, 'Сделать упражнение №'), posWrapper, controls);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
 }
+
 
 
 
