@@ -1780,21 +1780,19 @@ small.unit-label {
 .modal-compact input {
     display: block;
     width: 91%;
-    margin: 18px auto;
+    margin: 10px auto;
     text-align: center;
 }
-.modal-compact label {
-    text-align: center;
-    display: block;
+.modal-compact .h-wheel-label {
     font-weight: 600;
-    margin-top: 21px;
 }
 .h-wheel-wrapper {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 10px;
+    gap: 5px;
     margin: 10px 0 15px;
+    width: 136px;
 }
 
 .h-wheel-arrow {
@@ -1822,7 +1820,7 @@ small.unit-label {
 }
 
 .h-wheel-item {
-    flex: 0 0 40px;
+    flex: 0 0 22px;
     height: 40px;
     line-height: 40px;
     text-align: center;
@@ -1843,6 +1841,31 @@ small.unit-label {
 .modal-compact .modal-controls {
     justify-content: center;
 }
+
+
+
+
+/* Строка: текст + крутилка */
+.h-wheel-line {
+    display: flex;
+    align-items: center;
+    gap: 10px; /* расстояние между текстом и колесиком */
+    margin-bottom: 10px;
+}
+
+/* Сами числа — делаем их плотнее */
+.h-wheel-item {
+    text-align: center;
+    padding: 5px 0;
+    font-size: 16px;
+}
+
+
+
+
+
+
+
 
 /* Кнопка "добавить упр"  */
 button.btn.btn-primary.add-exercise-btn {
