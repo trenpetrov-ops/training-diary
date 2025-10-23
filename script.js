@@ -1609,104 +1609,108 @@ function openExerciseMenuModal(program, exercise) {
     });
 }
 
+//// =================================================================
+  // ✏️ Модалка редактирования упражнения: имя + позиция
+  // =================================================================
+  function openEditExerciseModal(selectedProgram, exercise) {
+      const overlay = createElement('div', 'modal-overlay');
+      overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) document.body.removeChild(overlay);
+      });
 
-// =================================================================
-// ✏️ Модалка редактирования упражнения: имя + позиция
-// =================================================================
-function openEditExerciseModal(selectedProgram, exercise) {
-    const overlay = createElement('div', 'modal-overlay');
-    overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) document.body.removeChild(overlay);
-    });
+      const modal = createElement('div', 'modal-content modal-compact');
 
-    const modal = createElement('div', 'modal-content modal-compact');
-    const title = createElement('h3', 'modal-title', 'Редактировать упражнение');
+      // === Поле Названия ===
+      const nameInput = createElement('input');
+      nameInput.type = 'text';
+      nameInput.value = exercise.name;
 
-    // === Поле Названия ===
-    const nameLabel = createElement('label', null, 'Название');
-    const nameInput = createElement('input');
-    nameInput.type = 'text';
-    nameInput.value = exercise.name;
+      // === Горизонтальный Wheel Picker (позиции) ===
+      const total = selectedProgram.exercises.length;
+      let currentIndex = selectedProgram.exercises.findIndex(ex => ex.id === exercise.id); // 0-based
 
+      // Обёртка (label + колёсико в одну строку)
+      const posLine = createElement('div', 'h-wheel-line'); // <--- новая обёртка строки
 
-    // === Горизонтальный Wheel Picker (позиции) ===
-    const total = selectedProgram.exercises.length;
-    let currentIndex = selectedProgram.exercises.findIndex(ex => ex.id === exercise.id); // 0-based
+      const label = createElement('span', 'h-wheel-label', 'Сделать №');
 
-    const posWrapper = createElement('div', 'h-wheel-wrapper');
-    const leftBtn = createElement('button', 'h-wheel-arrow', '◀');
-    const rightBtn = createElement('button', 'h-wheel-arrow', '▶');
-    const wheel = createElement('div', 'h-wheel');
+      const posWrapper = createElement('div', 'h-wheel-wrapper');
+      const leftBtn = createElement('button', 'h-wheel-arrow', '◀');
+      const rightBtn = createElement('button', 'h-wheel-arrow', '▶');
+      const wheel = createElement('div', 'h-wheel');
 
-    // Добавляем цифры
-    for (let i = 1; i <= total; i++) {
-        const item = createElement('div', 'h-wheel-item', i.toString());
-        wheel.append(item);
-    }
+      // Добавляем пустой слева
+      wheel.append(createElement('div', 'h-wheel-item empty', ''));
 
-    // Центрируем текущую позицию
-    function updateWheelPosition() {
-        const itemWidth = wheel.children[0].offsetWidth;
-        wheel.scrollTo({
-            left: (currentIndex * itemWidth) - wheel.offsetWidth / 2 + itemWidth / 2,
-            behavior: 'smooth'
-        });
-        Array.from(wheel.children).forEach((el, idx) => {
-            el.classList.toggle('active', idx === currentIndex);
-        });
-    }
+      // Основные номера
+      for (let i = 1; i <= total; i++) {
+          const item = createElement('div', 'h-wheel-item', i.toString());
+          wheel.append(item);
+      }
 
-    leftBtn.addEventListener('click', () => {
-        if (currentIndex > 0) { currentIndex--; updateWheelPosition(); }
-    });
+      // Пустой справа
+      wheel.append(createElement('div', 'h-wheel-item empty', ''));
 
-    rightBtn.addEventListener('click', () => {
-        if (currentIndex < total - 1) { currentIndex++; updateWheelPosition(); }
-    });
+      // Центрирование
+      function updateWheelPosition() {
+          const items = wheel.querySelectorAll('.h-wheel-item');
+          const itemWidth = items[1].offsetWidth;
+          wheel.scrollTo({
+              left: (currentIndex + 1) * itemWidth - wheel.offsetWidth / 2 + itemWidth / 2,
+              behavior: 'smooth'
+          });
+          items.forEach((el, idx) => {
+              el.classList.toggle('active', idx === currentIndex + 1);
+          });
+      }
 
-    wheel.addEventListener('scroll', () => {
-        const itemWidth = wheel.children[0].offsetWidth;
-        const idx = Math.round((wheel.scrollLeft + wheel.offsetWidth / 2 - itemWidth / 2) / itemWidth);
-        if (idx >= 0 && idx < total) {
-            currentIndex = idx;
-            Array.from(wheel.children).forEach((el, i) => el.classList.toggle('active', i === currentIndex));
-        }
-    });
+      leftBtn.addEventListener('click', () => {
+          if (currentIndex > 0) { currentIndex--; updateWheelPosition(); }
+      });
+      rightBtn.addEventListener('click', () => {
+          if (currentIndex < total - 1) { currentIndex++; updateWheelPosition(); }
+      });
 
-    posWrapper.append(leftBtn, wheel, rightBtn);
-    setTimeout(updateWheelPosition, 100);
+      wheel.addEventListener('scroll', () => {
+          const items = wheel.querySelectorAll('.h-wheel-item');
+          const itemWidth = items[1].offsetWidth;
+          const center = wheel.scrollLeft + wheel.offsetWidth / 2;
+          let idx = Math.round((center - itemWidth / 2) / itemWidth) - 1;
+          if (idx >= 0 && idx < total) {
+              currentIndex = idx;
+              items.forEach((el, i) => el.classList.toggle('active', i === currentIndex + 1));
+          }
+      });
 
-    // === Кнопки сохранить/отменить ===
-    const controls = createElement('div', 'modal-controls');
-    const cancel = createElement('button', 'btn cancel-btn', 'Отмена');
-    const save = createElement('button', 'btn btn-primary', 'Сохранить');
+      posWrapper.append(leftBtn, wheel, rightBtn);
 
-    cancel.addEventListener('click', () => document.body.removeChild(overlay));
-    save.addEventListener('click', async () => {
-        exercise.name = nameInput.value.trim() || exercise.name;
-        const toIndex = currentIndex;
-        const fromIndex = selectedProgram.exercises.findIndex(ex => ex.id === exercise.id);
+      // ✅ Добавляем на одну строку: "Сделать №" + колесо
+      posLine.append(label, posWrapper);
+      setTimeout(updateWheelPosition, 100);
 
-        if (fromIndex !== toIndex) {
-            const moved = selectedProgram.exercises.splice(fromIndex, 1)[0];
-            selectedProgram.exercises.splice(toIndex, 0, moved);
-        }
+      // === Кнопки ===
+      const controls = createElement('div', 'modal-controls');
+      const save = createElement('button', 'btn btn-primary', 'Сохранить');
 
-        await updateDoc(doc(getUserProgramsCollection(), selectedProgram.id), { exercises: selectedProgram.exercises });
-        showToast('Обновлено');
-        document.body.removeChild(overlay);
-        render();
-    });
+      save.addEventListener('click', async () => {
+          exercise.name = nameInput.value.trim() || exercise.name;
+          const toIndex = currentIndex;
+          const fromIndex = selectedProgram.exercises.findIndex(ex => ex.id === exercise.id);
+          if (fromIndex !== toIndex) {
+              const moved = selectedProgram.exercises.splice(fromIndex, 1)[0];
+              selectedProgram.exercises.splice(toIndex, 0, moved);
+          }
+          await updateDoc(doc(getUserProgramsCollection(), selectedProgram.id), { exercises: selectedProgram.exercises });
+          showToast('Обновлено');
+          document.body.removeChild(overlay);
+          render();
+      });
 
-    controls.append( save);
-
-    modal.append( nameInput, createElement('label', null, 'Сделать упражнение №'), posWrapper, controls);
-    overlay.appendChild(modal);
-    document.body.appendChild(overlay);
-}
-
-
-
+      controls.append(save);
+      modal.append(posLine, nameInput, controls);
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+  }
 
 // =================================================================
 // 🌟 ЛОГИКА СТРАНИЦЫ ДНЕВНИКА
