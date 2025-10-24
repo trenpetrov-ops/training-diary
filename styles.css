@@ -302,7 +302,7 @@ button.btn.btn-primary {
 
     /* модалка Циклы ,Программы править*/
 button.btn.menu-btn {
-    padding: 0px 9px 0px 15px;
+    padding: 0px 0px 0px 15px;
     margin-left: 53px;
     background: #f9f9f900;
     line-height: 1;
@@ -835,39 +835,6 @@ small.unit-label {
     padding: 0;
 }
 
-/* ========================================================== */
-/* СТИЛИ ДЛЯ КОММЕНТАРИЕВ */
-/* ========================================================== */
-
-.comment-wrapper {
-    margin-top: 20px;
-    padding-bottom: 20px;
-    border-bottom: 1px solid #e5e5ea;
-}
-
-.comment-toggle-btn {
-    background: none;
-    color: #007aff;
-    border: none;
-    padding: 0;
-    margin-bottom: 10px;
-    font-size: 15px;
-    font-weight: 500;
-    cursor: pointer;
-}
-
-.comment-input,
-.comment-edit-input {
-    width: 100%;
-    min-height: 80px;
-    padding: 10px;
-    border: 1px solid #ccc;
-    border-radius: 8px;
-    box-sizing: border-box;
-    font-size: 15px;
-    margin-top: 5px;
-    resize: vertical;
-}
 
 /* Стили в Дневнике */
 .comment-section {
@@ -1006,13 +973,122 @@ button.btn.edit-note-btn.has-note svg {
     border-top: none;
     border-radius: 0 0 10px 10px;
     background-color: #f7f7f7;
+    display: flex;
+
 }
 
 .exercise-note-display .comment-text {
     font-style: italic;
     color: #555;
     margin: 0;
+    width: 80%;
 }
+
+
+
+
+/* модалка комент к упр */
+.comExer h3 span {
+    display: block;
+}
+.comExer h3 {
+    padding: 17px 0 10px 0;
+    margin: 0;
+    font-size: 17px;
+    display: block;
+    font-weight: 700;
+}
+
+textarea.comment-input {
+    width: 100%;
+    min-height: 96px;
+    padding: 10px;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    box-sizing: border-box;
+    font-size: 15px;
+    margin-top: 5px;
+    resize: vertical;
+    margin-bottom: 10px;
+    outline: none;
+    transition: all 0.2s ease;
+}
+
+/* При фокусе — подсветка */
+textarea.comment-input:focus {
+    border-color: #3f7ae0;
+    background-color: #fff;
+    box-shadow: 0 0 4px rgba(63, 122, 224, 0.25);
+}
+
+.media-thumb {
+    border: 1px solid #b6b6b6;
+    background: #868585;
+}
+.media-item {
+    position: relative;
+}
+button.btn.delete-media-btn{
+    position: absolute;
+    top: -7px;
+    right: -7px;
+    height: 20px;
+    width: 20px;
+    line-height: 1;
+    background-color: #ffffff;
+    color: #b41414;
+    border-radius: 50%;
+    font-size: 14px;
+    border: none;
+    padding: 0;
+}
+.comExer button.btn.btn-secondary {
+    background: none;
+    color: #7a7878;
+    border: none;
+    padding: 0;
+    margin-bottom: 10px;
+    cursor: pointer;
+    margin-top: 14px;
+    width: 28px;
+}
+
+.comExer .modal-controls {
+    margin: 0;
+}
+/* Отображение комментария при закр упр */
+.exercise-note-collapsed {
+    padding: 9px 16px;
+    border-top: none;
+    border-radius: 0 0 10px 10px;
+    background-color: #f7f7f7;
+    border-bottom: 0.5px solid #bababa;
+    font-size: 13px;
+    font-style: italic;
+    color: #555;
+    display:flex;
+}
+.exercise-note-collapsed p {
+    margin: 0;
+    display: block;
+    width: 86%;
+}
+
+
+.media-icons-inline {
+    display: inline-flex;
+    gap: 4px;
+    margin-left: 6px;
+    vertical-align: middle;
+    align-items: flex-end;
+}
+
+.media-icons-inline svg {
+    width: 16px;
+    height: 16px;
+    color: #7a7878;
+}
+
 
 /* Отображение комментария к упражнению в дневнике */
 .journal-exercise-note {
@@ -1030,23 +1106,81 @@ button.btn.edit-note-btn.has-note svg {
 /* СТИЛИ ДЛЯ КОММЕНТАРИЯ К ТРЕНИРОВКЕ В PROGRAM DETAILS */
 /* ========================================================== */
 
-.comment-wrapper .comment-toggle-btn.has-note {
-    /* Фиолетовый, когда комментарий к тренировке существует */
-    color: #5856d6;
+/* коменты */
+
+.comment-wrapper {
+    margin-top: 20px;
+    padding-bottom: 16px;
+    display: flex;
+    flex-direction: row-reverse;
+    align-items: flex-start;
+}
+button.btn.comment-toggle-btn {
+    width: 22px;
+    height: 22px;
+    margin-right: 11px;
+}
+.comment-toggle-btn {
+    background: none;
+    color: #6f6f6f;
+    border: none;
+    padding: 0;
+    margin-bottom: 10px;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    margin-left: 19px;
 }
 
-/* Стиль для отображения текста комментария к тренировке */
-.comment-text-display {
-    margin: 10px 0 0 0;
-    padding: 10px 15px;
-    background-color: #f7f7f7;
+.training-note-display {
+    width: 100%;
+    background: #f7f7f7;
     border-radius: 8px;
+    border-bottom: 0.5px solid #bababa;
+    padding: 9px 16px;
+}
+button.btn.comment-toggle-btn.has-note svg {
+    width: 26px;
+}
+
+.comment-text-display {
+    margin: 0;
+    padding-bottom: 12px;
     font-size: 14px;
     color: #555;
-    white-space: pre-wrap;
     font-style: italic;
-    border: 1px solid #e5e5ea;
 }
+
+
+.upload-progress-bar {
+    transition: width 0.2s ease;
+}
+
+
+
+
+
+
+/* Кнопка "Завершить тренировку" - Floats */
+.complete-training-btn {
+    display: block;
+    width: 79%;
+    padding: 11px;
+    font-size: 15px;
+    background-color: #078bef;
+    color: white;
+    border-radius: 10px;
+    margin: 0 auto;
+}
+}
+
+
+.comment-wrapper .comment-toggle-btn.has-note {
+    color: #78787b;
+}
+
+
+
 
 
 
@@ -1732,6 +1866,42 @@ small.unit-label {
 .add-set-btn:active {
     background-color: #e5e5ea;
 }
+/* МОДАЛКА ДОБАВЛЕНИЯ ПОДХОДА  */
+
+.modal-content.duplicate-modal {
+    max-width: 300px;
+    padding: 15px;
+    border-radius: 10px;
+    text-align: center;
+    background: #ffffff;
+}
+
+.duplicate-text {
+    font-size: 16px;
+    margin-bottom: 15px;
+}
+
+.duplicate-controls {
+    display: flex;
+    justify-content: space-around;
+    gap: 10px;
+}
+
+.duplicate-controls .btn {
+    flex: 1;
+    margin-left: 0 !important;
+    padding: 8px 16px!important;
+}
+
+
+
+/* КНОПКА КОМЕНТ УПР */
+button.btn.edit-note-btn {
+    width: 29px;
+    height: 29px;
+    margin-top: 4px;
+    margin-right: 9px;
+}
 /* кнопка редактировать и удалить  */
 .modal-remove-edit {
     background: #ffffff00;
@@ -1838,9 +2008,7 @@ small.unit-label {
     transform: scale(1.1);
 }
 
-.modal-compact .modal-controls {
-    justify-content: center;
-}
+
 
 
 
@@ -1885,65 +2053,6 @@ button.btn.btn-primary.add-exercise-btn {
 }
 
 
-/* коменты */
-
-.comment-wrapper {
-    margin-top: 13px;
-    padding-bottom: 16px;
-    border-bottom: 1px solid #d9d9d9;
-    display: flex;
-    flex-wrap: nowrap;
-    flex-direction: row-reverse;
-    align-items: flex-end;
-}
-
-.comment-toggle-btn {
-    background: none;
-    color: #6f6f6f;
-    border: none;
-    padding: 0;
-    margin-bottom: 10px;
-    font-size: 15px;
-    font-weight: 500;
-    cursor: pointer;
-    margin-left: 19px;
-}
-button.btn.comment-toggle-btn.has-note svg {
-    width: 26px;
-}
-
-.comment-text-display {
-    margin: 10px 0 0 0;
-    padding: 10px 15px;
-    background-color: #f7f7f7;
-    border-radius: 8px;
-    font-size: 14px;
-    color: #555;
-    white-space: pre-wrap;
-    font-style: italic;
-    border: 1px solid #e5e5ea;
-    width: 100%;
-}
-
-
-
-
-
-
-
-
-/* Кнопка "Завершить тренировку" - Floats */
-.complete-training-btn {
-    display: block;
-    width: 79%;
-    padding: 11px;
-    font-size: 15px;
-    background-color: #078bef;
-    color: white;
-    border-radius: 10px;
-    margin: 0 auto;
-}
-}
 
 
 /* ========================================================== */
@@ -2292,118 +2401,7 @@ button.btn.comment-toggle-btn.has-note svg {
     padding: 0;
 }
 
-/* ========================================================== */
-/* СТИЛИ ДЛЯ КОММЕНТАРИЕВ */
-/* ========================================================== */
 
-.comment-wrapper {
-    margin-top: 20px;
-    padding-bottom: 20px;
-    border-bottom: 1px solid #e5e5ea;
-}
-
-
-
-.comment-input,
-.comment-edit-input {
-    width: 100%;
-    min-height: 80px;
-    padding: 10px;
-    border: 1px solid #ccc;
-    border-radius: 8px;
-    box-sizing: border-box;
-    font-size: 15px;
-    margin-top: 5px;
-    resize: vertical;
-}
-
-/* Стили в Дневнике */
-.comment-section {
-    padding: 10px;
-    background-color: #f2f2f7;
-    border-radius: 8px;
-    margin: 10px 0;
-}
-
-.comment-text {
-    margin: 0;
-    color: #333;
-    font-style: italic;
-    white-space: pre-wrap; /* Сохраняет переносы строк */
-}
-
-.edit-comment-btn {
-    background: none;
-    color: #5856d6; /* Фиолетовый оттенок для редактирования */
-    border: none;
-    padding: 0;
-    margin-top: 5px;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-}
-
-.comment-edit-controls {
-    display: flex;
-    gap: 10px;
-    margin-top: 10px;
-}
-.comment-edit-controls .btn-small {
-    padding: 6px 12px;
-    font-size: 14px;
-}
-
-.journal-record {
-    border: 1px solid #ccc;
-    padding: 15px;
-    margin-bottom: 15px;
-    border-radius: 12px;
-    background-color: white;
-}
-
-/* Стили для двойного фильтра в дневнике */
-.category-filter.sub-filter {
-    background-color: #f0f0f5;
-    padding: 8px 10px;
-    border-radius: 8px;
-}
-
-div#auth-screen {
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    position: fixed;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    background-color: #f4f4f4;
-    z-index: 100;
-}
-
-
-
-/* ========================================================== */
-/* СТИЛИ ДЛЯ КОММЕНТАРИЯ К ТРЕНИРОВКЕ В PROGRAM DETAILS */
-/* ========================================================== */
-
-.comment-wrapper .comment-toggle-btn.has-note {
-    /* Фиолетовый, когда комментарий к тренировке существует */
-    color: #5856d6;
-}
-
-/* Стиль для отображения текста комментария к тренировке */
-.comment-text-display {
-    margin: 10px 0 0 0;
-    padding: 10px 15px;
-    background-color: #f7f7f7;
-    border-radius: 8px;
-    font-size: 14px;
-    color: #555;
-    white-space: pre-wrap;
-    font-style: italic;
-    border: 1px solid #e5e5ea;
-}
 
 
 
