@@ -1152,84 +1152,267 @@ function openEditSetModal(programId, exerciseId, setIndex, currentSet) {
 
 
 // =================================================================
-// 🌟 МОДАЛКА: Комментарий к упражнению или тренировке
+// 🌟 МОДАЛКА: Комментарий с поддержкой фото/видео (Cloudinary)
 // =================================================================
-function openCommentModal(itemId, currentNote, title, saveCallback) {
-    const modalId = `modal-comment-${itemId}`;
-    let modal = document.getElementById(modalId);
-    if (modal) modal.remove();
+function openCommentModal(exerciseId, currentNote, titleText, onSave) {
+    const overlay = createElement('div', 'modal-overlay');
+    const modal = createElement('div', 'modal-content modal-compact comExer');
 
-    modal = document.createElement('div');
-    modal.className = 'modal-overlay-exercise';
-    modal.id = modalId;
+    // Заголовок
+    const title = createElement('h3');
+    title.innerHTML = titleText || 'Комментарий';
 
-    const modalContent = document.createElement('div');
-    modalContent.className = 'modal-content';
-    modalContent.innerHTML = `
-        <h4 class="modal-title">${title}</h4>
-        <textarea id="comment-input-${itemId}" class="comment-edit-input" placeholder="Введите комментарий...">${currentNote || ''}</textarea>
-        <div class="modal-controls">
-            <button class="btn btn-primary modal-save-btn">Сохранить</button>
+    // Поле ввода текста
+    const textarea = createElement('textarea', 'comment-input');
+    textarea.placeholder = 'Введите комментарий...';
+    textarea.value = currentNote || '';
+
+    // Контейнер медиа
+    const mediaContainer = createElement('div', 'media-container');
+
+    // Загружаем существующие медиа (учитываем тренировку ИЛИ упражнение)
+    let media = [];
+    const program = state.programs?.find(p => p.id === state.selectedProgramIdForDetails);
+    if (program) {
+        if (exerciseId === program.id) {
+            // это комментарий к тренировке
+            media = program.trainingMedia ? [...program.trainingMedia] : [];
+        } else {
+            // это комментарий к упражнению
+            const exercise = program.exercises.find(ex => ex.id === exerciseId);
+            if (exercise && exercise.media) {
+                media = [...exercise.media];
+            }
+        }
+    }
+    renderMediaPreview(mediaContainer, media);
+
+
+
+    // Скрытое file-input поле
+    const fileInput = createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*,video/*';
+    fileInput.style.display = 'none';
+
+   // Кнопка "Медиа" с SVG вместо текста 📎
+   const addMediaBtn = createElement('button', 'btn btn-secondary');
+   addMediaBtn.innerHTML = `
+       <svg xmlns="http://www.w3.org/2000/svg"  viewBox="0 0 24 24"><title>Add-a-photo-rounded SVG Icon</title><path fill="currentColor" d="M20 7q-.425 0-.712-.288T19 6V5h-1q-.425 0-.712-.288T17 4t.288-.712T18 3h1V2q0-.425.288-.712T20 1t.713.288T21 2v1h1q.425 0 .713.288T23 4t-.288.713T22 5h-1v1q0 .425-.288.713T20 7m-9 10.5q1.875 0 3.188-1.312T15.5 13t-1.312-3.187T11 8.5T7.813 9.813T6.5 13t1.313 3.188T11 17.5m0-2q-1.05 0-1.775-.725T8.5 13t.725-1.775T11 10.5t1.775.725T13.5 13t-.725 1.775T11 15.5M3 21q-.825 0-1.412-.587T1 19V7q0-.825.588-1.412T3 5h3.15L7.4 3.65q.275-.3.663-.475T8.875 3H14q.425 0 .713.288T15 4v1.5q0 .625.438 1.063T16.5 7h.5v.5q0 .625.438 1.063T18.5 9H20q.425 0 .713.288T21 10v9q0 .825-.587 1.413T19 21z"/></svg>
+   `;
+   addMediaBtn.addEventListener('click', () => fileInput.click());
+
+
+    // Обработка выбора файла
+    fileInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        // Прогресс-бар
+        const progressBar = createElement('div', 'upload-progress-bar');
+        progressBar.style.width = '0%';
+        progressBar.style.height = '4px';
+        progressBar.style.background = '#4caf50';
+        progressBar.style.marginTop = '5px';
+        progressBar.style.borderRadius = '4px';
+        mediaContainer.append(progressBar);
+
+        try {
+            // Загрузка в Cloudinary с прогрессом
+            const url = await uploadFileToCloudinaryWithProgress(file, (percent) => {
+                progressBar.style.width = percent + '%';
+            });
+
+            const type = file.type.startsWith('video') ? 'video' : 'photo';
+            media.push({ url, type });
+
+            renderMediaPreview(mediaContainer, media);
+            showToast('Медиа загружено!', 'success');
+        } catch (err) {
+            console.error(err);
+            showToast('❌ Ошибка загрузки!', 'error');
+        }
+    });
+
+// ✅ Только кнопка "Сохранить"
+const controls = createElement('div', 'modal-controls');
+const saveBtn = createElement('button', 'btn btn-primary', 'Сохранить');
+controls.append(saveBtn);
+
+// ✅ Закрытие модалки по клику на фон (overlay)
+overlay.addEventListener('click', () => overlay.remove());
+
+// ❗ Чтобы клик по модалке не закрывал её
+modal.addEventListener('click', (e) => e.stopPropagation());
+
+// ✅ Сохранение данных
+saveBtn.addEventListener('click', () => {
+    onSave(textarea.value.trim(), media);
+    overlay.remove();
+});
+    controls.append( saveBtn);
+
+    modal.append(title, textarea, mediaContainer, addMediaBtn, fileInput, controls);
+    overlay.append(modal);
+    document.body.append(overlay);
+}
+// =================================================================
+// МОДАЛКА ДОБАВЛЕНИЯ ПОДХОДА
+// =================================================================
+
+
+function openDuplicateSetModal(message, onYes, onNo) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-content duplicate-modal'; // 👈 отдельный стиль
+
+    modal.innerHTML = `
+        <p class="duplicate-text">${message}</p>
+        <div class="modal-controls duplicate-controls">
+            <button class="btn btn-primary dup-yes">Да</button>
+            <button class="btn btn-secondary dup-no">Нет</button>
         </div>
     `;
 
-    modal.append(modalContent);
-    document.body.append(modal);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
 
-    // Закрытие при клике вне модалки
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) modal.remove();
+    // закрытие при клике вне
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) overlay.remove();
     });
 
-    const saveBtn = modal.querySelector('.modal-save-btn');
-    saveBtn.addEventListener('click', async () => {
-        const newNote = modal.querySelector(`#comment-input-${itemId}`).value.trim();
-        await saveCallback(newNote);
-        modal.remove();
+    modal.querySelector('.dup-yes').addEventListener('click', () => {
+        onYes && onYes();
+        overlay.remove();
     });
 
-    modal.querySelector(`#comment-input-${itemId}`).focus();
+    modal.querySelector('.dup-no').addEventListener('click', () => {
+        onNo && onNo();
+        overlay.remove();
+    });
+}
+
+// =================================================================
+// ✅ Вспомогательная функция предпросмотра медиа с превью фото и видео
+// =================================================================
+function renderMediaPreview(container, media) {
+    container.innerHTML = ''; // Очистить контейнер
+
+    media.forEach((file, index) => {
+        const mediaItem = createElement('div', 'media-item');
+        mediaItem.style.position = 'relative';
+        mediaItem.style.display = 'inline-block';
+        mediaItem.style.marginRight = '12px';
+
+        // === Если фото ===
+        if (file.type === 'photo') {
+            const img = createElement('img');
+            img.src = file.url;
+            img.className = 'media-thumb';
+            img.style.width = '60px';
+            img.style.height = '60px';
+            img.style.objectFit = 'cover';
+            img.style.borderRadius = '6px';
+            img.style.cursor = 'pointer';
+            img.onclick = () => openMediaFullScreen(file.url, 'photo');
+            mediaItem.append(img);
+        }
+
+        // === Если видео — показываем миниплеер ===
+        if (file.type === 'video') {
+            const video = createElement('video');
+            video.src = file.url;
+            video.className = 'media-thumb';
+            video.muted = true;
+            video.playsInline = true; // чтобы не развернулось в полный экран на iPhone
+            video.style.width = '60px';
+            video.style.height = '60px';
+            video.style.objectFit = 'cover';
+            video.style.borderRadius = '6px';
+            video.style.cursor = 'pointer';
+            video.onclick = () => openMediaFullScreen(file.url, 'video');
+            mediaItem.append(video);
+        }
+
+        // ❌ Кнопка удаления
+        const delBtn = createElement('button', 'btn delete-media-btn', '✖');
+
+
+        delBtn.addEventListener('click', () => {
+            media.splice(index, 1);      // Удаляем из массива
+            renderMediaPreview(container, media); // Перерисовываем
+        });
+
+        mediaItem.append(delBtn);
+        container.append(mediaItem);
+    });
 }
 
 // =================================================================
 // 🌟 ФУНКЦИЯ: Сохранение комментария к тренировке
 // =================================================================
-async function saveTrainingNote(programId, note) {
+async function saveTrainingNote(programId, note, media = []) {
+    const program = state.programs.find(p => p.id === programId);
+    if (!program) return;
+
+    program.trainingNote = note;
+    program.trainingMedia = media;
+
     try {
-        await updateDoc(doc(getUserProgramsCollection(), programId), { trainingNote: note });
-        showToast('Комментарий к тренировке сохранен!');
-    } catch (error) {
-        console.error("Ошибка при сохранении комментария к тренировке:", error);
-        showToast('Ошибка сохранения комментария к тренировке.');
+        await updateDoc(doc(getUserProgramsCollection(), programId), {
+            trainingNote: note,
+            trainingMedia: media
+        });
+        showToast('Комментарий к тренировке сохранён!');
+    } catch (err) {
+        console.error(err);
+        showToast('Ошибка сохранения комментария', 'error');
     }
 }
 
-// =================================================================
-// 🌟 ФУНКЦИЯ: Сохранение комментария к упражнению
-// =================================================================
-async function saveExerciseNote(programId, exerciseId, note) {
-    const currentProgram = state.programs.find(p => p.id === programId);
-    if (!currentProgram) return;
 
-    const exercise = (currentProgram.exercises || []).find(ex => ex.id === exerciseId);
+// =================================================================
+// 🌟 ФУНКЦИЯ: Сохранение комментария + медиа к упражнению
+// =================================================================
+async function saveExerciseNote(programId, exerciseId, note, media = []) {
+    const program = state.programs.find(p => p.id === programId);
+    if (!program) return;
+
+    const exercise = program.exercises.find(ex => ex.id === exerciseId);
     if (!exercise) return;
 
     exercise.note = note;
 
+    // ✅ сохраняем медиа (если передается)
+    if (media) {
+        exercise.media = media.map(m => ({
+            url: m.url,
+            type: m.type || (m.url.endsWith('.mp4') ? 'video' : 'photo'),
+            addedAt: Date.now()
+        }));
+    }
+
+    // ✅ глубокая копия чтобы Firestore принял
+    const cleanedExercises = JSON.parse(JSON.stringify(program.exercises));
+
     try {
-        await updateDoc(doc(getUserProgramsCollection(), currentProgram.id), { exercises: currentProgram.exercises });
-        showToast('Комментарий к упражнению сохранен!');
-    } catch (error) {
-        console.error("Ошибка при сохранении комментария к упражнению:", error);
-        showToast('Ошибка сохранения комментария.');
+        await updateDoc(doc(getUserProgramsCollection(), programId), {
+            exercises: cleanedExercises
+        });
+        showToast('Комментарий сохранён');
+    } catch (err) {
+        console.error(err);
+        showToast('Ошибка сохранения', 'error');
     }
 }
 
 
 
-
 // =================================================================
-// 🌟 ФУНКЦИЯ: Отображение деталей программы с упражнениями
+// 🌟 ФУНКЦИЯ: Отображение деталей программы с упражнениями (исправлено)
 // =================================================================
 function renderProgramDetailsPage() {
     const selectedProgram = state.programs.find(p => p.id === state.selectedProgramIdForDetails);
@@ -1244,8 +1427,7 @@ function renderProgramDetailsPage() {
     const contentContainer = createElement('div', 'program-details-page');
     contentContainer.id = 'program-details-content';
 
-
-    // Кнопка "Назад"
+    // Назад
     const backButton = createElement('button', 'btn back-btn', '← К программам цикла');
     backButton.addEventListener('click', () => {
         state.currentPage = 'programsInCycle';
@@ -1254,13 +1436,12 @@ function renderProgramDetailsPage() {
     });
     contentContainer.append(backButton);
 
+    // Заголовок
     contentContainer.append(createElement('h3', null, selectedProgram.name));
 
-
-
-    // -----------------------------------------------------------
-    // СПИСОК УПРАЖНЕНИЙ
-    // -----------------------------------------------------------
+    // -----------------------------
+    // Список упражнений
+    // -----------------------------
     if (!selectedProgram.exercises || selectedProgram.exercises.length === 0) {
         contentContainer.append(createElement('div', 'muted', 'Нет упражнений. Добавьте первое!'));
     } else {
@@ -1271,6 +1452,8 @@ function renderProgramDetailsPage() {
             const hasNote = exercise.note && exercise.note.trim() !== '';
 
             const exerciseItem = createElement('div', 'exercise-item');
+
+            // Header упражнения
             const exerciseHeader = createElement('div', `exercise-header ${isExpanded ? 'expanded' : ''}`);
 
             const exerciseTitle = createElement('div', 'exercise-title');
@@ -1282,14 +1465,11 @@ function renderProgramDetailsPage() {
 
             // Кнопка меню (⋮)
             const menuBtn = createElement('button', 'btn menu-btn');
-
-            menuBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">\n' +
-                '    <circle cx="5" cy="12" r="2"></circle>\n' +
-                '    <circle cx="12" cy="12" r="2"></circle>\n' +
-                '    <circle cx="19" cy="12" r="2"></circle></svg>';
-
-
-
+            menuBtn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">\n' +
+                                '    <circle cx="5" cy="12" r="2"></circle>\n' +
+                                '    <circle cx="12" cy="12" r="2"></circle>\n' +
+                                '    <circle cx="19" cy="12" r="2"></circle></svg>`;
             menuBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 openExerciseMenuModal(selectedProgram, exercise);
@@ -1298,15 +1478,16 @@ function renderProgramDetailsPage() {
             controlButtons.append(menuBtn);
             exerciseHeader.append(exerciseTitle, controlButtons);
 
-            // Клик на заголовок → раскрыть / свернуть подходы
+            // Клик по заголовку → раскрыть / свернуть подходы
             exerciseHeader.addEventListener('click', () => {
                 state.expandedExerciseId = (state.expandedExerciseId === exercise.id ? null : exercise.id);
                 render();
             });
 
+            // Контейнер для подходов
             const setsContainer = createElement('div', `sets-container ${isExpanded ? 'expanded' : ''}`);
 
-            // Свернутый вид подходов
+            // Свернутый краткий вид подходов (чипсы)
             const summarySetsContainer = createElement('div', `summary-sets-container ${!isExpanded ? 'visible' : ''}`);
             const summarySets = (exercise.sets || []).filter(set => (set.weight && set.weight.trim() !== '') || (set.reps && set.reps.trim() !== ''));
             summarySets.forEach((set) => {
@@ -1328,29 +1509,24 @@ function renderProgramDetailsPage() {
                     setText.innerHTML = `${displayWeight} <small>кг</small> x ${displayReps} <small>пов</small>`;
                     setRow.append(setText);
 
-                    // 📌 При клике → редактируем подход
+                    // Клик для редактирования подхода
                     setRow.addEventListener('click', (e) => {
                         e.stopPropagation();
                         openEditSetModal(selectedProgram.id, exercise.id, setIndex, set);
                     });
 
-                    // 🗑 Кнопка удаления подхода
+                    // Удаление подхода (крестик)
                     const deleteSetBtn = createElement('button', 'btn delete-set-btn');
-
-
-
-
-                    deleteSetBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 32 32"><title>Close SVG Icon</title><path fill="currentColor" d="M17.414 16L24 9.414L22.586 8L16 14.586L9.414 8L8 9.414L14.586 16L8 22.586L9.414 24L16 17.414L22.586 24L24 22.586z"/></svg>';
-
-
-
+                    deleteSetBtn.innerHTML = `
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24">
+                          <path fill="currentColor" d="M18.3 5.71a1 1 0 0 0-1.41 0L12 10.59L7.11 5.7A1 1 0 1 0 5.7 7.11L10.59 12L5.7 16.89a1 1 0 1 0 1.41 1.41L12 13.41l4.89 4.89a1 1 0 0 0 1.41-1.41L13.41 12l4.89-4.89a1 1 0 0 0 0-1.4z"/>
+                        </svg>`;
                     deleteSetBtn.addEventListener('click', (e) => {
                         e.stopPropagation();
-
                         openConfirmModal('Удалить этот подход?', async () => {
                             exercise.sets.splice(setIndex, 1);
 
-                            // Если после удаления подходов массив пустой, удаляем и упражнение
+                            // Если подходов не осталось — удаляем упражнение
                             if (exercise.sets.length === 0) {
                                 const currentProgram = state.programs.find(p => p.id === selectedProgram.id);
                                 if (currentProgram) {
@@ -1370,98 +1546,269 @@ function renderProgramDetailsPage() {
                 });
             }
 
-            // Добавление нового подхода
+            // Кнопки под подходами (добавить подход, комментарий к упражнению + индикаторы медиа)
             const addSetBtn = createElement('button', 'add-set-btn', '+');
             addSetBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const currentExercise = selectedProgram.exercises.find(ex => ex.id === exercise.id);
-                currentExercise.sets.push({ weight: '', reps: '', isMain: false });
-                updateDoc(doc(getUserProgramsCollection(), selectedProgram.id), { exercises: selectedProgram.exercises }).then(render);
+                currentExercise.sets = currentExercise.sets || [];
+
+                if (currentExercise.sets.length === 0) {
+                    currentExercise.sets.push({ weight: '', reps: '', isMain: false });
+                    updateDoc(doc(getUserProgramsCollection(), selectedProgram.id), { exercises: selectedProgram.exercises }).then(render);
+                    return;
+                }
+
+                // ✅ используем новую, красивую модалку
+                openDuplicateSetModal("Дублировать предыдущий подход?", async () => {
+                    const lastSet = currentExercise.sets[currentExercise.sets.length - 1];
+                    currentExercise.sets.push({
+                        weight: lastSet.weight || '',
+                        reps: lastSet.reps || '',
+                        isMain: lastSet.isMain || false
+                    });
+                    await updateDoc(doc(getUserProgramsCollection(), selectedProgram.id), { exercises: selectedProgram.exercises });
+                    render();
+                }, async () => {
+                    currentExercise.sets.push({ weight: '', reps: '', isMain: false });
+                    await updateDoc(doc(getUserProgramsCollection(), selectedProgram.id), { exercises: selectedProgram.exercises });
+                    render();
+                });
             });
 
-            // Комментарий к упражнению
+
             const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-note' : ''}`);
-            editNoteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 512 512"><title>Pen-to-square SVG Icon</title><path fill="currentColor" d="M471.6 21.7c-21.9-21.9-57.3-21.9-79.2 0l-30.1 30l97.9 97.9l30.1-30.1c21.9-21.9 21.9-57.3 0-79.2zm-299.2 220c-6.1 6.1-10.8 13.6-13.5 21.9l-29.6 88.8c-2.9 8.6-.6 18.1 5.8 24.6s15.9 8.7 24.6 5.8l88.8-29.6c8.2-2.7 15.7-7.4 21.9-13.5l167.3-167.4l-98-98zM96 64c-53 0-96 43-96 96v256c0 53 43 96 96 96h256c53 0 96-43 96-96v-96c0-17.7-14.3-32-32-32s-32 14.3-32 32v96c0 17.7-14.3 32-32 32H96c-17.7 0-32-14.3-32-32V160c0-17.7 14.3-32 32-32h96c17.7 0 32-14.3 32-32s-14.3-32-32-32z"/></svg>';
+            // карандаш
+            editNoteBtn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg"  viewBox="0 0 512 512"><title>Pen-to-square SVG Icon</title><path fill="currentColor" d="M471.6 21.7c-21.9-21.9-57.3-21.9-79.2 0l-30.1 30l97.9 97.9l30.1-30.1c21.9-21.9 21.9-57.3 0-79.2zm-299.2 220c-6.1 6.1-10.8 13.6-13.5 21.9l-29.6 88.8c-2.9 8.6-.6 18.1 5.8 24.6s15.9 8.7 24.6 5.8l88.8-29.6c8.2-2.7 15.7-7.4 21.9-13.5l167.3-167.4l-98-98zM96 64c-53 0-96 43-96 96v256c0 53 43 96 96 96h256c53 0 96-43 96-96v-96c0-17.7-14.3-32-32-32s-32 14.3-32 32v96c0 17.7-14.3 32-32 32H96c-17.7 0-32-14.3-32-32V160c0-17.7 14.3-32 32-32h96c17.7 0 32-14.3 32-32s-14.3-32-32-32z"/></svg>`;
             editNoteBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 openCommentModal(
                     exercise.id,
                     exercise.note,
-                    `Комментарий к ${exercise.name}`,
-                    (newNote) => saveExerciseNote(selectedProgram.id, exercise.id, newNote)
+                    `Комментарий к <span class="exercise-name-span">- ${exercise.name}</span>`,
+                    (newNote, media) => saveExerciseNote(selectedProgram.id, exercise.id, newNote, media)
                 );
             });
 
+
+
             const bottomButtons = createElement('div', 'exercise-bottom-buttons');
             bottomButtons.style.display = 'flex';
-            bottomButtons.style.gap = '5px';
+            bottomButtons.style.gap = '6px';
             bottomButtons.append(addSetBtn, editNoteBtn);
-
             setsContainer.append(bottomButtons);
 
-            // Отображение комментария под подходами
-            if (isExpanded && hasNote) {
-                const exerciseNoteContainer = createElement('div', 'exercise-note-display');
-                const noteText = createElement('p', 'comment-text', exercise.note);
-                exerciseNoteContainer.append(noteText);
-                setsContainer.append(exerciseNoteContainer);
+            // Отображение комментария под подходами (в раскрытом виде)
+// ✅ Отображение комментария И медиа (фото/видео)
+if (isExpanded && (exercise.note || (exercise.media && exercise.media.length > 0))) {
+
+    const exerciseNoteContainer = createElement('div', 'exercise-note-display');
+
+    // 1. Текст комментария
+    if (exercise.note && exercise.note.trim() !== '') {
+        const noteText = createElement('p', 'comment-text', exercise.note);
+        exerciseNoteContainer.append(noteText);
+    }
+
+    // 2. Фото / Видео (иконки или миниатюры)
+    if (exercise.media && exercise.media.length > 0) {
+        const mediaContainer = createElement('div', 'note-media-preview');
+        mediaContainer.style.display = 'flex';
+        mediaContainer.style.gap = '8px';
+        mediaContainer.style.marginTop = '5px';
+
+        exercise.media.forEach(file => {
+            // Если фото → показываем мини-превью
+            if (file.type === 'photo') {
+                const img = createElement('img');
+                img.src = file.url;
+                img.className = 'note-media-image';
+                img.style.width = '40px';
+                img.style.height = '40px';
+                img.style.objectFit = 'cover';
+                img.style.borderRadius = '5px';
+                img.style.cursor = 'pointer';
+                img.onclick = () => openPhotoFullScreen(file.url);
+                mediaContainer.append(img);
             }
 
+            // Если видео → иконка 🎥
+           if (file.type === 'video') {
+               const videoThumb = createElement('video');
+               videoThumb.src = file.url;
+               videoThumb.className = 'note-media-video-thumb';
+               videoThumb.muted = true;           // чтобы не играл звук
+               videoThumb.playsInline = true;     // чтобы не открывался фулл-скрин на телефоне
+               videoThumb.style.width = '40px';
+               videoThumb.style.height = '40px';
+               videoThumb.style.objectFit = 'cover';
+               videoThumb.style.borderRadius = '5px';
+               videoThumb.style.cursor = 'pointer';
+
+               // При клике — открыть полноэкранный просмотр
+               videoThumb.onclick = () => openMediaFullScreen(file.url, 'video');
+
+               mediaContainer.append(videoThumb);
+           }
+        });
+
+        exerciseNoteContainer.append(mediaContainer);
+    }
+
+    // Вставляем в DOM под подходами
+    setsContainer.append(exerciseNoteContainer);
+}
+
+
             exerciseItem.append(exerciseHeader, summarySetsContainer, setsContainer);
+
+            // ✅ Показывать комментарий под summarySets, даже если упражнение закрыто
+            if (!isExpanded && (exercise.note || (exercise.media && exercise.media.length > 0))) {
+                const collapsedNote = createElement('div', 'exercise-note-collapsed');
+
+                // только текст комментария
+                if (exercise.note && exercise.note.trim() !== '') {
+                    const noteText = createElement('p', 'comment-text-collapsed', exercise.note);
+                    collapsedNote.append(noteText);
+                }
+
+                // иконки медиа (если есть)
+                if (exercise.media && exercise.media.length > 0) {
+                    const icons = createElement('span', 'media-icons-inline');
+
+                    // SVG для фото
+                    const photoSVG = `
+                        <svg xmlns="http://www.w3.org/2000/svg"  viewBox="0 0 24 24"><title>Camera-photo-solid SVG Icon</title><path fill="currentColor" fill-rule="evenodd" d="M7.5 4.586A2 2 0 0 1 8.914 4h6.172a2 2 0 0 1 1.414.586L17.914 6H19a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h1.086zM10 12a2 2 0 1 1 4 0a2 2 0 0 1-4 0m2-4a4 4 0 1 0 0 8a4 4 0 0 0 0-8" clip-rule="evenodd"/></svg>
+                    `;
+
+                    // SVG для видео
+                    const videoSVG = `
+                        <svg xmlns="http://www.w3.org/2000/svg"  viewBox="0 0 16 16"><title>Video-camera-16-solid SVG Icon</title><path fill="currentColor" d="M3 4a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h5a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm12 .75a.75.75 0 0 0-1.28-.53l-2 2a.75.75 0 0 0-.22.53v2.5c0 .199.079.39.22.53l2 2a.75.75 0 0 0 1.28-.53z"/></svg>
+                    `;
+
+                    // Проверяем наличие фото
+                    const hasPhoto = exercise.media.some(m => m.type === 'photo' || /\.(jpg|jpeg|png|webp)$/i.test(m.url));
+                    if (hasPhoto) {
+                        const span = createElement('span', 'icon-photo');
+                        span.innerHTML = photoSVG;
+                        icons.append(span);
+                    }
+
+                    // Проверяем наличие видео
+                    const hasVideo = exercise.media.some(m => m.type === 'video' || /\.(mp4|mov|avi|webm)$/i.test(m.url));
+                    if (hasVideo) {
+                        const span = createElement('span', 'icon-video');
+                        span.innerHTML = videoSVG;
+                        icons.append(span);
+                    }
+
+                    collapsedNote.append(icons);
+                }
+
+
+                exerciseItem.append(collapsedNote);
+            }
+
+
             exercisesListSection.append(exerciseItem);
         });
 
         contentContainer.append(exercisesListSection);
     }
 
-
-
-    // -----------------------------------------------------------
-    // КНОПКА "ДОБАВИТЬ УПРАЖНЕНИЕ"
-    // -----------------------------------------------------------
+    // -----------------------------
+    // Кнопка "Добавить упражнение"
+    // -----------------------------
     const addExerciseBtn = createElement('button', 'btn btn-primary add-exercise-btn', 'добавить упражнение');
     addExerciseBtn.addEventListener('click', () => {
         openAddExerciseModal(selectedProgram);
     });
     contentContainer.append(addExerciseBtn);
 
-
-
-
-    // -----------------------------------------------------------
-    // КОММЕНТАРИЙ К ТРЕНИРОВКЕ
-    // -----------------------------------------------------------
+    // -----------------------------
+    // Комментарий к тренировке
+    // -----------------------------
     const hasTrainingNote = selectedProgram.trainingNote && selectedProgram.trainingNote.trim() !== '';
     const commentWrapper = createElement('div', 'comment-wrapper');
+
     const commentBtn = createElement('button', `btn comment-toggle-btn ${hasTrainingNote ? 'has-note' : ''}`);
-
-
-    commentBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 512 512"><title>Pen-to-square SVG Icon</title><path fill="currentColor" d="M471.6 21.7c-21.9-21.9-57.3-21.9-79.2 0l-30.1 30l97.9 97.9l30.1-30.1c21.9-21.9 21.9-57.3 0-79.2zm-299.2 220c-6.1 6.1-10.8 13.6-13.5 21.9l-29.6 88.8c-2.9 8.6-.6 18.1 5.8 24.6s15.9 8.7 24.6 5.8l88.8-29.6c8.2-2.7 15.7-7.4 21.9-13.5l167.3-167.4l-98-98zM96 64c-53 0-96 43-96 96v256c0 53 43 96 96 96h256c53 0 96-43 96-96v-96c0-17.7-14.3-32-32-32s-32 14.3-32 32v96c0 17.7-14.3 32-32 32H96c-17.7 0-32-14.3-32-32V160c0-17.7 14.3-32 32-32h96c17.7 0 32-14.3 32-32s-14.3-32-32-32z"/></svg>';
-
-    if (hasTrainingNote) {
-        const noteDisplay = createElement('p', 'comment-text-display', selectedProgram.trainingNote);
-        commentWrapper.append(noteDisplay);
-    }
-
+    commentBtn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg"  viewBox="0 0 512 512"><title>Pen-to-square SVG Icon</title><path fill="currentColor" d="M471.6 21.7c-21.9-21.9-57.3-21.9-79.2 0l-30.1 30l97.9 97.9l30.1-30.1c21.9-21.9 21.9-57.3 0-79.2zm-299.2 220c-6.1 6.1-10.8 13.6-13.5 21.9l-29.6 88.8c-2.9 8.6-.6 18.1 5.8 24.6s15.9 8.7 24.6 5.8l88.8-29.6c8.2-2.7 15.7-7.4 21.9-13.5l167.3-167.4l-98-98zM96 64c-53 0-96 43-96 96v256c0 53 43 96 96 96h256c53 0 96-43 96-96v-96c0-17.7-14.3-32-32-32s-32 14.3-32 32v96c0 17.7-14.3 32-32 32H96c-17.7 0-32-14.3-32-32V160c0-17.7 14.3-32 32-32h96c17.7 0 32-14.3 32-32s-14.3-32-32-32z"/></svg>`;
+    commentBtn.title = 'Комментарий к тренировке';
     commentBtn.addEventListener('click', () => {
         openCommentModal(
             selectedProgram.id,
             selectedProgram.trainingNote,
             'Комментарий к тренировке',
-            (newNote) => saveTrainingNote(selectedProgram.id, newNote)
+            (newNote, media) => saveTrainingNote(selectedProgram.id, newNote, media)
         );
     });
+
+    // Есть ли текст комментария или медиа к тренировке
+
+
+    if (hasTrainingNote) {
+        const noteContainer = createElement('div', 'training-note-display');
+
+        // 1. Текст комментария
+        if (selectedProgram.trainingNote && selectedProgram.trainingNote.trim() !== '') {
+            const noteText = createElement('p', 'comment-text-display', selectedProgram.trainingNote);
+            noteContainer.append(noteText);
+        }
+
+        // 2. Превью медиа (если есть)
+        if (selectedProgram.trainingMedia && selectedProgram.trainingMedia.length > 0) {
+            const mediaContainer = createElement('div', 'training-media-preview');
+            mediaContainer.style.display = 'flex';
+            mediaContainer.style.gap = '8px';
+            mediaContainer.style.marginTop = '5px';
+
+            selectedProgram.trainingMedia.forEach(file => {
+                if (file.type === 'photo') {
+                    // Фото → миниатюра
+                    const img = createElement('img');
+                    img.src = file.url;
+                    img.style.width = '40px';
+                    img.style.height = '40px';
+                    img.style.objectFit = 'cover';
+                    img.style.borderRadius = '5px';
+                    img.style.cursor = 'pointer';
+                    img.onclick = () => openPhotoFullScreen(file.url);
+                    mediaContainer.append(img);
+                } else if (file.type === 'video') {
+                    // Видео → постер (или иконка 🎥)
+                    const videoThumb = createElement('video');
+                    videoThumb.src = file.url;
+                    videoThumb.style.width = '40px';
+                    videoThumb.style.height = '40px';
+                    videoThumb.style.objectFit = 'cover';
+                    videoThumb.style.borderRadius = '5px';
+                    videoThumb.muted = true;
+                    videoThumb.addEventListener('click', () => {
+                        window.open(file.url, '_blank');
+                    });
+                    mediaContainer.append(videoThumb);
+                }
+            });
+
+            noteContainer.append(mediaContainer);
+        }
+
+        commentWrapper.append(noteContainer);
+    }
 
     commentWrapper.prepend(commentBtn);
     contentContainer.append(commentWrapper);
 
-    // -----------------------------------------------------------
-    // КНОПКА ЗАВЕРШЕНИЯ ТРЕНИРОВКИ
-    // -----------------------------------------------------------
+
+    // -----------------------------
+    // Кнопка "Завершить тренировку"
+    // -----------------------------
     const completeTrainingBtn = createElement('button', 'btn complete-training-btn', 'Завершить тренировку');
     completeTrainingBtn.addEventListener('click', () => {
         openConfirmModal('Завершить и сохранить тренировку в дневник?', async () => {
-            const exercisesToSave = selectedProgram.exercises
+            const exercisesToSave = (selectedProgram.exercises || [])
                 .filter(ex => ex.note || (ex.sets && ex.sets.some(set => set.weight || set.reps)))
                 .map(ex => ({ ...ex }));
 
@@ -1494,10 +1841,62 @@ function renderProgramDetailsPage() {
             }
         });
     });
-
     contentContainer.append(completeTrainingBtn);
+
+    // Итог
     root.append(contentContainer);
 }
+
+// =================================================================
+// Добавляем универсальную функцию full-screen просмотра
+// =================================================================
+
+
+// ✅ Универсальная функция full-screen медиа (фото или видео)
+function openMediaFullScreen(url, type = 'photo') {
+    const overlay = document.createElement('div');
+    overlay.className = 'media-fullscreen-overlay';
+    overlay.style.position = 'fixed';
+    overlay.style.top = '0';
+    overlay.style.left = '0';
+    overlay.style.width = '100vw';
+    overlay.style.height = '100vh';
+    overlay.style.backgroundColor = 'rgba(0,0,0,0.9)';
+    overlay.style.display = 'flex';
+    overlay.style.justifyContent = 'center';
+    overlay.style.alignItems = 'center';
+    overlay.style.zIndex = '9999';
+
+    // Если фото
+    if (type === 'photo') {
+        const img = document.createElement('img');
+        img.src = url;
+        img.style.maxWidth = '90%';
+        img.style.maxHeight = '90%';
+        img.style.borderRadius = '10px';
+        img.style.boxShadow = '0 0 20px rgba(255,255,255,0.2)';
+        overlay.appendChild(img);
+    }
+
+    // Если видео
+    if (type === 'video') {
+        const video = document.createElement('video');
+        video.src = url;
+        video.controls = true;
+        video.autoplay = true;
+        video.style.maxWidth = '90%';
+        video.style.maxHeight = '90%';
+        overlay.appendChild(video);
+    }
+
+    // Закрыть по клику на фон
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) overlay.remove();
+    });
+
+    document.body.appendChild(overlay);
+}
+
 
 
 
@@ -3280,7 +3679,41 @@ async function uploadFileToCloudinary(file) {
     return data.secure_url;  // ✅ строка
 }
 
+// -----------------------------------------------------------
+// Дополнительно: нужна функция загрузки с прогрессом
+// -----------------------------------------------------------
+async function uploadFileToCloudinaryWithProgress(file, onProgress) {
+    return new Promise((resolve, reject) => {
+        const url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/upload`;
 
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', url);
+
+        // 📊 Следим за прогрессом
+        xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable && typeof onProgress === 'function') {
+                const percent = Math.round((e.loaded / e.total) * 100);
+                onProgress(percent);
+            }
+        };
+
+        xhr.onload = () => {
+            if (xhr.status === 200) {
+                const data = JSON.parse(xhr.responseText);
+                resolve(data.secure_url);
+            } else {
+                reject(`Ошибка Cloudinary: ${xhr.status}`);
+            }
+        };
+
+        xhr.onerror = () => reject("Ошибка сети при загрузке");
+        xhr.send(formData);
+    });
+}
 
 
 // -----------------------------------------------------------
