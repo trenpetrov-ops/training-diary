@@ -105,6 +105,11 @@ let state = {
     selectedReportId: null, // Для редактирования
 };
 
+if (state.calendarYear === undefined) {
+    const today = new Date();
+    state.calendarYear = today.getFullYear();
+    state.calendarMonth = today.getMonth();
+}
 // =================================================================
 // 🌟 НОВАЯ ФУНКЦИЯ: DEBOUNCE (Устранение потери фокуса при вводе)
 // =================================================================
@@ -2116,7 +2121,26 @@ function openExerciseMenuModal(program, exercise) {
 // =================================================================
 function renderJournalPage() {
     const contentContainer = document.createElement('div');
+
+    // ✅ Автовыбор последнего цикла, если ничего не выбрано
+    if (!state.selectedJournalCategory && state.journal.length > 0) {
+        const lastRecord = [...state.journal].sort((a, b) => {
+            const [dA, mA, yA] = a.date.split('.').map(Number);
+            const [dB, mB, yB] = b.date.split('.').map(Number);
+            return new Date(yB, mB - 1, dB) - new Date(yA, mA - 1, dA);
+        })[0];
+        state.selectedJournalCategory = lastRecord.cycleName || 'Без цикла';
+    }
+
     contentContainer.id = 'journal-content';
+
+        // ✅ Если выбрана конкретная запись — показываем детальный просмотр
+        if (state.selectedJournalRecord) {
+            renderJournalRecordDetails(contentContainer);
+            root.append(contentContainer);
+            return;
+        }
+
     contentContainer.className = 'journal-page';
 
     if (state.currentMode === 'own' || (state.currentMode === 'personal' && state.selectedClientId === null)) {
@@ -2135,240 +2159,484 @@ function renderJournalPage() {
     const header = createElement('h3', null, 'Дневник тренировок');
     contentContainer.append(header);
 
-    // -----------------------------------------------------------
-    // ФИЛЬТР 1: ПО КАТЕГОРИЯМ (ЦИКЛАМ)
-    // -----------------------------------------------------------
-    const allCategories = [...new Set(state.journal.map(record => record.cycleName || 'Без цикла'))];
-    const categoryFilter = createElement('div', 'category-filter');
 
-    const createFilterButton = (name, value) => {
-        const btn = createElement('button', `filter-btn ${state.selectedJournalCategory === value ? 'active' : ''}`, name);
-        btn.addEventListener('click', () => {
-            const newCategory = state.selectedJournalCategory === value ? '' : value;
-            if (newCategory !== state.selectedJournalCategory) {
-                // Сбрасываем фильтр программы при смене цикла
-                state.selectedJournalProgram = '';
-            }
-            state.selectedJournalCategory = newCategory;
+ // Контейнер под календарь
+    const calendarContainer = createElement('div', 'calendar-container');
+    contentContainer.append(calendarContainer);
+
+    // После добавления calendarContainer
+    let calendarRecords = state.journal;
+
+    // фильтр по циклу
+    if (state.selectedJournalCategory) {
+        calendarRecords = calendarRecords.filter(r => r.cycleName === state.selectedJournalCategory);
+    }
+
+    // фильтр по программе
+    if (state.selectedJournalProgram) {
+        calendarRecords = calendarRecords.filter(r => r.programName === state.selectedJournalProgram);
+    }
+
+    renderCalendar(calendarContainer, calendarRecords);
+
+
+
+
+// ✅ 1. КАСТОМНЫЙ SELECT ДЛЯ ЦИКЛОВ
+const filterWrapper = createElement('div', 'journal-filters');
+const cycleBlock = createElement('div', 'filter-block');
+
+const cycleSelectWrapper = createElement('div', 'custom-select');
+const cycleSelectDisplay = createElement('div', 'select-display', state.selectedJournalCategory || 'Выберите цикл');
+const cycleArrow = createElement('span', 'select-arrow', '▾');
+cycleSelectDisplay.append(cycleArrow);
+
+const cycleOptionsList = createElement('ul', 'select-options');
+const allCategories = [...new Set(state.journal.map(r => r.cycleName || 'Без цикла'))];
+
+allCategories.forEach(category => {
+    const li = createElement('li', 'select-option', category);
+    if (state.selectedJournalCategory === category) {
+        li.classList.add('selected');
+        cycleSelectDisplay.childNodes[0].textContent = category;
+    }
+    li.addEventListener('click', () => {
+        state.selectedJournalCategory = category;
+        state.selectedJournalProgram = ''; // сбрасываем программы
+        render();
+    });
+    cycleOptionsList.append(li);
+});
+
+cycleSelectDisplay.addEventListener('click', (e) => {
+    e.stopPropagation();
+
+    const rect = cycleSelectWrapper.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+
+    cycleOptionsList.style.maxHeight = "200px"; // высота списка
+
+    if (spaceBelow < 200 && spaceAbove > spaceBelow) {
+        cycleOptionsList.classList.add('open-up');
+    } else {
+        cycleOptionsList.classList.remove('open-up');
+    }
+
+    cycleOptionsList.classList.toggle('open');
+    cycleArrow.classList.toggle('open');
+});
+
+document.addEventListener('click', () => {
+    cycleOptionsList.classList.remove('open');
+    cycleArrow.classList.remove('open');
+});
+
+cycleSelectWrapper.append(cycleSelectDisplay, cycleOptionsList);
+cycleBlock.append(cycleSelectWrapper);
+filterWrapper.append(cycleBlock);
+
+
+// ✅ 2. ЧЕКБОКС "ПОКАЗАТЬ ПРОГРАММЫ"
+const checkboxBlock = createElement('div', 'filter-block');
+checkboxBlock.innerHTML = `
+    <label class="checkbox-container">
+        <input type="checkbox" id="showPrograms" ${state.showPrograms ? 'checked' : ''}>
+        <span class="checkmark"></span>
+        Показать программы
+    </label>
+`;
+checkboxBlock.querySelector('input').addEventListener('change', e => {
+    state.showPrograms = e.target.checked;
+    if (!state.showPrograms) state.selectedJournalProgram = '';
+    render();
+});
+filterWrapper.append(checkboxBlock);
+
+
+// ✅ 3. КАСТОМНЫЙ SELECT ДЛЯ ПРОГРАММ
+const programBlock = createElement('div', 'filter-block');
+programBlock.style.display = state.showPrograms ? 'block' : 'none';
+
+const programSelectWrapper = createElement('div', 'custom-select');
+const programSelectDisplay = createElement('div', 'select-display', state.selectedJournalProgram || 'Выберите программу');
+const programArrow = createElement('span', 'select-arrow', '▾');
+programSelectDisplay.append(programArrow);
+
+const programOptionsList = createElement('ul', 'select-options');
+
+if (state.selectedJournalCategory) {
+    const programs = [...new Set(
+        state.journal.filter(r => r.cycleName === state.selectedJournalCategory)
+                     .map(r => r.programName)
+    )];
+    programs.forEach(prog => {
+        const li = createElement('li', 'select-option', prog);
+        if (state.selectedJournalProgram === prog) {
+            li.classList.add('selected');
+            programSelectDisplay.childNodes[0].textContent = prog;
+        }
+        li.addEventListener('click', () => {
+            state.selectedJournalProgram = prog;
             render();
         });
-        return btn;
-    };
-
-    // Кнопка "Все циклы" как обязательный начальный выбор
-    allCategories.forEach(category => {
-        categoryFilter.append(createFilterButton(category, category));
+        programOptionsList.append(li);
     });
-    contentContainer.append(categoryFilter);
+}
 
-    // -----------------------------------------------------------
-    // Блокируем отображение по умолчанию
-    // -----------------------------------------------------------
-    if (!state.selectedJournalCategory) {
-        contentContainer.append(createElement('div', 'muted', 'Выберите цикл, чтобы посмотреть записи.'));
-        root.append(contentContainer);
+programSelectDisplay.addEventListener('click', e => {
+    e.stopPropagation();
+
+    const rect = programSelectWrapper.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+
+    programOptionsList.style.maxHeight = "200px";
+
+    if (spaceBelow < 200 && spaceAbove > spaceBelow) {
+        programOptionsList.classList.add('open-up');
+    } else {
+        programOptionsList.classList.remove('open-up');
+    }
+
+    programOptionsList.classList.toggle('open');
+    programArrow.classList.toggle('open');
+});
+
+document.addEventListener('click', () => {
+    programOptionsList.classList.remove('open');
+    programArrow.classList.remove('open');
+});
+
+programSelectWrapper.append(programSelectDisplay, programOptionsList);
+programBlock.append(programSelectWrapper);
+filterWrapper.append(programBlock);
+
+// ✅ Добавляем в DOM
+contentContainer.append(filterWrapper);
+
+root.append(contentContainer);
+}
+
+
+// 📅 Простая функция генерации календаря
+function renderCalendar(container, journalRecords) {
+    container.innerHTML = '';
+
+    // 📅 Берём год и месяц из state
+    const year = state.calendarYear;
+    const month = state.calendarMonth;
+
+    // 🔹 Заголовок с навигацией
+    const calendarHeader = createElement('div', 'calendar-header');
+
+    const prevBtn = createElement('button', 'calendar-nav-btn', '◀');
+    prevBtn.addEventListener('click', () => {
+        state.calendarMonth--;
+        if (state.calendarMonth < 0) {
+            state.calendarMonth = 11;
+            state.calendarYear--;
+        }
+        render(); // Перерендер всей страницы
+    });
+
+    const nextBtn = createElement('button', 'calendar-nav-btn', '▶');
+    nextBtn.addEventListener('click', () => {
+        state.calendarMonth++;
+        if (state.calendarMonth > 11) {
+            state.calendarMonth = 0;
+            state.calendarYear++;
+        }
+        render();
+    });
+
+    const monthNames = [
+        'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+        'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
+    ];
+
+    const title = createElement('div', 'calendar-title', `${monthNames[month]} ${year}`);
+    calendarHeader.append(prevBtn, title, nextBtn);
+    container.append(calendarHeader);
+
+    // 🔹 Заголовки дней недели
+    const daysOfWeek = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+    const headerRow = createElement('div', 'calendar-row header');
+    daysOfWeek.forEach(day => {
+        headerRow.append(createElement('div', 'calendar-cell header-cell', day));
+    });
+    container.append(headerRow);
+
+    // 🔹 Сетка календаря
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const startOffset = (firstDay.getDay() + 6) % 7;
+    const totalDays = lastDay.getDate();
+
+    const grid = createElement('div', 'calendar-grid');
+    grid.style.display = 'grid';
+    grid.style.gridTemplateColumns = 'repeat(7, 1fr)';
+
+    // Пустые клетки до начала месяца
+    for (let i = 0; i < startOffset; i++) {
+        grid.append(createElement('div', 'calendar-cell empty'));
+    }
+
+    // 🔹 Прорисовка дней
+    for (let day = 1; day <= totalDays; day++) {
+        const dateStr = `${String(day).padStart(2, '0')}.${String(month + 1).padStart(2, '0')}.${year}`;
+        const dayRecords = journalRecords.filter(r => r.date === dateStr);
+
+        const cell = createElement('div', 'calendar-cell');
+        cell.innerHTML = `<div class="day-number">${day}</div>`;
+
+        // ✅ Подсветка текущей даты
+        const now = new Date();
+        if (
+            day === now.getDate() &&
+            month === now.getMonth() &&
+            year === now.getFullYear()
+        ) {
+            cell.classList.add('today');
+        }
+
+        // ✅ Если есть тренировки в этот день
+  if (dayRecords.length > 0) {
+      cell.classList.add('has-training');
+
+      // Название тренировок в ячейке
+      const label = createElement('div', 'training-label', dayRecords.map(r => r.programName).join(', '));
+      cell.append(label);
+
+      // Клик по ячейке
+        cell.addEventListener('click', (e) => {
+            e.stopPropagation();
+
+            // Убираем старый dropdown, если был
+            const old = document.querySelector('.training-dropdown');
+            if (old) old.remove();
+
+            // Если 1 тренировка — просто открыть
+            if (dayRecords.length === 1) {
+                state.selectedJournalRecord = dayRecords[0].id;
+                render();
+                return;
+            }
+
+            // Создаём список
+            const dropdown = document.createElement('ul');
+            dropdown.className = 'training-dropdown';
+
+            dayRecords.forEach((rec, i) => {
+                const li = document.createElement('li');
+                li.className = 'training-dropdown-item';
+                li.textContent = `${i + 1}) ${rec.programName}`;
+                li.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    state.selectedJournalRecord = rec.id;
+                    render();
+                });
+                dropdown.append(li);
+            });
+
+            document.body.append(dropdown);
+
+            // 📌 Умное позиционирование
+            const rect = cell.getBoundingClientRect();
+            const menuRect = dropdown.getBoundingClientRect();
+
+            let left = rect.left;
+            let top  = rect.bottom + 4; // по умолчанию снизу
+
+            // Если не помещается справа → сдвигаем влево
+            if (rect.left + menuRect.width > window.innerWidth) {
+                left = rect.right - menuRect.width;
+            }
+
+            // Если не помещается снизу → открываем вверх
+            if (rect.bottom + menuRect.height > window.innerHeight) {
+                top = rect.top - menuRect.height - 4;
+            }
+
+            // Применяем
+            dropdown.style.left = left + 'px';
+            dropdown.style.top  = top + 'px';
+        });
+
+
+document.addEventListener('click', () => {
+    const menu = document.querySelector('.training-dropdown');
+    if (menu) menu.remove();
+});
+
+  }
+
+
+        grid.append(cell);
+    }
+
+    container.append(grid);
+}
+
+
+// =================================================================
+// 🔥 новая страница с завершенными тренировками
+// =================================================================
+function renderJournalRecordDetails(container) {
+    const record = state.journal.find(r => r.id === state.selectedJournalRecord);
+    if (!record) {
+        state.selectedJournalRecord = null;
+        render();
         return;
     }
 
+    const backBtn = createElement('button', 'btn back-btn', '← Назад');
+    backBtn.addEventListener('click', () => {
+        state.selectedJournalRecord = null;
+        render();
+    });
 
-    // -----------------------------------------------------------
-    // ФИЛЬТР 2: ПО ПРОГРАММАМ (ВНУТРИ ВЫБРАННОГО ЦИКЛА)
-    // -----------------------------------------------------------
-    let programsInSelectedCycle = [];
-    if (state.selectedJournalCategory === 'all') {
-        // Если выбрано 'Все циклы', берем все программы
-        programsInSelectedCycle = state.journal.map(record => record.programName);
-    } else {
-        // Иначе, берем программы только для выбранного цикла
-        programsInSelectedCycle = state.journal
-            .filter(record => record.cycleName === state.selectedJournalCategory)
-            .map(record => record.programName);
-    }
+    container.append(backBtn);
 
-    const allPrograms = [...new Set(programsInSelectedCycle)];
+    // Заголовок
+// 🔹 Заголовок с редактированием даты
+const titleWrapper = createElement('div', 'record-header');
 
-    if (allPrograms.length > 0) {
-        const programFilter = createElement('div', 'category-filter sub-filter');
-        programFilter.style.marginTop = '10px';
+let dateElement = createElement('span', 'record-date', `${record.date}  — ${record.programName}`);
+const editBtn = createElement('button', 'edit-date-btn', '✏️');
 
-        const createProgramFilterButton = (name, value) => {
-            const btn = createElement('button', `filter-btn ${state.selectedJournalProgram === value ? 'active' : ''}`, name);
-            btn.addEventListener('click', () => {
-                state.selectedJournalProgram = state.selectedJournalProgram === value ? '' : value;
-                render();
-            });
-            return btn;
-        };
+titleWrapper.append(dateElement, editBtn);
+container.append(titleWrapper);
 
-        allPrograms.forEach(programName => {
-            programFilter.append(createProgramFilterButton(programName, programName));
-        });
-        contentContainer.append(programFilter);
-    }
+// 📌 Редактирование даты
+editBtn.addEventListener('click', () => {
+    // Преобразуем дату в формат YYYY-MM-DD для input type="date"
+    const [d, m, y] = record.date.split('.');
+    const input = createElement('input', 'date-input');
+    input.type = 'date';
+    input.value = `${y}-${m}-${d}`;
 
+    const saveBtn = createElement('button', 'btn save-date-btn', '✅');
+    const cancelBtn = createElement('button', 'btn cancel-btn', '❌');
 
-    // -----------------------------------------------------------
-    // СПИСОК ЗАПИСЕЙ ЖУРНАЛА (С ДВОЙНОЙ ФИЛЬТРАЦИЕЙ)
-    // -----------------------------------------------------------
-    const journalList = createElement('div', 'journal-list list-section');
+    titleWrapper.innerHTML = '';
+    titleWrapper.append(input, saveBtn, cancelBtn);
 
-    let filteredJournal = state.journal;
+    cancelBtn.addEventListener('click', () => {
+        titleWrapper.innerHTML = '';
+        titleWrapper.append(dateElement, editBtn);
+    });
 
-    // Фильтр по циклу
-    if (state.selectedJournalCategory && state.selectedJournalCategory !== 'all') {
-        filteredJournal = filteredJournal.filter(record =>
-            record.cycleName === state.selectedJournalCategory
-        );
-    }
+    saveBtn.addEventListener('click', async () => {
+        const newDate = input.value; // формата YYYY-MM-DD
+        const [year, month, day] = newDate.split('-');
+        const formatted = `${day}.${month}.${year}`;
 
-    // Фильтр по программе
-    if (state.selectedJournalProgram && state.selectedJournalProgram !== 'all') {
-        filteredJournal = filteredJournal.filter(record =>
-            record.programName === state.selectedJournalProgram
-        );
-    }
-
-    if (filteredJournal.length === 0) {
-        journalList.append(createElement('div', 'muted', 'Нет записей в дневнике, соответствующих фильтрам.'));
-    } else {
-        // Сортировка по дате и времени
-        filteredJournal.sort((a, b) => {
-            // Преобразование даты в формат YYYY-MM-DD для корректного создания Date
-            const datePartsA = a.date.split('.');
-            const formattedDateA = `${datePartsA[2]}-${datePartsA[1]}-${datePartsA[0]} ${a.time}`;
-            const dateA = new Date(formattedDateA);
-
-            const datePartsB = b.date.split('.');
-            const formattedDateB = `${datePartsB[2]}-${datePartsB[1]}-${datePartsB[0]} ${b.time}`;
-            const dateB = new Date(formattedDateB);
-
-            return dateB - dateA;
-        });
-
-        filteredJournal.forEach(record => {
-            const journalRecord = createElement('div', 'journal-record');
-            journalRecord.dataset.id = record.id;
-
-            const journalHeader = createElement('div', 'journal-header');
-            const dateText = createElement('h4', null, `${record.date} в ${record.time}`);
-
-            const deleteBtn = createElement('button', 'btn delete-btn');
-            deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><title>Ios-trash-outline SVG Icon</title><path d="M400 113.3h-80v-20c0-16.2-13.1-29.3-29.3-29.3h-69.5C205.1 64 192 77.1 192 93.3v20h-80V128h21.1l23.6 290.7c0 16.2 13.1 29.3 29.3 29.3h141c16.2 0 29.3-13.1 29.3-29.3L379.6 128H400v-14.7zm-193.4-20c0-8.1 6.6-14.7 14.6-14.7h69.5c8.1 0 14.6 6.6 14.6 14.7v20h-98.7v-20zm135 324.6v.8c0 8.1-6.6 14.7-14.6 14.7H186c-8.1 0-14.6-6.6-14.6-14.7v-.8L147.7 128h217.2l-23.3 289.9z" fill="currentColor"/><path d="M249 160h14v241h-14z" fill="currentColor"/><path d="M320 160h-14.6l-10.7 241h14.6z" fill="currentColor"/><path d="M206.5 160H192l10.7 241h14.6z" fill="currentColor"/></svg>';
-
-            deleteBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                openConfirmModal("Удалить эту запись из дневника?", async () => {
-                    await deleteDoc(doc(getUserJournalCollection(), record.id));
-                });
-            });
+        try {
+            await updateDoc(doc(getUserJournalCollection(), record.id), { date: formatted });
+            showToast('✅ Дата обновлена!');
+            render(); // обновляем экран
+        } catch (e) {
+            console.error(e);
+            showToast('❌ Ошибка обновления даты');
+        }
+    });
+});
 
 
+// 🔥 Кнопка удаления тренировки
+const deleteBtn = createElement('button', 'btn delete-record-btn', '🗑 Удалить тренировку');
+deleteBtn.addEventListener('click', () => {
+    openConfirmModal('Удалить эту тренировку?', async () => {
+        try {
+            await deleteDoc(doc(getUserJournalCollection(), record.id));
+            showToast('✅ Тренировка удалена');
+            state.selectedJournalRecord = null;
+            render();
+        } catch (error) {
+            console.error(error);
+            showToast('❌ Ошибка удаления');
+        }
+    });
+});
 
-            journalHeader.append(dateText, deleteBtn);
+container.append(deleteBtn);
 
-            const programName = createElement('div', 'journal-program-name', `${record.programName}`);
+    // 🔹 Комментарий к тренировке + медиа
+    if (record.comment || (record.trainingMedia?.length > 0)) {
+        const commentBlock = createElement('div', 'training-comment-block');
 
-            journalRecord.append(journalHeader, programName);
-
-            // -----------------------------------------------------------
-            // 🔥 УПРАЖНЕНИЯ (С НУМЕРАЦИЕЙ)
-            // -----------------------------------------------------------
-            (record.exercises || []).forEach((exercise, index) => {
-                const exerciseRow = createElement('div', 'journal-exercise-row');
-
-                // Добавлена нумерация
-                const exerciseName = createElement('div', 'journal-exercise-name', `${index + 1}. ${exercise.name}`);
-
-                const setsContainer = createElement('div', 'journal-sets');
-
-                (exercise.sets || []).forEach(set => {
-                    // Используем строгие проверки на наличие данных
-                    if (set.weight || set.reps) {
-                        const setSpan = createElement('span', null, `${set.weight || '0'}x${set.reps || '0'}`);
-                        setsContainer.append(setSpan);
-                    }
-                });
-
-                exerciseRow.append(exerciseName, setsContainer);
-
-                // Отображение комментария к упражнению, если он есть
-                if (exercise.note && exercise.note.trim() !== '') {
-                    const noteDisplay = createElement('p', 'journal-exercise-note', exercise.note);
-                    exerciseRow.append(noteDisplay);
+        if (record.comment) {
+            const commentText = createElement('p', 'comment-text', record.comment);
+            commentBlock.append(commentText);
+        }
+        if (record.trainingMedia && record.trainingMedia.length > 0) {
+            const mediaWrap = createElement('div', 'media-wrap');
+            record.trainingMedia.forEach(file => {
+                if (file.type === 'photo') {
+                    const img = createElement('img', 'media-thumb');
+                    img.src = file.url;
+                    img.onclick = () => openPhotoFullScreen(file.url);
+                    mediaWrap.append(img);
+                } else {
+                    const video = createElement('video', 'media-thumb');
+                    video.src = file.url;
+                    video.controls = true;
+                    mediaWrap.append(video);
                 }
-
-                journalRecord.append(exerciseRow);
             });
+            commentBlock.append(mediaWrap);
+        }
 
-            // -----------------------------------------------------------
-            // 🔥 КОММЕНТАРИЙ ТРЕНИРОВКИ
-            // -----------------------------------------------------------
-            const commentSection = createElement('div', 'comment-section');
-            const commentText = createElement('p', 'comment-text', record.comment || 'Нет комментария к тренировке.');
-
-            // Если есть комментарий, показываем его
-            if (record.comment && record.comment.trim() !== '') {
-                // Кнопка редактирования только для записей дневника
-                const editCommentBtn = createElement('button', 'btn edit-comment-btn', '✏️ Редактировать');
-                commentSection.append(commentText, editCommentBtn);
-
-                editCommentBtn.addEventListener('click', () => {
-                    // Скрываем текст и кнопку
-                    commentText.style.display = 'none';
-                    editCommentBtn.style.display = 'none';
-
-                    // Создаем поле редактирования
-                    const editInput = createElement('textarea', 'comment-edit-input');
-                    editInput.value = record.comment || '';
-                    editInput.placeholder = 'Добавьте комментарий...';
-
-                    const saveBtn = createElement('button', 'btn btn-primary btn-small', 'Сохранить');
-                    const cancelBtn = createElement('button', 'btn btn-secondary btn-small', 'Отмена');
-
-                    const controls = createElement('div', 'comment-edit-controls');
-                    controls.append(saveBtn, cancelBtn);
-
-                    commentSection.insertBefore(editInput, commentText);
-                    commentSection.insertBefore(controls, commentText);
-
-                    const stopEditing = () => {
-                        editInput.remove();
-                        controls.remove();
-                        commentText.style.display = 'block';
-                        editCommentBtn.style.display = 'block';
-                    };
-
-                    cancelBtn.addEventListener('click', stopEditing);
-
-                    saveBtn.addEventListener('click', async () => {
-                        const newComment = editInput.value.trim();
-                        const journalRef = doc(getUserJournalCollection(), record.id);
-                        try {
-                            await updateDoc(journalRef, { comment: newComment });
-                            showToast('Комментарий обновлен!');
-                            stopEditing();
-                            // Firebase listener обновит state.journal и вызовет render()
-                        } catch (error) {
-                            console.error('Ошибка обновления комментария:', error);
-                            showToast('Не удалось обновить комментарий.');
-                        }
-                    });
-                });
-            } else {
-                // Если комментария нет, просто показываем текст
-                commentSection.append(commentText);
-            }
-
-            // Добавление секции комментария в конце записи (после упражнений)
-            journalRecord.append(commentSection);
-
-            journalList.append(journalRecord);
-        });
+        container.append(commentBlock);
     }
 
-    contentContainer.append(journalList);
-    root.append(contentContainer);
+    // 🔹 Упражнения
+    record.exercises.forEach((exercise, index) => {
+        const block = createElement('div', 'exercise-block');
+        const exTitle = createElement('h4', null, `${index + 1}. ${exercise.name}`);
+        block.append(exTitle);
+
+        const sets = createElement('div', 'sets-line');
+        (exercise.sets || []).forEach(s => {
+            if (s.weight || s.reps) {
+                const span = createElement('span', null, `${s.weight || 0}x${s.reps || 0}`);
+                sets.append(span);
+            }
+        });
+        block.append(sets);
+
+        if (exercise.note) {
+            const note = createElement('p', 'exercise-note', exercise.note);
+            block.append(note);
+        }
+
+        if (exercise.media && exercise.media.length > 0) {
+            const mediaWrap = createElement('div', 'media-wrap');
+            exercise.media.forEach(file => {
+                if (file.type === 'photo') {
+                    const img = createElement('img', 'media-thumb');
+                    img.src = file.url;
+                    img.onclick = () => openPhotoFullScreen(file.url);
+                    mediaWrap.append(img);
+                } else {
+                    const video = createElement('video', 'media-thumb');
+                    video.src = file.url;
+                    video.controls = true;
+                    mediaWrap.append(video);
+                }
+            });
+            block.append(mediaWrap);
+        }
+
+        container.append(block);
+    });
+
+
+
+    root.append(container);
 }
+
 
 
 // =================================================================
@@ -4555,7 +4823,10 @@ function render() {
         renderProgramDetailsPage();
     } else if (state.currentPage === 'journal') {
         renderJournalPage();
-    } else if (state.currentPage === 'supplements') {
+    }  else if (state.currentPage === 'journalRecordDetails') {
+              renderJournalRecordDetails();
+
+    }else if (state.currentPage === 'supplements') {
         renderSupplementsPage();
     } else if (state.currentPage === 'reports') {
         renderReportsPage();
