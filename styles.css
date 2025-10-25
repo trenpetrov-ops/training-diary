@@ -2058,6 +2058,401 @@ button.btn.btn-primary.add-exercise-btn {
 /* ========================================================== */
 /* СТРАНИЦА ДНЕВНИКА */
 /* ========================================================== */
+.journal-filters {
+    display: flex;
+    flex-direction: column; /* теперь блоки идут вертикально */
+    gap: 12px;
+    padding: 12px;
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 0 2px rgba(0,0,0,0.1);
+    margin-bottom: 12px;
+}
+
+.filter-block {
+    display: flex;
+    flex-direction: column;
+}
+
+select.cycle-select,
+select.program-select {
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+    font-size: 14px;
+    background: #f8f8f8;
+}
+
+/* ✅ Красивый чекбокс с зелёной галкой */
+.checkbox-container {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    font-size: 14px;
+    position: relative;
+    padding-left: 28px;
+}
+
+.checkbox-container input {
+    position: absolute;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.checkbox-container .checkmark {
+    position: absolute;
+    left: 0;
+    top: 1px;
+    height: 18px;
+    width: 18px;
+    border-radius: 4px;
+    transition: 0.2s;
+    background-color: #ffffff;
+    border: 1px solid #b2b1b1;
+}
+
+.checkbox-container input:checked ~ .checkmark {
+    background-color: #ffffff;
+    border: 1px solid #b2b1b1;
+}
+
+.checkmark:after {
+    content: "";
+    position: absolute;
+    display: none;
+}
+
+.checkbox-container input:checked ~ .checkmark:after {
+    display: block;
+}
+
+.checkbox-container .checkmark:after {
+    left: 3px;
+    top: -12px;
+    content: '✔';
+    color: #4CAF50;
+    font-size: 23px;
+}
+
+/* кастомный выпад список */
+/* Общий контейнер */
+.custom-select {
+    position: relative;
+    width: 100%;
+    cursor: pointer;
+    font-size: 15px;
+}
+
+/* Видимое поле */
+.select-display {
+    padding: 10px;
+    background: white;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* Список */
+/* Общий контейнер */
+.custom-select {
+    position: relative;
+    width: 100%;
+    cursor: pointer;
+    user-select: none;
+}
+
+/* Отображаемое выбранное значение */
+.select-display {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 14px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+}
+
+/* Стрелка */
+.select-arrow {
+    transition: transform 0.2s ease;
+}
+.select-arrow.open {
+    transform: rotate(180deg);
+}
+
+/* Список */
+.select-options {
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    transition: all 0.2s ease;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    margin-top: 4px;
+    position: absolute;
+    width: 100%;
+    z-index: 1000;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+/* Анимация выпадения */
+.select-options.open {
+    max-height: 200px;
+    opacity: 1;
+    overflow-y: auto;
+}
+
+/* Пункты */
+.select-option {
+    padding: 10px 12px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+/* Hover эффект */
+.select-option:hover {
+    background: #f2f2f7;
+}
+
+
+
+
+
+
+/* Убираем стандартные точки у списка */
+.custom-select .select-options {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+/* Общий стиль пункта списка */
+.custom-select .select-option {
+    padding: 10px 12px;
+    cursor: pointer;
+    display: flex;
+    justify-content: flex-start; /* текст слева, галка справа */
+    align-items: center;
+    font-size: 15px;
+    position: relative;
+}
+
+/* Маркер у НЕ выбранных пунктов — тире */
+.custom-select .select-option::before {
+    content: '-';              /* Можно заменить на '•' если хочешь точки */
+    color: #999;
+    margin-right: 8px;
+}
+
+/* Если выбран — убираем тире и ставим галку справа */
+.custom-select .select-option.selected::after {
+    content: '';
+}
+
+.custom-select .select-option.selected::before{
+    content: '✔';
+    color: #4CAF50;
+    font-weight: bold;
+    font-size: 16px;
+}
+
+
+
+.select-options {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    width: 100%;
+    background: white;
+    border-radius: 8px;
+    overflow-y: auto;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    opacity: 0;
+    pointer-events: none;
+    transition: 0.2s ease;
+    z-index: 10;
+    max-height: 200px;
+}
+
+.select-options.open {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* ✅ Открытие ВВЕРХ */
+.select-options.open-up {
+    top: auto;
+    bottom: 100%;
+    box-shadow: 0 -4px 8px rgba(0,0,0,0.15);
+}
+
+
+
+
+/* КАЛЕНДАРЬ*/
+.calendar-container {
+    margin: 15px 0;
+}
+
+.calendar {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.calendar-row,
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+}
+
+.calendar-cell {
+    padding: 8px;
+    text-align: center;
+    border: 1px solid #ccc;
+    min-height: 30px;
+    cursor: default;
+    font-size: 14px;
+    border-radius: 4px;
+}
+
+.calendar-cell.has-training {
+    background-color: #d4edda;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.calendar-cell.header-cell {
+    font-weight: bold;
+    background-color: #fcc8ae;
+    height: 46px;
+    min-height: 46px;
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+}
+
+
+/* 📅 Ячейка календаря — теперь фиксированной высоты и ширины */
+.calendar-cell {
+    position: relative;
+    width: 100%;
+    height: 69px;
+    min-height: 69px;
+    padding: 4px;
+    box-sizing: border-box;
+    overflow: hidden;
+    border: 1px solid #e5e5ea;
+    border-radius: 6px;
+    background: white;
+    display: flex;
+    flex-direction: column;
+}
+
+/* 📆 Число дня */
+.day-number {
+    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 2px;
+}
+
+/* 🏋️ Названия тренировок */
+.training-label {
+    font-size: 9px;
+    line-height: 1;
+    color: #082f4c;
+    word-break: break-word;
+    white-space: normal;
+    flex-grow: 1;
+    overflow: hidden;
+    font-style: italic;
+    font-weight: 500;
+    padding-top: 5px;
+}
+
+/* ⚡ Сегодня */
+.calendar-cell.today {
+    border: 2px solid #007aff;
+    border-radius: 8px;
+    position: relative;
+}
+
+/* Маленькая точка под числом */
+.calendar-cell.today .day-number::after {
+    content: '';
+    display: block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background-color: #007aff;
+    margin: 4px auto 0 auto;
+}
+/* открытие если 2 тренировки на одно число */
+.training-dropdown {
+    position: fixed;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    list-style: none;
+    margin: 0;
+    padding: 6px 0;
+    z-index: 9999;
+    width: 180px;
+}
+
+.training-dropdown-item {
+    padding: 8px 12px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.training-dropdown-item:hover {
+    background: #f2f2f7;
+}
+
+
+/* стиль для панели месяцев*/
+
+.calendar-header {
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    padding: 8px;
+    margin-bottom: 10px;
+}
+
+.calendar-nav-btn {
+    background: none;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+}
+
+.calendar-title {
+    font-weight: 600;
+    font-size: 16px;
+    margin: 0 31px;
+}
+
+/* МОДАЛКА КАЛЕНДАРЯ */
+
+
+
+
+
+
+
+
+
+
+
 .category-filter {
     display: flex;
     flex-wrap: wrap;
@@ -2140,6 +2535,155 @@ button.btn.btn-primary.add-exercise-btn {
     margin-bottom: 4px;
     font-weight: 100;
 }
+
+
+
+
+
+/* Контейнер подробной тренировки */
+
+.record-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 15px;
+}
+
+.edit-date-btn {
+    background: none;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+}
+
+.date-input {
+    padding: 4px 6px;
+    font-size: 14px;
+}
+
+.save-date-btn, .cancel-btn {
+    margin-left: 6px;
+    font-size: 14px;
+}
+
+.delete-record-btn {
+    width: 100%;
+    margin-top: 20px;
+    background-color: #ff3b30;
+    color: white;
+    padding: 10px;
+    border-radius: 8px;
+}
+
+
+
+
+
+
+
+.journal-record-details {
+    background-color: #ffffff;
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 0.5px 2px rgba(0, 0, 0, 0.08);
+    margin: 16px;
+}
+
+/* Кнопка Назад */
+.journal-record-details .back-btn {
+    background: none;
+    border: none;
+    color: #007aff;
+    font-size: 15px;
+    margin-bottom: 10px;
+    cursor: pointer;
+}
+
+.journal-record-details .back-btn:hover {
+    text-decoration: underline;
+}
+
+/* Заголовок (Дата – Программа) */
+.journal-record-details h3 {
+    font-size: 17px;
+    font-weight: 600;
+    margin: 0 0 15px;
+    text-align: center;
+}
+
+/* Комментарий к тренировке */
+.training-comment-block {
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 12px;
+    margin-bottom: 16px;
+}
+
+.training-comment-block .comment-text {
+    margin: 0 0 10px;
+    font-size: 14px;
+    color: #333;
+}
+
+/* Упражнение */
+.exercise-block {
+    border-top: 1px solid #e5e5ea;
+    padding: 12px 0;
+}
+
+.exercise-block h4 {
+    font-size: 15px;
+    margin-bottom: 6px;
+    font-weight: 600;
+}
+
+/* Подходы */
+.sets-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.sets-line span {
+    background: #e5e5ea;
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 14px;
+}
+
+/* Комментарий к упражнению */
+.exercise-note {
+    font-size: 14px;
+    color: #555;
+    margin-bottom: 8px;
+}
+
+/* Медиа (фото / видео) */
+.media-wrap {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.media-thumb {
+    width: 80px;
+    height: 80px;
+    object-fit: cover;
+    border-radius: 8px;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.media-thumb:hover {
+    transform: scale(1.05);
+    transition: 0.2s;
+}
+
+
+
 
 
 
