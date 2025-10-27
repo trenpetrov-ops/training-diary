@@ -1,3 +1,7 @@
+
+
+
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import {
     getAuth,
@@ -90,6 +94,11 @@ let state = {
     selectedProgramIdForDetails: null,
     expandedExerciseId: null,
     editingSetId: null,
+    lastClickedExerciseId: null,
+    openSwipedExerciseId: null, // ID упражнения, у которого открыт свайп
+    openSide: null, // 'left' или 'right'
+
+
 
     // Журнал
     selectedJournalCategory: '',
@@ -127,6 +136,8 @@ document.addEventListener('gesturestart', function (e) {
     e.preventDefault();
 }, { passive: false });
 
+
+
 // =================================================================
 // 🌟 НОВАЯ ФУНКЦИЯ: DEBOUNCE (Устранение потери фокуса при вводе)
 // =================================================================
@@ -138,6 +149,7 @@ function debounce(func, delay) {
         timeout = setTimeout(() => func.apply(context, args), delay);
     };
 }
+
 
 
 function showToast(message) {
@@ -1418,11 +1430,142 @@ async function saveExerciseNote(programId, exerciseId, note, media = []) {
 }
 
 
+// ===============================
+// ✅ Новый менеджер свайпа
+// ===============================
+// ===============================
+// ✅ Глобальный менеджер свайпов
+// ===============================
+let __openSwipeRoot = null;
 
+function __closeSwipe(swipeRoot) {
+  if (!swipeRoot) return;
+  const content = swipeRoot.querySelector('.swipe-content');
+  if (!content) return;
+
+  content.style.transition = 'transform 200ms ease';
+  content.style.transform = 'translateX(0px)';
+  swipeRoot.classList.remove('open-left', 'open-right');
+
+  if (__openSwipeRoot === swipeRoot) __openSwipeRoot = null;
+
+  setTimeout(() => {
+    content.style.transition = '';
+  }, 220);
+}
+
+function closeAllSwipes() {
+  __closeSwipe(__openSwipeRoot);
+}
+
+// Закрываем свайпы при любом клике вне
+document.addEventListener('pointerdown', (e) => {
+  if (!__openSwipeRoot) return;
+  const path = e.composedPath ? e.composedPath() : [];
+  if (!path.includes(__openSwipeRoot)) {
+    __closeSwipe(__openSwipeRoot);
+    e.stopPropagation();
+  }
+}, true);
+
+// ===============================
+// ✅ Подключение свайпа
+// ===============================
+function attachSwipeActions(swipeRoot, selectedProgram, exercise) {
+  const content = swipeRoot.querySelector('.swipe-content');
+  const rightActions = swipeRoot.querySelector('.swipe-actions.right');
+
+  let startX = 0;
+  let currentX = 0;
+  let dragging = false;
+  let opened = false;
+  let ignoreSwipe = false;
+
+  const MAX_RIGHT = rightActions ? rightActions.offsetWidth || 120 : 120;
+  const OPEN_THRESHOLD = 40;
+
+  // ✏️ — Обработчик кнопки "редактировать"
+  rightActions?.querySelector('.action-edit')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeSwipe();
+    openEditExerciseModal(selectedProgram, exercise);
+  });
+
+  // 🗑 — Обработчик кнопки "удалить"
+  rightActions?.querySelector('.action-delete')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    closeSwipe();
+    openConfirmModal('Удалить упражнение?', async () => {
+      const progRef = doc(getUserProgramsCollection(), selectedProgram.id);
+      const filtered = selectedProgram.exercises.filter(ex => ex.id !== exercise.id);
+      await updateDoc(progRef, { exercises: filtered });
+      render();
+    });
+  });
+
+  // 👉 Функция закрытия свайпа
+  function closeSwipe() {
+    content.style.transform = '';
+    swipeRoot.classList.remove('open'); // <--- добавлено
+    opened = false;
+  }
+
+  // 👉 Функция открытия свайпа
+  function openSwipe() {
+    content.style.transform = `translateX(-${MAX_RIGHT}px)`;
+    swipeRoot.classList.add('open'); // <--- добавлено
+    opened = true;
+  }
+
+  // === Обработка свайпа ===
+   content.addEventListener('touchstart', (e) => {
+     // 🧠 если нажали по кнопке — свайп не активировать
+     if (e.target.closest('button') || e.target.closest('.menu-btn') || e.target.closest('svg')) {
+       ignoreSwipe = true;
+       return;
+     }
+     ignoreSwipe = false;
+     startX = e.touches[0].clientX;
+     dragging = true;
+   });
+
+   content.addEventListener('touchmove', (e) => {
+     if (!dragging || ignoreSwipe) return;
+     currentX = e.touches[0].clientX;
+     const deltaX = currentX - startX;
+
+     // Только свайп влево
+     if (deltaX < 0) {
+       e.preventDefault();
+       const translate = Math.max(deltaX, -MAX_RIGHT);
+       content.style.transform = `translateX(${translate}px)`;
+     }
+   });
+
+   content.addEventListener('touchend', () => {
+     if (ignoreSwipe) return;
+     dragging = false;
+     const deltaX = currentX - startX;
+
+     if (deltaX < -OPEN_THRESHOLD) {
+       openSwipe();
+     } else {
+       closeSwipe();
+     }
+   });
+
+   // Закрываем свайп, если нажали вне блока
+   document.addEventListener('click', (e) => {
+     if (opened && !swipeRoot.contains(e.target)) closeSwipe();
+   });
+ }
 // =================================================================
 // 🌟 ФУНКЦИЯ: Отображение деталей программы с упражнениями (исправлено)
 // =================================================================
 function renderProgramDetailsPage() {
+
+
+
 
     state.lastProgramsPage = 'programDetails';
 
@@ -1437,8 +1580,6 @@ function renderProgramDetailsPage() {
 
     const contentContainer = createElement('div', 'program-details-page');
     contentContainer.id = 'program-details-content';
-
-
 
     // Заголовок
     contentContainer.append(createElement('h3', null, selectedProgram.name));
@@ -1457,36 +1598,67 @@ function renderProgramDetailsPage() {
 
             const exerciseItem = createElement('div', 'exercise-item');
 
-            // Header упражнения
+            // 1. — СОЗДАЁМ HEADER (но НЕ добавляем в DOM напрямую)
             const exerciseHeader = createElement('div', `exercise-header ${isExpanded ? 'expanded' : ''}`);
 
+            exerciseHeader.addEventListener('click', () => {
+              state.expandedExerciseId =
+                state.expandedExerciseId === exercise.id ? null : exercise.id;
+              render();
+            });
+
             const exerciseTitle = createElement('div', 'exercise-title');
-            const exerciseNumber = createElement('span', 'exercise-number', `${index + 1}.`);
-            const exerciseName = createElement('span', 'exercise-name', exercise.name);
-            exerciseTitle.append(exerciseNumber, exerciseName);
+            exerciseTitle.append(
+                createElement('span', 'exercise-number', `${index + 1}.`),
+                createElement('span', 'exercise-name', exercise.name)
+            );
 
-            const controlButtons = createElement('div', 'control-buttons');
-
-            // Кнопка меню (⋮)
             const menuBtn = createElement('button', 'btn menu-btn');
             menuBtn.innerHTML = `
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">\n' +
-                                '    <circle cx="5" cy="12" r="2"></circle>\n' +
-                                '    <circle cx="12" cy="12" r="2"></circle>\n' +
-                                '    <circle cx="19" cy="12" r="2"></circle></svg>`;
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                    <circle cx="5" cy="12" r="2"/>
+                    <circle cx="12" cy="12" r="2"/>
+                    <circle cx="19" cy="12" r="2"/>
+                </svg>
+            `;
             menuBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 openExerciseMenuModal(selectedProgram, exercise);
             });
 
-            controlButtons.append(menuBtn);
-            exerciseHeader.append(exerciseTitle, controlButtons);
+            exerciseHeader.append(exerciseTitle, menuBtn);
 
-            // Клик по заголовку → раскрыть / свернуть подходы
-            exerciseHeader.addEventListener('click', () => {
-                state.expandedExerciseId = (state.expandedExerciseId === exercise.id ? null : exercise.id);
-                render();
-            });
+            // Клик по заголовку
+
+
+
+
+
+
+            // 2. — СОЗДАЁМ SWIPE ROOT
+            const swipeRoot = createElement('div', 'exercise-swipe');
+
+            // 👉 Только ПРАВАЯ зона (появляется при свайпе влево)
+            const rightActions = createElement('div', 'swipe-actions right');
+            rightActions.innerHTML = `
+              <button class="action-btn action-edit">✏️</button>
+              <button class="action-btn action-delete">🗑</button>
+            `;
+
+            // Контент, который ездит
+            const swipeContent = createElement('div', 'swipe-content');
+            swipeContent.append(exerciseHeader);
+
+            swipeRoot.append(rightActions, swipeContent);
+            exerciseItem.append(swipeRoot);
+
+             // 4️⃣ Подключаем свайп (только 1 раз!)
+                  attachSwipeActions(swipeRoot, selectedProgram, exercise);
+
+
+
+
+
 
             // Контейнер для подходов
             const setsContainer = createElement('div', `sets-container ${isExpanded ? 'expanded' : ''}`);
@@ -1563,7 +1735,7 @@ function renderProgramDetailsPage() {
                     return;
                 }
 
-                // ✅ используем новую, красивую модалку
+                // Новая модалка дублирования
                 openDuplicateSetModal("Дублировать предыдущий подход?", async () => {
                     const lastSet = currentExercise.sets[currentExercise.sets.length - 1];
                     currentExercise.sets.push({
@@ -1580,11 +1752,11 @@ function renderProgramDetailsPage() {
                 });
             });
 
-
             const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-note' : ''}`);
-            // карандаш
+            // карандаш — оставляю твой SVG как есть
             editNoteBtn.innerHTML = `
-                <svg xmlns="http://www.w3.org/2000/svg"  viewBox="0 0 512 512"><title>Pen-to-square SVG Icon</title><path fill="currentColor" d="M471.6 21.7c-21.9-21.9-57.3-21.9-79.2 0l-30.1 30l97.9 97.9l30.1-30.1c21.9-21.9 21.9-57.3 0-79.2zm-299.2 220c-6.1 6.1-10.8 13.6-13.5 21.9l-29.6 88.8c-2.9 8.6-.6 18.1 5.8 24.6s15.9 8.7 24.6 5.8l88.8-29.6c8.2-2.7 15.7-7.4 21.9-13.5l167.3-167.4l-98-98zM96 64c-53 0-96 43-96 96v256c0 53 43 96 96 96h256c53 0 96-43 96-96v-96c0-17.7-14.3-32-32-32s-32 14.3-32 32v96c0 17.7-14.3 32-32 32H96c-17.7 0-32-14.3-32-32V160c0-17.7 14.3-32 32-32h96c17.7 0 32-14.3 32-32s-14.3-32-32-32z"/></svg>`;
+
+                `;
             editNoteBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 openCommentModal(
@@ -1595,8 +1767,6 @@ function renderProgramDetailsPage() {
                 );
             });
 
-
-
             const bottomButtons = createElement('div', 'exercise-bottom-buttons');
             bottomButtons.style.display = 'flex';
             bottomButtons.style.gap = '6px';
@@ -1604,94 +1774,80 @@ function renderProgramDetailsPage() {
             setsContainer.append(bottomButtons);
 
             // Отображение комментария под подходами (в раскрытом виде)
-// ✅ Отображение комментария И медиа (фото/видео)
-if (isExpanded && (exercise.note || (exercise.media && exercise.media.length > 0))) {
+            if (isExpanded && (exercise.note || (exercise.media && exercise.media.length > 0))) {
+                const exerciseNoteContainer = createElement('div', 'exercise-note-display');
 
-    const exerciseNoteContainer = createElement('div', 'exercise-note-display');
+                // 1. Текст комментария
+                if (exercise.note && exercise.note.trim() !== '') {
+                    const noteText = createElement('p', 'comment-text', exercise.note);
+                    exerciseNoteContainer.append(noteText);
+                }
 
-    // 1. Текст комментария
-    if (exercise.note && exercise.note.trim() !== '') {
-        const noteText = createElement('p', 'comment-text', exercise.note);
-        exerciseNoteContainer.append(noteText);
-    }
+                // 2. Фото / Видео (иконки или миниатюры)
+                if (exercise.media && exercise.media.length > 0) {
+                    const mediaContainer = createElement('div', 'note-media-preview');
+                    mediaContainer.style.display = 'flex';
+                    mediaContainer.style.gап = '8px';
+                    mediaContainer.style.marginTop = '5px';
 
-    // 2. Фото / Видео (иконки или миниатюры)
-    if (exercise.media && exercise.media.length > 0) {
-        const mediaContainer = createElement('div', 'note-media-preview');
-        mediaContainer.style.display = 'flex';
-        mediaContainer.style.gap = '8px';
-        mediaContainer.style.marginTop = '5px';
+                    exercise.media.forEach(file => {
+                        if (file.type === 'photo') {
+                            const img = createElement('img');
+                            img.src = file.url;
+                            img.className = 'note-media-image';
+                            img.style.width = '40px';
+                            img.style.height = '40px';
+                            img.style.objectFit = 'cover';
+                            img.style.borderRadius = '5px';
+                            img.style.cursor = 'pointer';
+                            img.onclick = () => openPhotoFullScreen(file.url);
+                            mediaContainer.append(img);
+                        }
+                        if (file.type === 'video') {
+                            const videoThumb = createElement('video');
+                            videoThumb.src = file.url;
+                            videoThumb.className = 'note-media-video-thumb';
+                            videoThumb.muted = true;
+                            videoThumb.playsInline = true;
+                            videoThumb.style.width = '40px';
+                            videoThumb.style.height = '40px';
+                            videoThumb.style.objectFit = 'cover';
+                            videoThumb.style.borderRadius = '5px';
+                            videoThumb.style.cursor = 'pointer';
+                            videoThumb.onclick = () => openMediaFullScreen(file.url, 'video');
+                            mediaContainer.append(videoThumb);
+                        }
+                    });
 
-        exercise.media.forEach(file => {
-            // Если фото → показываем мини-превью
-            if (file.type === 'photo') {
-                const img = createElement('img');
-                img.src = file.url;
-                img.className = 'note-media-image';
-                img.style.width = '40px';
-                img.style.height = '40px';
-                img.style.objectFit = 'cover';
-                img.style.borderRadius = '5px';
-                img.style.cursor = 'pointer';
-                img.onclick = () => openPhotoFullScreen(file.url);
-                mediaContainer.append(img);
+                    exerciseNoteContainer.append(mediaContainer);
+                }
+
+                // Вставляем в DOM под подходами
+                setsContainer.append(exerciseNoteContainer);
             }
 
-            // Если видео → иконка 🎥
-           if (file.type === 'video') {
-               const videoThumb = createElement('video');
-               videoThumb.src = file.url;
-               videoThumb.className = 'note-media-video-thumb';
-               videoThumb.muted = true;           // чтобы не играл звук
-               videoThumb.playsInline = true;     // чтобы не открывался фулл-скрин на телефоне
-               videoThumb.style.width = '40px';
-               videoThumb.style.height = '40px';
-               videoThumb.style.objectFit = 'cover';
-               videoThumb.style.borderRadius = '5px';
-               videoThumb.style.cursor = 'pointer';
+            // ВАЖНО: добавляем только swipeRoot + summary + sets (без прямого повторного exerciseHeader)
+            exerciseItem.append(summarySetsContainer, setsContainer);
 
-               // При клике — открыть полноэкранный просмотр
-               videoThumb.onclick = () => openMediaFullScreen(file.url, 'video');
-
-               mediaContainer.append(videoThumb);
-           }
-        });
-
-        exerciseNoteContainer.append(mediaContainer);
-    }
-
-    // Вставляем в DOM под подходами
-    setsContainer.append(exerciseNoteContainer);
-}
-
-
-            exerciseItem.append(exerciseHeader, summarySetsContainer, setsContainer);
-
-            // ✅ Показывать комментарий под summarySets, даже если упражнение закрыто
+            // Показывать комментарий под summarySets, даже если упражнение закрыто
             if (!isExpanded && (exercise.note || (exercise.media && exercise.media.length > 0))) {
                 const collapsedNote = createElement('div', 'exercise-note-collapsed');
 
-                // только текст комментария
                 if (exercise.note && exercise.note.trim() !== '') {
                     const noteText = createElement('p', 'comment-text-collapsed', exercise.note);
                     collapsedNote.append(noteText);
                 }
 
-                // иконки медиа (если есть)
                 if (exercise.media && exercise.media.length > 0) {
                     const icons = createElement('span', 'media-icons-inline');
 
-                    // SVG для фото
                     const photoSVG = `
                         <svg xmlns="http://www.w3.org/2000/svg"  viewBox="0 0 24 24"><title>Camera-photo-solid SVG Icon</title><path fill="currentColor" fill-rule="evenodd" d="M7.5 4.586A2 2 0 0 1 8.914 4h6.172a2 2 0 0 1 1.414.586L17.914 6H19a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h1.086zM10 12a2 2 0 1 1 4 0a2 2 0 0 1-4 0m2-4a4 4 0 1 0 0 8a4 4 0 0 0 0-8" clip-rule="evenodd"/></svg>
                     `;
-
-                    // SVG для видео
                     const videoSVG = `
-                        <svg xmlns="http://www.w3.org/2000/svg"  viewBox="0 0 16 16"><title>Video-camera-16-solid SVG Icon</title><path fill="currentColor" d="M3 4a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h5a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm12 .75a.75.75 0 0 0-1.28-.53l-2 2a.75.75 0 0 0-.22.53v2.5c0 .199.079.39.22.53l2 2a.75.75 0 0 0 1.28-.53z"/></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg"  viewBox="0 0 16 16"><title>Video-camera-16-solid SVG Icon</title><path fill="currentColor" d="M3 4a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h5a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm12 .75a.75.75 0 0 0-1.28-.53л-2 2a.75.75 0 0 0-.22.53v2.5c0 .199.079.39.22.53л2 2a.75.75 0 0 0 1.28-.53z"/></svg>
                     `;
 
-                    // Проверяем наличие фото
                     const hasPhoto = exercise.media.some(m => m.type === 'photo' || /\.(jpg|jpeg|png|webp)$/i.test(m.url));
                     if (hasPhoto) {
                         const span = createElement('span', 'icon-photo');
@@ -1699,7 +1855,6 @@ if (isExpanded && (exercise.note || (exercise.media && exercise.media.length > 0
                         icons.append(span);
                     }
 
-                    // Проверяем наличие видео
                     const hasVideo = exercise.media.some(m => m.type === 'video' || /\.(mp4|mov|avi|webm)$/i.test(m.url));
                     if (hasVideo) {
                         const span = createElement('span', 'icon-video');
@@ -1710,10 +1865,8 @@ if (isExpanded && (exercise.note || (exercise.media && exercise.media.length > 0
                     collapsedNote.append(icons);
                 }
 
-
                 exerciseItem.append(collapsedNote);
             }
-
 
             exercisesListSection.append(exerciseItem);
         });
@@ -1738,7 +1891,8 @@ if (isExpanded && (exercise.note || (exercise.media && exercise.media.length > 0
 
     const commentBtn = createElement('button', `btn comment-toggle-btn ${hasTrainingNote ? 'has-note' : ''}`);
     commentBtn.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg"  viewBox="0 0 512 512"><title>Pen-to-square SVG Icon</title><path fill="currentColor" d="M471.6 21.7c-21.9-21.9-57.3-21.9-79.2 0l-30.1 30l97.9 97.9l30.1-30.1c21.9-21.9 21.9-57.3 0-79.2zm-299.2 220c-6.1 6.1-10.8 13.6-13.5 21.9l-29.6 88.8c-2.9 8.6-.6 18.1 5.8 24.6s15.9 8.7 24.6 5.8l88.8-29.6c8.2-2.7 15.7-7.4 21.9-13.5l167.3-167.4l-98-98zM96 64c-53 0-96 43-96 96v256c0 53 43 96 96 96h256c53 0 96-43 96-96v-96c0-17.7-14.3-32-32-32s-32 14.3-32 32v96c0 17.7-14.3 32-32 32H96c-17.7 0-32-14.3-32-32V160c0-17.7 14.3-32 32-32h96c17.7 0 32-14.3 32-32s-14.3-32-32-32z"/></svg>`;
+
+        `;
     commentBtn.title = 'Комментарий к тренировке';
     commentBtn.addEventListener('click', () => {
         openCommentModal(
@@ -1749,19 +1903,14 @@ if (isExpanded && (exercise.note || (exercise.media && exercise.media.length > 0
         );
     });
 
-    // Есть ли текст комментария или медиа к тренировке
-
-
     if (hasTrainingNote) {
         const noteContainer = createElement('div', 'training-note-display');
 
-        // 1. Текст комментария
         if (selectedProgram.trainingNote && selectedProgram.trainingNote.trim() !== '') {
             const noteText = createElement('p', 'comment-text-display', selectedProgram.trainingNote);
             noteContainer.append(noteText);
         }
 
-        // 2. Превью медиа (если есть)
         if (selectedProgram.trainingMedia && selectedProgram.trainingMedia.length > 0) {
             const mediaContainer = createElement('div', 'training-media-preview');
             mediaContainer.style.display = 'flex';
@@ -1770,7 +1919,6 @@ if (isExpanded && (exercise.note || (exercise.media && exercise.media.length > 0
 
             selectedProgram.trainingMedia.forEach(file => {
                 if (file.type === 'photo') {
-                    // Фото → миниатюра
                     const img = createElement('img');
                     img.src = file.url;
                     img.style.width = '40px';
@@ -1781,7 +1929,6 @@ if (isExpanded && (exercise.note || (exercise.media && exercise.media.length > 0
                     img.onclick = () => openPhotoFullScreen(file.url);
                     mediaContainer.append(img);
                 } else if (file.type === 'video') {
-                    // Видео → постер (или иконка 🎥)
                     const videoThumb = createElement('video');
                     videoThumb.src = file.url;
                     videoThumb.style.width = '40px';
@@ -1804,7 +1951,6 @@ if (isExpanded && (exercise.note || (exercise.media && exercise.media.length > 0
 
     commentWrapper.prepend(commentBtn);
     contentContainer.append(commentWrapper);
-
 
     // -----------------------------
     // Кнопка "Завершить тренировку"
