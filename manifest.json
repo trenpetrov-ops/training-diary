@@ -1,8 +1,9 @@
 {
   "name": "Training Diary",
   "short_name": "Diary",
-  "display": "standalone",
   "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#000000",
   "icons": [
@@ -18,3 +19,4 @@
     }
   ]
 }
+
