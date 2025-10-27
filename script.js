@@ -18,7 +18,8 @@ import {
     updateDoc,
     deleteDoc,
     onSnapshot,
-    collection
+    collection,
+    getDocs
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 // 🔥 ДОБАВЛЯЕМ ИМПОРТЫ ДЛЯ FIREBASE STORAGE
@@ -82,6 +83,7 @@ let state = {
     currentMode: null,
     currentPage: 'modeSelect',
     previousPage: 'programs',
+    lastProgramsPage: 'programs', // or 'programsInCycle' or 'programDetails'
 
     cycles: [],
     selectedCycleId: null,
@@ -103,6 +105,9 @@ let state = {
     // Отчеты
     reports: [],
     selectedReportId: null, // Для редактирования
+
+    // чтобы запомнить, какую программу мы хотим открыть после загрузки данных.
+    openProgramAfterLoad: null,
 };
 
 if (state.calendarYear === undefined) {
@@ -170,40 +175,44 @@ function toggleAppVisibility(isAuthenticated) {
 
 // --- ФУНКЦИИ FIREBASE ДЛЯ КОЛЛЕКЦИЙ ---
 
+
+// ✅ ЦИКЛЫ
 function getUserCyclesCollection() {
     if (state.currentMode === 'own') {
         return collection(db, `artifacts/${appId}/users/${userId}/cycles`);
     } else if (state.currentMode === 'personal' && state.selectedClientId) {
         return collection(db, `artifacts/${appId}/users/${userId}/clients/${state.selectedClientId}/cycles`);
     }
-    return collection(db, `artifacts/${appId}/users/${userId}/clients`); // Возврат к коллекции клиентов в режиме personal, если цикл не выбран
+    return null;
 }
 
+// ✅ ПРОГРАММЫ
 function getUserProgramsCollection() {
-    if (!state.selectedCycleId) {
-        return collection(db, `artifacts/${appId}/users/${userId}/dummy`);
-    }
+    if (!state.selectedCycleId) return null;
 
     if (state.currentMode === 'own') {
         return collection(db, `artifacts/${appId}/users/${userId}/cycles/${state.selectedCycleId}/programs`);
     } else if (state.currentMode === 'personal' && state.selectedClientId) {
         return collection(db, `artifacts/${appId}/users/${userId}/clients/${state.selectedClientId}/cycles/${state.selectedCycleId}/programs`);
     }
-    return collection(db, `artifacts/${appId}/users/${userId}/dummy`);
+    return null;
 }
 
-function getClientsCollection() {
-    return collection(db, `artifacts/${appId}/users/${userId}/clients`);
-}
-
+// ✅ ДНЕВНИК
 function getUserJournalCollection() {
     if (state.currentMode === 'own') {
         return collection(db, `artifacts/${appId}/users/${userId}/journal`);
     } else if (state.currentMode === 'personal' && state.selectedClientId) {
         return collection(db, `artifacts/${appId}/users/${userId}/clients/${state.selectedClientId}/journal`);
     }
-    return collection(db, `artifacts/${appId}/users/${userId}/journal_dummy`);
+    return null;
 }
+
+// ✅ КЛИЕНТЫ
+function getClientsCollection() {
+    return collection(db, `artifacts/${appId}/users/${userId}/clients`);
+}
+
 
 
 
@@ -226,18 +235,18 @@ function getSupplementPlanDocRef() {
 
 // 🔥 Коллекция для Отчетов, привязанная к циклу
 function getReportsCollection() {
-    if (!state.selectedCycleId) {
-        throw new Error("❌ Сначала нужно выбрать цикл, чтобы работать с отчетами.");
-    }
+    if (!state.selectedCycleId) return null;
 
     if (state.currentMode === 'own') {
         return collection(db, `artifacts/${appId}/users/${userId}/cycles/${state.selectedCycleId}/reports`);
     } else if (state.currentMode === 'personal' && state.selectedClientId) {
-        return collection(db, `artifacts/${appId}/users/${userId}/clients/${state.selectedClientId}/cycles/${state.selectedCycleId}/reports`);
+        return collection(db,
+            `artifacts/${appId}/users/${userId}/clients/${state.selectedClientId}/cycles/${state.selectedCycleId}/reports`
+        );
     }
-
-    return collection(db, `artifacts/${appId}/users/${userId}/reports_dummy`);
+    return null;
 }
+
 
 
 
@@ -319,6 +328,9 @@ function dateToInputFormat(dateString) {
     return '';
 }
 
+
+
+
 // =================================================================
 // 🌟 РЕНДЕР: КНОПКА СМЕНЫ РЕЖИМА
 // =================================================================
@@ -359,7 +371,7 @@ function renderClientsPage() {
     contentContainer.id = 'clients-content';
     contentContainer.className = 'clients-list-page';
 
-    renderModeChangeButton(contentContainer);
+
 
     const header = createElement('h3', null, 'список клиентов');
     contentContainer.append(header);
@@ -582,6 +594,9 @@ function openAddClientModal(onConfirm) {
 // 🔥 ФУНКЦИЯ: Отображение списка Тренировочных ЦИКЛОВ
 // =================================================================
 function renderCyclesPage() {
+
+    state.lastProgramsPage = 'programs';
+
     if (state.currentMode === 'personal' && state.selectedClientId === null) {
         renderClientsPage();
         return;
@@ -591,22 +606,7 @@ function renderCyclesPage() {
     contentContainer.id = 'cycles-content';
     contentContainer.className = 'programs-list-page';
 
-    // -----------------------------------------------------------
-    // Кнопка "Назад" к клиентам или смена режима
-    // -----------------------------------------------------------
-    if (state.currentMode === 'personal') {
-        const backToClientsBtn = createElement('button', 'btn back-btn', '← К клиентам');
-        backToClientsBtn.addEventListener('click', () => {
-            state.selectedClientId = null;
-            state.currentPage = 'programs';
-            state.selectedCycleId = null;
-            setupDynamicListeners();
-            render();
-        });
-        contentContainer.append(backToClientsBtn);
-    } else {
-        renderModeChangeButton(contentContainer);
-    }
+
 
     const headerText = state.currentMode === 'own' ? 'Личные циклы' :
         `Циклы клиента: ${state.clients.find(c => c.id === state.selectedClientId)?.name || 'Неизвестно'}`;
@@ -837,6 +837,8 @@ function openAddCycleModal(onConfirm) {
 // 🔥 ФУНКЦИЯ: Отображение программ внутри выбранного цикла
 // =================================================================
 function renderProgramsInCyclePage() {
+    state.lastProgramsPage = 'programsInCycle';
+
     const currentCycle = state.cycles.find(c => c.id === state.selectedCycleId);
 
     if (!currentCycle) {
@@ -850,18 +852,7 @@ function renderProgramsInCyclePage() {
     contentContainer.id = 'programs-content';
     contentContainer.className = 'programs-list-page';
 
-    // -----------------------------------------------------------
-    // Кнопка "Назад" к циклам
-    // -----------------------------------------------------------
-    const backButtonText = state.currentMode === 'own' ? '← К циклам' : `← К циклам клиента`;
-    const backButton = createElement('button', 'btn back-btn', backButtonText);
 
-    backButton.addEventListener('click', () => {
-        state.currentPage = 'programs';
-        state.selectedProgramIdForDetails = null;
-        render();
-    });
-    contentContainer.append(backButton);
 
     // Заголовок
     const header = createElement('h3', null, `${currentCycle.name} - программы`);
@@ -1420,6 +1411,9 @@ async function saveExerciseNote(programId, exerciseId, note, media = []) {
 // 🌟 ФУНКЦИЯ: Отображение деталей программы с упражнениями (исправлено)
 // =================================================================
 function renderProgramDetailsPage() {
+
+    state.lastProgramsPage = 'programDetails';
+
     const selectedProgram = state.programs.find(p => p.id === state.selectedProgramIdForDetails);
 
     if (!selectedProgram) {
@@ -1432,14 +1426,7 @@ function renderProgramDetailsPage() {
     const contentContainer = createElement('div', 'program-details-page');
     contentContainer.id = 'program-details-content';
 
-    // Назад
-    const backButton = createElement('button', 'btn back-btn', '← К программам цикла');
-    backButton.addEventListener('click', () => {
-        state.currentPage = 'programsInCycle';
-        state.selectedProgramIdForDetails = null;
-        render();
-    });
-    contentContainer.append(backButton);
+
 
     // Заголовок
     contentContainer.append(createElement('h3', null, selectedProgram.name));
@@ -1834,7 +1821,12 @@ if (isExpanded && (exercise.note || (exercise.media && exercise.media.length > 0
             };
 
             try {
-                await addDoc(getUserJournalCollection(), trainingRecord);
+                const journalCollection = (state.currentMode === 'personal' && state.selectedClientId)
+                    ? getClientJournalCollection()
+                    : getUserJournalCollection();
+
+                await addDoc(journalCollection, trainingRecord);
+
                 showToast('Тренировка сохранена в дневнике!');
                 state.currentPage = 'programsInCycle';
                 state.selectedProgramIdForDetails = null;
@@ -2122,6 +2114,12 @@ function openExerciseMenuModal(program, exercise) {
 function renderJournalPage() {
     const contentContainer = document.createElement('div');
 
+    if (state.currentMode === 'personal' && !state.selectedClientId) {
+        const msg = createElement('div', 'muted', 'Выберите клиента, чтобы просмотреть календарь.');
+        root.append(msg);
+        return;
+}
+
     // ✅ Автовыбор последнего цикла, если ничего не выбрано
     if (!state.selectedJournalCategory && state.journal.length > 0) {
         const lastRecord = [...state.journal].sort((a, b) => {
@@ -2130,6 +2128,18 @@ function renderJournalPage() {
             return new Date(yB, mB - 1, dB) - new Date(yA, mA - 1, dA);
         })[0];
         state.selectedJournalCategory = lastRecord.cycleName || 'Без цикла';
+    }
+
+    // ✅ Если выбран цикл в селекте — сразу делаем его активным
+    if (state.selectedJournalCategory) {
+        const currentCycle = state.cycles.find(c => c.name === state.selectedJournalCategory);
+        if (currentCycle && state.selectedCycleId !== currentCycle.id) {
+            state.selectedCycleId = currentCycle.id;
+            console.log('✅ Цикл активирован автоматически:', currentCycle.name, currentCycle.id);
+
+            // Обновляем подписку на программы и дневник
+            setupDynamicListeners();
+        }
     }
 
     contentContainer.id = 'journal-content';
@@ -2143,17 +2153,7 @@ function renderJournalPage() {
 
     contentContainer.className = 'journal-page';
 
-    if (state.currentMode === 'own' || (state.currentMode === 'personal' && state.selectedClientId === null)) {
-        renderModeChangeButton(contentContainer);
-    } else if (state.currentMode === 'personal' && state.selectedClientId) {
-        const backToClientsBtn = createElement('button', 'btn back-btn', '← К циклам');
-        backToClientsBtn.addEventListener('click', () => {
-            state.currentPage = 'programs';
-            state.selectedProgramIdForDetails = null;
-            render();
-        });
-        contentContainer.append(backToClientsBtn);
-    }
+
 
 
     const header = createElement('h3', null, 'Дневник тренировок');
@@ -2186,13 +2186,26 @@ function renderJournalPage() {
 const filterWrapper = createElement('div', 'journal-filters');
 const cycleBlock = createElement('div', 'filter-block');
 
+console.log("Циклы для селекта:", state.cycles);
+
 const cycleSelectWrapper = createElement('div', 'custom-select');
 const cycleSelectDisplay = createElement('div', 'select-display', state.selectedJournalCategory || 'Выберите цикл');
 const cycleArrow = createElement('span', 'select-arrow', '▾');
 cycleSelectDisplay.append(cycleArrow);
 
 const cycleOptionsList = createElement('ul', 'select-options');
-const allCategories = [...new Set(state.journal.map(r => r.cycleName || 'Без цикла'))];
+// ✅ 1. Получаем корректный список категорий (циклов) в зависимости от режима
+const allCategories = [
+    ...new Set(
+        state.cycles
+            .filter(c => {
+                if (state.currentMode === 'own') return true;            // Личные циклы
+                if (state.currentMode === 'personal') return c.clientId === state.selectedClientId; // Только циклы клиента
+            })
+            .map(c => c.name)
+    )
+];
+
 
 allCategories.forEach(category => {
     const li = createElement('li', 'select-option', category);
@@ -2202,7 +2215,20 @@ allCategories.forEach(category => {
     }
     li.addEventListener('click', () => {
         state.selectedJournalCategory = category;
-        state.selectedJournalProgram = ''; // сбрасываем программы
+        state.selectedJournalProgram = '';
+
+        // ✅ Найти цикл по имени и сразу установить его как выбранный
+        const foundCycle = state.cycles.find(c => c.name === category);
+        if (foundCycle) {
+            state.selectedCycleId = foundCycle.id;
+            console.log('✅ Цикл выбран из дневника:', foundCycle.name, foundCycle.id);
+        } else {
+            console.warn('⚠ Цикл не найден в state.cycles, но есть в journal', category);
+        }
+
+        // ✅ После выбора цепляем слушатели Firestore для программ этого цикла
+        setupDynamicListeners();
+
         render();
     });
     cycleOptionsList.append(li);
@@ -2318,29 +2344,36 @@ contentContainer.append(filterWrapper);
 root.append(contentContainer);
 }
 
-
-// 📅 Простая функция генерации календаря
+// ------------------------------------------------
+// 📅 ГЛАВНАЯ ФУНКЦИЯ — РЕНДЕР КАЛЕНДАРЯ
+// ------------------------------------------------
 function renderCalendar(container, journalRecords) {
     container.innerHTML = '';
 
-    // 📅 Берём год и месяц из state
+    if (state.calendarYear === undefined) {
+        state.calendarYear = new Date().getFullYear();
+        state.calendarMonth = new Date().getMonth();
+    }
+
     const year = state.calendarYear;
     const month = state.calendarMonth;
 
-    // 🔹 Заголовок с навигацией
+    // ------------------ ШАПКА КАЛЕНДАРЯ (месяц, стрелки) ------------------
     const calendarHeader = createElement('div', 'calendar-header');
 
-    const prevBtn = createElement('button', 'calendar-nav-btn', '◀');
+    const prevBtn = createElement('button', 'calendar-nav-btn');
+    prevBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M13.83 19a1 1 0 0 1-.78-.37l-4.83-6a1 1 0 0 1 0-1.27l5-6a1 1 0 0 1 1.54 1.28L10.29 12l4.32 5.36a1 1 0 0 1-.78 1.64"/></svg>`;
     prevBtn.addEventListener('click', () => {
         state.calendarMonth--;
         if (state.calendarMonth < 0) {
             state.calendarMonth = 11;
             state.calendarYear--;
         }
-        render(); // Перерендер всей страницы
+        render();
     });
 
-    const nextBtn = createElement('button', 'calendar-nav-btn', '▶');
+    const nextBtn = createElement('button', 'calendar-nav-btn');
+    nextBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M10 19a1 1 0 0 1-.64-.23a1 1 0 0 1-.13-1.41L13.71 12L9.39 6.63a1 1 0 0 1 .15-1.41a1 1 0 0 1 1.46.15l4.83 6a1 1 0 0 1 0 1.27l-5 6A1 1 0 0 1 10 19"/></svg>`;
     nextBtn.addEventListener('click', () => {
         state.calendarMonth++;
         if (state.calendarMonth > 11) {
@@ -2350,24 +2383,19 @@ function renderCalendar(container, journalRecords) {
         render();
     });
 
-    const monthNames = [
-        'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-        'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
-    ];
-
+    const monthNames = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
     const title = createElement('div', 'calendar-title', `${monthNames[month]} ${year}`);
+
     calendarHeader.append(prevBtn, title, nextBtn);
     container.append(calendarHeader);
 
-    // 🔹 Заголовки дней недели
-    const daysOfWeek = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+    // ------------------ ДНИ НЕДЕЛИ ------------------
+    const daysOfWeek = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
     const headerRow = createElement('div', 'calendar-row header');
-    daysOfWeek.forEach(day => {
-        headerRow.append(createElement('div', 'calendar-cell header-cell', day));
-    });
+    daysOfWeek.forEach(d => headerRow.append(createElement('div', 'calendar-cell header-cell', d)));
     container.append(headerRow);
 
-    // 🔹 Сетка календаря
+    // ------------------ СЕТКА ДНЕЙ ------------------
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
     const startOffset = (firstDay.getDay() + 6) % 7;
@@ -2377,12 +2405,12 @@ function renderCalendar(container, journalRecords) {
     grid.style.display = 'grid';
     grid.style.gridTemplateColumns = 'repeat(7, 1fr)';
 
-    // Пустые клетки до начала месяца
+    // Пустые ячейки в начале
     for (let i = 0; i < startOffset; i++) {
         grid.append(createElement('div', 'calendar-cell empty'));
     }
 
-    // 🔹 Прорисовка дней
+    // ------------------ Основной рендер дней ------------------
     for (let day = 1; day <= totalDays; day++) {
         const dateStr = `${String(day).padStart(2, '0')}.${String(month + 1).padStart(2, '0')}.${year}`;
         const dayRecords = journalRecords.filter(r => r.date === dateStr);
@@ -2390,99 +2418,282 @@ function renderCalendar(container, journalRecords) {
         const cell = createElement('div', 'calendar-cell');
         cell.innerHTML = `<div class="day-number">${day}</div>`;
 
-        // ✅ Подсветка текущей даты
+        // ✅ Сегодняшний день
         const now = new Date();
-        if (
-            day === now.getDate() &&
-            month === now.getMonth() &&
-            year === now.getFullYear()
-        ) {
+        if (day === now.getDate() && month === now.getMonth() && year === now.getFullYear()) {
             cell.classList.add('today');
         }
 
-        // ✅ Если есть тренировки в этот день
-  if (dayRecords.length > 0) {
-      cell.classList.add('has-training');
+        // ✅ Есть тренировки (завершённые / плановые)
+        if (dayRecords.length > 0) {
+            if (dayRecords.some(r => r.isPlanned)) cell.classList.add('planned');
+            if (dayRecords.some(r => !r.isPlanned)) cell.classList.add('has-training');
 
-      // Название тренировок в ячейке
-      const label = createElement('div', 'training-label', dayRecords.map(r => r.programName).join(', '));
-      cell.append(label);
+            const label = createElement('div', 'training-label', dayRecords.map(r => r.programName).join(', '));
+            cell.append(label);
 
-      // Клик по ячейке
-        cell.addEventListener('click', (e) => {
-            e.stopPropagation();
+            cell.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const old = document.querySelector('.training-dropdown');
+                if (old) old.remove();
 
-            // Убираем старый dropdown, если был
-            const old = document.querySelector('.training-dropdown');
-            if (old) old.remove();
-
-            // Если 1 тренировка — просто открыть
-            if (dayRecords.length === 1) {
-                state.selectedJournalRecord = dayRecords[0].id;
-                render();
-                return;
-            }
-
-            // Создаём список
-            const dropdown = document.createElement('ul');
-            dropdown.className = 'training-dropdown';
-
-            dayRecords.forEach((rec, i) => {
-                const li = document.createElement('li');
-                li.className = 'training-dropdown-item';
-                li.textContent = `${i + 1}) ${rec.programName}`;
-                li.addEventListener('click', (ev) => {
-                    ev.stopPropagation();
-                    state.selectedJournalRecord = rec.id;
+                if (dayRecords.length === 1 && !dayRecords[0].isPlanned) {
+                    state.selectedJournalRecord = dayRecords[0].id;
                     render();
-                });
-                dropdown.append(li);
+                    return;
+                }
+
+                openTrainingDropdown(cell, dayRecords);
             });
-
-            document.body.append(dropdown);
-
-            // 📌 Умное позиционирование
-            const rect = cell.getBoundingClientRect();
-            const menuRect = dropdown.getBoundingClientRect();
-
-            let left = rect.left;
-            let top  = rect.bottom + 4; // по умолчанию снизу
-
-            // Если не помещается справа → сдвигаем влево
-            if (rect.left + menuRect.width > window.innerWidth) {
-                left = rect.right - menuRect.width;
-            }
-
-            // Если не помещается снизу → открываем вверх
-            if (rect.bottom + menuRect.height > window.innerHeight) {
-                top = rect.top - menuRect.height - 4;
-            }
-
-            // Применяем
-            dropdown.style.left = left + 'px';
-            dropdown.style.top  = top + 'px';
-        });
-
-
-document.addEventListener('click', () => {
-    const menu = document.querySelector('.training-dropdown');
-    if (menu) menu.remove();
-});
-
-  }
-
+        } else {
+            // ✅ Пустая ячейка — планирование
+            cell.addEventListener('click', () => {
+                openPlanTrainingDropdown(cell, dateStr);
+            });
+        }
 
         grid.append(cell);
     }
 
     container.append(grid);
+
+    // ✅ Закрываем меню по клику вне
+    document.addEventListener('click', () => {
+        const menu = document.querySelector('.training-dropdown');
+        if (menu) menu.remove();
+    }, { once: true });
 }
 
+// ------------------------------------------------
+// 📌 Меню планирования тренировки в пустой ячейке
+// ------------------------------------------------
 
+function openPlanTrainingDropdown(cell, dateStr) {
+    // Убираем старое меню
+    const old = document.querySelector('.training-dropdown');
+    if (old) old.remove();
+
+    // 1️⃣ Определяем выбранный цикл (по названию из select-display)
+    let currentCycleName = state.selectedJournalCategory;
+    let currentCycle = state.cycles.find(c => c.name === currentCycleName);
+
+    // 2️⃣ Если цикл найден — используем его id
+    if (currentCycle) {
+        state.selectedCycleId = currentCycle.id;
+    }
+
+    // 3️⃣ Если всё ещё нет ID → предупреждаем
+    if (!state.selectedCycleId) {
+        showToast('Сначала выберите цикл');
+        return;
+    }
+
+    // ✅ Тянем программы из Firestore для этого цикла:
+    getDocs(getUserProgramsCollection()).then(programsSnap => {
+        const programList = programsSnap.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+
+        if (programList.length === 0) {
+            showToast('В этом цикле нет программ. Добавьте их в разделе "Программы".');
+            return;
+        }
+
+        const dropdown = document.createElement('ul');
+        dropdown.className = 'training-dropdown';
+
+        programList.forEach(program => {
+            const li = document.createElement('li');
+            li.className = 'training-dropdown-item';
+            li.textContent = program.name;
+            li.addEventListener('click', async () => {
+                await addDoc(getUserJournalCollection(), {
+                    date: dateStr,
+                    cycleName: currentCycleName,
+                    programName: program.name,
+                    isPlanned: true,
+                    exercises: []
+                });
+                dropdown.remove();
+                showToast('Тренировка запланирована!');
+            });
+            dropdown.append(li);
+        });
+
+        document.body.append(dropdown);
+         // ✅ 4. Умное позиционирование (вниз/вверх если не помещается)
+            smartPositionDropdown(dropdown, cell);
+
+            // ✅ 5. Закрытие при клике вне меню
+            setTimeout(() => {
+                document.addEventListener('click', function handler(e) {
+                    if (!dropdown.contains(e.target)) {
+                        dropdown.remove();
+                        document.removeEventListener('click', handler);
+                    }
+                });
+            }, 10);
+
+        const rect = cell.getBoundingClientRect();
+        dropdown.style.left = rect.left + 'px';
+        dropdown.style.top = rect.bottom + 'px';
+
+        // ✅ После вставки — проверяем границы
+        requestAnimationFrame(() => {
+            const menuRect = dropdown.getBoundingClientRect();
+
+            // 👉 Если вылезает вправо — сдвигаем влево
+            if (menuRect.right > window.innerWidth) {
+                dropdown.style.left = Math.max(5, rect.right - menuRect.width) + 'px';
+            }
+
+            // 👉 Если вылезает вниз — переносим вверх
+            if (menuRect.bottom > window.innerHeight) {
+                dropdown.style.top = Math.max(5, rect.top - menuRect.height) + 'px';
+            }
+        });
+
+
+
+    });
+}
+
+// ------------------------------------------------
+// // 📌 Меню выбора тренировки в занятой ячейке (запланированные или завершённые)
+// ------------------------------------------------
+
+function openTrainingDropdown(cell, dayRecords) {
+    // Удаляем старое меню
+    const old = document.querySelector('.training-dropdown');
+    if (old) old.remove();
+
+    const dropdown = document.createElement('ul');
+    dropdown.className = 'training-dropdown';
+
+    dayRecords.forEach(record => {
+        const li = document.createElement('li');
+        li.className = 'training-dropdown-item';
+        li.textContent = record.programName + (record.isPlanned ? ' (заплан.)' : '');
+
+        if (!record.isPlanned) {
+            // ✅ ЗАВЕРШЕННАЯ ТРЕНИРОВКА — ОТКРЫВАЕМ ЖУРНАЛ
+            li.addEventListener('click', () => {
+                state.selectedJournalRecord = record.id;  // это id записи дневника!
+                state.currentPage = 'journal';
+                render();
+            });
+        } else {
+            // ✅ ЗАПЛАНИРОВАННАЯ — ОТКРЫВАЕМ ПРОГРАММУ
+            li.addEventListener('click', () => {
+                const cycle = state.cycles.find(c => c.name === record.cycleName);
+                if (!cycle) {
+                    showToast('Цикл не найден, откройте его вручную.');
+                    return;
+                }
+                state.selectedCycleId = cycle.id;
+                state.currentPage = 'programsInCycle';
+
+                setTimeout(() => {
+                    const program = state.programs.find(p => p.name === record.programName);
+                    if (program) {
+                        state.selectedProgramIdForDetails = program.id;
+                        state.currentPage = 'programDetails';
+                    }
+                    render();
+                }, 300);
+            });
+        }
+
+        dropdown.append(li);
+    });
+
+    // Кнопка удаления только для запланированных
+    if (dayRecords.some(r => r.isPlanned)) {
+        const deleteLi = document.createElement('li');
+        deleteLi.className = 'training-dropdown-item delete';
+        deleteLi.textContent = '🗑 Удалить план';
+        deleteLi.addEventListener('click', async () => {
+            if (confirm('Удалить запланированную тренировку?')) {
+                for (const rec of dayRecords.filter(r => r.isPlanned)) {
+                    await deleteDoc(doc(getUserJournalCollection(), rec.id));
+                }
+                showToast('План удалён');
+                dropdown.remove();
+            }
+        });
+        dropdown.append(deleteLi);
+    }
+
+    // Показываем в DOM
+    document.body.append(dropdown);
+
+    // Позиция
+    const rect = cell.getBoundingClientRect();
+    dropdown.style.left = rect.left + 'px';
+    dropdown.style.top = rect.bottom + 'px';
+
+    // ✅ После вставки — проверяем границы
+    requestAnimationFrame(() => {
+        const menuRect = dropdown.getBoundingClientRect();
+
+        // 👉 Если вылезает вправо — сдвигаем влево
+        if (menuRect.right > window.innerWidth) {
+            dropdown.style.left = Math.max(5, rect.right - menuRect.width) + 'px';
+        }
+
+        // 👉 Если вылезает вниз — переносим вверх
+        if (menuRect.bottom > window.innerHeight) {
+            dropdown.style.top = Math.max(5, rect.top - menuRect.height) + 'px';
+        }
+    });
+
+    // Закрытие при клике вне
+    setTimeout(() => {
+        document.addEventListener('click', function handler(e) {
+            if (!dropdown.contains(e.target)) {
+                dropdown.remove();
+                document.removeEventListener('click', handler);
+            }
+        });
+    }, 10);
+}
+
+// =================================================================
+// 🔥 Универсальная функция позиционирования dropdown
+// =================================================================
+
+
+function smartPositionDropdown(dropdown, anchorElement) {
+    const rect = anchorElement.getBoundingClientRect();
+    const menuRect = dropdown.getBoundingClientRect();
+
+    let top = rect.bottom;
+    let left = rect.left;
+
+    // Если не помещается вниз — открываем вверх
+    if (rect.bottom + menuRect.height > window.innerHeight) {
+        top = rect.top - menuRect.height;
+    }
+
+    // Если dropdown вылезает справа — смещаем влево
+    if (left + menuRect.width > window.innerWidth) {
+        left = window.innerWidth - menuRect.width - 10;
+    }
+
+    // Если dropdown уходит влево за экран
+    if (left < 0) left = 10;
+
+    dropdown.style.top = top + 'px';
+    dropdown.style.left = left + 'px';
+    dropdown.style.opacity = 1;   // для плавного появления
+}
 // =================================================================
 // 🔥 новая страница с завершенными тренировками
 // =================================================================
 function renderJournalRecordDetails(container) {
+        root.innerHTML = '';
+
     const record = state.journal.find(r => r.id === state.selectedJournalRecord);
     if (!record) {
         state.selectedJournalRecord = null;
@@ -2808,14 +3019,14 @@ function generateCycleReportHtml(
             <title>Отчет: ${currentCycle.name}</title>
             <style>
                 /* Стили для печати (взяты из наших предыдущих исправлений для мобильной адаптации) */
-                body { 
-                    margin: 0; 
-                    padding: 10px; 
-                    font-family: Arial, sans-serif; 
-                    background-color: #fff; 
-                    width: 100%; 
+                body {
+                    margin: 0;
+                    padding: 10px;
+                    font-family: Arial, sans-serif;
+                    background-color: #fff;
+                    width: 100%;
                     box-sizing: border-box;
-                    font-size: 11px; 
+                    font-size: 11px;
                     line-height: 1.3;
                 }
                 .pdf-report-container { width: 100%; margin: 0 auto; }
@@ -2823,7 +3034,7 @@ function generateCycleReportHtml(
                 h1 { font-size: 1.6em; }
                 h3 { font-size: 1.2em; color: #333; border-bottom: 2px solid #007bff; padding-bottom: 5px; }
                 h4 { font-size: 1em; color: #007bff; margin: 0 0 5px 0; }
-                
+
                 table { width: 100%; border-collapse: collapse; margin-top: 5px; table-layout: auto; }
                 th, td { border: 1px solid #ccc; padding: 3px; text-align: center; vertical-align: top; box-sizing: border-box; }
                 th { background-color: #e9ecef; font-weight: 600; }
@@ -2833,16 +3044,16 @@ function generateCycleReportHtml(
                 .pdf-calendar-table th, .pdf-calendar-table td {
                     padding: 2px; min-width: 40px; max-width: 60px; word-break: break-word; line-height: 1.1;
                 }
-                .pdf-calendar-table th:first-child, .pdf-calendar-table td:first-child { 
+                .pdf-calendar-table th:first-child, .pdf-calendar-table td:first-child {
                     min-width: 50px; max-width: 50px; font-size: 0.8em; padding: 3px 1px;
                 }
-                .pdf-calendar-table th:nth-child(2), .pdf-calendar-table td:nth-child(2) { 
+                .pdf-calendar-table th:nth-child(2), .pdf-calendar-table td:nth-child(2) {
                     min-width: 30px; max-width: 30px; font-weight: bold;
                 }
                 .supplement-table-wrapper:not(:first-child) { margin-top: 15px; page-break-before: auto; }
 
                 /* Стили для дневника и программ */
-                .journal-record-block, .program-block { page-break-inside: avoid; margin-top: 15px; border: 1px solid #ddd; border-radius: 5px; padding: 5px; } 
+                .journal-record-block, .program-block { page-break-inside: avoid; margin-top: 15px; border: 1px solid #ddd; border-radius: 5px; padding: 5px; }
                 .report-journal-table th, .report-journal-table td,
                 .report-program-table th, .report-program-table td {
                     font-size: 0.8em; padding: 4px;
@@ -3273,7 +3484,7 @@ function createSupplementsCalendarHtml(planData, filteredSupplementsData) {
                 <tr>
                     <td style="font-weight: bold; background-color: #f8f8f8;">${formatDayAndMonth(dayRecord.date)}</td>
                     <td>${dayRecord.dayOfWeek || '—'}</td>
-                    
+
                     ${chunkedNames.map(supName => {
                 const dose = dayRecord.doses && dayRecord.doses[supName] ? dayRecord.doses[supName] : '';
                 return `<td style="font-size: 0.9em;">${dose || '—'}</td>`;
@@ -3322,7 +3533,7 @@ function createProgramsHtml(programsInCycle) {
             <div class="program-block" style="margin-top: 20px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9; page-break-inside: avoid;">
                 <h4 style="color: #007bff; margin: 0 0 10px 0; font-size: 1.1em;">${program.name}</h4>
                 <p style="margin: 0 0 5px 0;">Комментарий: ${program.comment || '—'}</p>
-                
+
                 ${hasExercises ? `
                     <table class="report-program-table" style="width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.85em;">
                         <thead>
@@ -3332,7 +3543,7 @@ function createProgramsHtml(programsInCycle) {
                             </tr>
                         </thead>
                         <tbody>
-                            ${program.exercises.map(ex => ` 
+                            ${program.exercises.map(ex => `
                                 <tr>
                                     <td style="padding: 5px; border: 1px solid #ccc; text-align: left;">${ex.name}</td>
                                     <td style="padding: 5px; border: 1px solid #ccc; text-align: center;">${ex.sets || '—'}x${ex.reps || '—'}</td>
@@ -4151,7 +4362,7 @@ function openProgressReportModal(reportData = null, isDuplicate = false) {
 // =================================================================
 function renderReportsPage() {
     const root = document.getElementById('root');
-    root.innerHTML = '';
+
 
     const contentContainer = createElement('div', 'reports-page');
     contentContainer.style.padding = '10px';
@@ -4686,85 +4897,71 @@ function unsubscribeAll() {
 }
 
 function setupDynamicListeners() {
-    unsubscribeAll(); // Отписываемся от старых слушателей
+    unsubscribeAll();
 
     if (!userId) return;
 
-    // 1. Слушаем клиентов
+    // 1. Клиенты
     if (state.currentMode === 'personal') {
-        clientsUnsubscribe = onSnapshot(getClientsCollection(), (snapshot) => {
-            state.clients = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            if (state.currentPage === 'programs' && state.selectedClientId === null) {
-                render();
-            }
-        });
-    } else {
-        state.clients = [];
-    }
-
-    // 2. Слушаем циклы
-    if (state.currentMode) {
-        const shouldListenToCycles = state.currentMode === 'own' || state.selectedClientId;
-
-        if (shouldListenToCycles) {
-            cyclesUnsubscribe = onSnapshot(getUserCyclesCollection(), (snapshot) => {
-                state.cycles = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                if (state.currentPage === 'programs') {
-                    render();
-                }
+        const clientsRef = getClientsCollection();
+        if (clientsRef) {
+            clientsUnsubscribe = onSnapshot(clientsRef, snapshot => {
+                state.clients = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                if (state.currentPage === 'programs' && !state.selectedClientId) render();
             });
         }
     }
 
-    // 3. Слушаем программы (если цикл выбран)
-    if (state.selectedCycleId) {
-        programsUnsubscribe = onSnapshot(getUserProgramsCollection(), (snapshot) => {
+    // 2. Циклы
+    const cyclesRef = getUserCyclesCollection();
+    if (cyclesRef) {
+        cyclesUnsubscribe = onSnapshot(cyclesRef, snapshot => {
+            state.cycles = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            if (state.currentPage === 'programs') render();
+        });
+    } else {
+        state.cycles = [];
+    }
+
+    // 3. Программы — ТОЛЬКО ЕСЛИ ЕСТЬ ВЫБРАННЫЙ ЦИКЛ
+    const programsRef = getUserProgramsCollection();
+    if (programsRef && state.selectedCycleId) {
+        programsUnsubscribe = onSnapshot(programsRef, snapshot => {
             state.programs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            if (state.currentPage === 'programsInCycle' || state.currentPage === 'programDetails' || state.currentPage === 'supplements') {
-                render();
-            }
+            if (['programsInCycle', 'programDetails', 'supplements', 'journal'].includes(state.currentPage)) render();
         });
-
-        // 🔥 План добавок для выбранного цикла
-        const supplementDocRef = getSupplementPlanDocRef();
-        if (supplementDocRef) {
-            supplementsUnsubscribe = onSnapshot(supplementDocRef, (docSnap) => {
-                if (docSnap.exists()) {
-                    state.supplementPlan = docSnap.data().supplementPlan || { supplements: [], data: [] };
-                } else {
-                    state.supplementPlan = { supplements: [], data: [] };
-                }
-
-                if (state.currentPage === 'supplements') {
-                    render();
-                }
-            });
-        }
-
-        // 🔥 Отчёты для выбранного цикла
-        reportsUnsubscribe = onSnapshot(getReportsCollection(), (snapshot) => {
-            state.reports = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            if (state.currentPage === 'reports') {
-                render();
-            }
-        });
-
-    } else {
-        state.programs = [];
-        state.supplementPlan = null;
-        state.reports = []; // Если цикл не выбран, отчёты пустые
     }
 
-    // 4. Слушаем журнал (если режим выбран)
-    if (state.currentMode) {
-        journalUnsubscribe = onSnapshot(getUserJournalCollection(), (snapshot) => {
+    // 4. Журнал
+    const journalRef = getUserJournalCollection();
+    if (journalRef) {
+        journalUnsubscribe = onSnapshot(journalRef, snapshot => {
             state.journal = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            if (state.currentPage === 'journal') {
-                render();
-            }
+            if (state.currentPage === 'journal') render();
         });
+    }
+
+    // 5. БАДы — только если выбран цикл
+    const supplementsRef = getSupplementPlanDocRef?.();
+    if (supplementsRef && state.selectedCycleId) {
+        supplementsUnsubscribe = onSnapshot(supplementsRef, docSnap => {
+            state.supplementPlan = docSnap.exists() ? docSnap.data() : { supplements: [], data: [] };
+            if (state.currentPage === 'supplements') render();
+        });
+    }
+
+    // 6. Отчёты — только если выбран цикл
+    if (state.selectedCycleId) {
+        const reportsRef = getReportsCollection();
+        if (reportsRef) {
+            reportsUnsubscribe = onSnapshot(reportsRef, snapshot => {
+                state.reports = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                if (state.currentPage === 'reports') render();
+            });
+        }
     }
 }
+
 
 // -----------------------------------------------------------
 // универсальную функция подтверждения удаления
@@ -4798,14 +4995,147 @@ function openConfirmModal(message, onConfirm) {
     });
 }
 
+// -----------------------------------------------------------
+//  функция Top Bar
+// -----------------------------------------------------------
+
+// Рендер верхней панели
+// ✅ ВЕРХНЯЯ ПАНЕЛЬ (стрелка + гамбургер + текст)
+function renderTopBar() {
+
+    const oldBar = document.querySelector('.top-bar');
+    const root = document.getElementById('root');
+    if (oldBar) oldBar.remove();
+
+    const topBar = document.createElement('div');
+    topBar.className = 'top-bar';
+
+    // ------- СТРЕЛКА НАЗАД (с текстом) -------
+    let showBack = false;
+    const backBtn = document.createElement('button');
+    backBtn.className = 'top-back-btn';
+
+    // ✅ 1. Если мы в циклах клиента — показать стрелку "к клиентам"
+        if (state.currentMode === 'personal' && state.currentPage === 'programs' && state.selectedClientId) {
+            backBtn.innerHTML = '← к клиентам';
+            backBtn.onclick = () => {
+                state.selectedClientId = null;
+                state.currentPage = 'programs'; // вернёмся в список клиентов
+                render();
+            };
+            showBack = true;
+        }
+
+    if (state.currentPage === 'programsInCycle') {
+        backBtn.innerHTML = '← к циклам';
+        backBtn.onclick = () => { state.currentPage = 'programs'; render(); };
+        showBack = true;
+    }
+
+    if (state.currentPage === 'programDetails') {
+        backBtn.innerHTML = '← к программам';
+        backBtn.onclick = () => { state.currentPage = 'programsInCycle'; render(); };
+        showBack = true;
+    }
+
+
+    if (showBack) topBar.appendChild(backBtn);
+
+    // ------- ГАМБУРГЕР (ВСЕГДА СПРАВА) -------
+    const burger = document.createElement('button');
+    burger.className = 'top-menu-btn';
+    burger.innerHTML = '☰';
+    burger.onclick = openMenuModal;
+    topBar.appendChild(burger);
+
+    root.prepend(topBar);
+}
+
+
+// Открытие меню
+// ✅ МЕНЮ ПРИ НАЖАТИИ НА ГАМБУРГЕР
+function openMenuModal() {
+    // удаляем старую модалку если осталась
+    const old = document.querySelector('.menu-overlay');
+    if (old) old.remove();
+
+    // затемнённый фон
+    const overlay = document.createElement('div');
+    overlay.className = 'menu-overlay';
+
+    // само модальное окно
+    const modal = document.createElement('div');
+    modal.className = 'menu-modal';
+
+    // SVG кнопка смены режима
+    const modeBtn = document.createElement('button');
+    modeBtn.className = 'menu-icon-btn';
+    modeBtn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24">
+            <path fill="currentColor" d="M12 21q-1.65 0-3.075-.637t-2.5-1.713l1.4-1.425q.825.8 1.875 1.288T12 19q2.5 0 4.25-1.75T18 13q0-2.5-1.75-4.25T12 7q-1.05 0-2.1.488T8.025 8.775L9.4 10.2l-6.4.2l.2-6.4l1.4 1.375Q6 4.275 7.625 3.638T11 3q3.35 0 5.675 2.325T19 11q0 3.35-2.325 5.675T12 19"/>
+        </svg>
+    `;
+    modeBtn.title = 'Сменить режим';
+    modeBtn.onclick = () => {
+        overlay.remove();
+        state.currentMode = null;
+        state.currentPage = 'modeSelect';
+        render();
+    };
+
+    // SVG кнопка выхода
+    const logoutBtn = document.createElement('button');
+    logoutBtn.className = 'menu-icon-btn';
+    logoutBtn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24">
+            <path fill="currentColor" d="M10 17v1.5q0 .625.438 1.062T11.5 20h7q.625 0 1.063-.438T20 18.5v-13q0-.625-.438-1.062T18.5 4h-7q-.625 0-1.062.438T10 5.5V7H8V5.5q0-1.25.875-2.125T11.5 2h7q1.25 0 2.125.875T21.5 5.5v13q0 1.25-.875 2.125T18.5 21h-7q-1.25 0-2.125-.875T8.5 18.5V17zm1-3l-4-4l4-4l1.4 1.425L10.825 9H17v2H10.825l1.575 1.575z"/>
+        </svg>
+    `;
+    logoutBtn.title = 'Выйти из аккаунта';
+    logoutBtn.onclick = async () => {
+        overlay.remove();
+        await signOut(auth);
+        showToast("Вы вышли.");
+    };
+
+    modal.append(modeBtn, logoutBtn);
+    overlay.append(modal);
+    document.body.append(overlay);
+
+    // Закрытие по клику по фону (не по модалке)
+    overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) {
+            overlay.remove();
+        }
+    });
+}
+
+
+
+
+
+
 
 // =================================================================
 // 🔄 ГЛАВНЫЙ РЕНДЕР: Определяет, что показать (ИСПРАВЛЕНО)
 // =================================================================
 
 function render() {
+
+
     const root = document.getElementById('root');
     root.innerHTML = ''; // Очистка
+
+
+        renderTopBar();
+
+
+
+
+    // ✅ Удаляем выпадающие меню (training-dropdown), если они остались открыты
+    const openDropdown = document.querySelector('.training-dropdown');
+    if (openDropdown) openDropdown.remove();
+
 
     // Сначала убеждаемся, что видимость экранов установлена корректно
     toggleAppVisibility(!!userId);
@@ -4825,6 +5155,7 @@ function render() {
         renderJournalPage();
     }  else if (state.currentPage === 'journalRecordDetails') {
               renderJournalRecordDetails();
+
 
     }else if (state.currentPage === 'supplements') {
         renderSupplementsPage();
@@ -4906,19 +5237,23 @@ if (authToggleBtn && authLoginBtn) {
 
 // 🔥 ОБРАБОТЧИК ДЛЯ КНОПКИ "ПРОГРАММЫ"
 document.getElementById('programs-btn')?.addEventListener('click', () => {
-    if (state.currentMode) {
-        if (state.currentPage !== 'programs' && state.currentPage !== 'programsInCycle' && state.currentPage !== 'programDetails') {
-            // Если выходим из других вкладок, возвращаемся на предыдущую страницу, сохраненную в previousPage
-            state.previousPage = state.currentPage; // Сохраняем перед сбросом
-            state.currentPage = 'programs';
-        } else {
-            // Если мы уже в разделе программ, переходим к спискам циклов/клиентов
-            state.currentPage = 'programs';
-            state.selectedProgramIdForDetails = null; // Сбрасываем детали
-        }
-        render();
+    if (!state.currentMode) return;
+
+    // Если мы уже в разделе программ — ничего не меняем
+    if (['programs', 'programsInCycle', 'programDetails'].includes(state.currentPage)) return;
+
+    // Переходим туда, где были в последний раз
+    if (state.lastProgramsPage === 'programDetails' && state.selectedProgramIdForDetails) {
+        state.currentPage = 'programDetails';
+    } else if (state.lastProgramsPage === 'programsInCycle' && state.selectedCycleId) {
+        state.currentPage = 'programsInCycle';
+    } else {
+        state.currentPage = 'programs'; // по умолчанию
     }
+
+    render();
 });
+
 
 // 🔥 ОБРАБОТЧИК ДЛЯ КНОПКИ "ДНЕВНИК"
 document.getElementById('journal-btn')?.addEventListener('click', () => {
@@ -4961,28 +5296,45 @@ document.getElementById('reports-btn')?.addEventListener('click', () => {
     }
 });
 
-// 🔥 НОВЫЕ ОБРАБОТЧИКИ ДЛЯ ЭКРАНА ВЫБОРА РЕЖИМА
-// ... (Код выбора режима без изменений) ...
+// 🔥 ОБРАБОТЧИК: СОБСТВЕННЫЕ ТРЕНИРОВКИ
 document.getElementById('select-own-mode')?.addEventListener('click', () => {
     state.currentMode = 'own';
     state.currentPage = 'programs';
+
+    // ✅ Полностью сбрасываем данные клиента/цикла
+    state.selectedClientId = null;
+    state.selectedCycleId = null;
+    state.selectedJournalCategory = null;
+    state.selectedJournalProgram = null;
+
     setupDynamicListeners();
     render();
 });
 
+// 🔥 ОБРАБОТЧИК: ПЕРСОНАЛЬНЫЕ (ТРЕНЕР)
 document.getElementById('select-personal-mode')?.addEventListener('click', () => {
     state.currentMode = 'personal';
     state.currentPage = 'programs';
-    state.selectedClientId = null; // Сброс клиента
+
+    // ✅ ОБЯЗАТЕЛЬНО сбрасываем прошлые выбранные циклы из "own"
+    state.selectedClientId = null;
+    state.selectedCycleId = null;
+    state.selectedJournalCategory = null;
+    state.selectedJournalProgram = null;
+
     setupDynamicListeners();
     render();
 });
 
-// 🔥 Кнопка ВЫХОДА на экране выбора режима
+// 🔥 ВЫХОД (Logout)
 document.getElementById('mode-logout-btn')?.addEventListener('click', async () => {
     try {
         await signOut(auth);
         state.currentMode = null;
+        state.selectedClientId = null;
+        state.selectedCycleId = null;
+        state.selectedJournalCategory = null;
+        state.selectedJournalProgram = null;
         showToast('Вы вышли из системы.');
     } catch (error) {
         console.error("Ошибка при выходе:", error);
