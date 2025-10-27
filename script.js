@@ -112,7 +112,20 @@ if (state.calendarYear === undefined) {
     state.calendarMonth = today.getMonth();
 }
 
+// Запрещаем двойной тап увеличения
+let lastTouchEnd = 0;
+document.addEventListener('touchend', function (e) {
+    const now = Date.now();
+    if (now - lastTouchEnd <= 300) {
+        e.preventDefault();
+    }
+    lastTouchEnd = now;
+}, { passive: false });
 
+// Запрещаем щипок (pinch zoom)
+document.addEventListener('gesturestart', function (e) {
+    e.preventDefault();
+}, { passive: false });
 
 // =================================================================
 // 🌟 НОВАЯ ФУНКЦИЯ: DEBOUNCE (Устранение потери фокуса при вводе)
