@@ -10,9 +10,8 @@ html, body {
 }
 html, body {
     touch-action: manipulation; /* Отключает жесты масштабирования */
-    overscroll-behavior: contain; 
+    overscroll-behavior: contain;
 }
-
 .container {
     display: flex !important;
     flex-direction: column;
@@ -3396,7 +3395,71 @@ button.btn.btn-delete-photo {
 
 
 
+/* ====== SWIPE ====== */
 
+.exercise-swipe {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background: #f5f5f5;
+  touch-action: pan-y;
+}
 
+/* === Кнопки справа (появляются при свайпе влево) === */
+.exercise-swipe .swipe-actions.right {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 10px;
+  background: #ffe8e8; /* мягкий фон */
+  z-index: 1; /* ниже контента */
+}
 
+/* === Контент упражнения (то, что двигается) === */
+.exercise-swipe .swipe-content {
+  position: relative;
+  z-index: 2; /* всегда поверх кнопок */
+  background: #fff;
+  width: 100%;
+  transform: translateX(0);
+  transition: transform 0.2s ease; /* плавное движение */
+  will-change: transform;
+  cursor: grab;
+}
 
+/* === Кнопки действий === */
+.action-btn {
+  border: none;
+  background: #fff;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 14px;
+  cursor: pointer;
+  min-width: 44px;
+  min-height: 36px;
+  transition: background 0.2s;
+}
+
+.action-btn:hover {
+  background: #eee;
+}
+
+/* === Когда свайп закрыт: клики под ним блокируются === */
+.exercise-swipe:not(.open) .swipe-actions {
+  pointer-events: none;
+}
+
+/* === Когда свайп открыт: кнопки кликабельны === */
+.exercise-swipe.open .swipe-actions {
+  pointer-events: auto;
+}
+
+/* === Безопасный переход между состояниями === */
+.exercise-swipe.open .swipe-content {
+  cursor: default;
+}
