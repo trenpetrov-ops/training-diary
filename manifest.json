@@ -1,6 +1,6 @@
 {
   "name": "Training Diary",
-  "short_name": "GymNote",
+  "short_name": "MeGym",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
