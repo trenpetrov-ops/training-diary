@@ -1472,22 +1472,25 @@ function attachSwipeActions(swipeRoot, selectedProgram, exercise) {
   const rightActions = swipeRoot.querySelector('.swipe-actions.right');
 
   let startX = 0;
+  let startY = 0;
   let currentX = 0;
   let dragging = false;
   let opened = false;
   let ignoreSwipe = false;
+  let hasMovedHorizontally = false;
 
   const MAX_RIGHT = rightActions ? rightActions.offsetWidth || 120 : 120;
   const OPEN_THRESHOLD = 40;
+  const DEAD_ZONE = 12; // 👈 зона нечувствительности (12px)
 
-  // ✏️ — Обработчик кнопки "редактировать"
+  // ✏️ — Кнопка "редактировать"
   rightActions?.querySelector('.action-edit')?.addEventListener('click', (e) => {
     e.stopPropagation();
     closeSwipe();
     openEditExerciseModal(selectedProgram, exercise);
   });
 
-  // 🗑 — Обработчик кнопки "удалить"
+  // 🗑 — Кнопка "удалить"
   rightActions?.querySelector('.action-delete')?.addEventListener('click', (e) => {
     e.stopPropagation();
     closeSwipe();
@@ -1499,62 +1502,84 @@ function attachSwipeActions(swipeRoot, selectedProgram, exercise) {
     });
   });
 
-  // 👉 Функция закрытия свайпа
   function closeSwipe() {
-    content.style.transform = '';
-    swipeRoot.classList.remove('open'); // <--- добавлено
+    content.style.transition = 'transform 200ms ease';
+    content.style.transform = 'translateX(0)';
+    swipeRoot.classList.remove('open');
     opened = false;
+    setTimeout(() => (content.style.transition = ''), 220);
   }
 
-  // 👉 Функция открытия свайпа
   function openSwipe() {
+    content.style.transition = 'transform 200ms ease';
     content.style.transform = `translateX(-${MAX_RIGHT}px)`;
-    swipeRoot.classList.add('open'); // <--- добавлено
+    swipeRoot.classList.add('open');
     opened = true;
+    setTimeout(() => (content.style.transition = ''), 220);
   }
 
   // === Обработка свайпа ===
-   content.addEventListener('touchstart', (e) => {
-     // 🧠 если нажали по кнопке — свайп не активировать
-     if (e.target.closest('button') || e.target.closest('.menu-btn') || e.target.closest('svg')) {
-       ignoreSwipe = true;
-       return;
-     }
-     ignoreSwipe = false;
-     startX = e.touches[0].clientX;
-     dragging = true;
-   });
+  content.addEventListener('touchstart', (e) => {
+    if (e.target.closest('button') || e.target.closest('.menu-btn') || e.target.closest('svg')) {
+      ignoreSwipe = true;
+      return;
+    }
+    ignoreSwipe = false;
+    dragging = true;
+    hasMovedHorizontally = false;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+  });
 
-   content.addEventListener('touchmove', (e) => {
-     if (!dragging || ignoreSwipe) return;
-     currentX = e.touches[0].clientX;
-     const deltaX = currentX - startX;
+  content.addEventListener('touchmove', (e) => {
+    if (!dragging || ignoreSwipe) return;
 
-     // Только свайп влево
-     if (deltaX < 0) {
-       e.preventDefault();
-       const translate = Math.max(deltaX, -MAX_RIGHT);
-       content.style.transform = `translateX(${translate}px)`;
-     }
-   });
+    const touch = e.touches[0];
+    const deltaX = touch.clientX - startX;
+    const deltaY = touch.clientY - startY;
 
-   content.addEventListener('touchend', () => {
-     if (ignoreSwipe) return;
-     dragging = false;
-     const deltaX = currentX - startX;
+    // 👉 Если движение по вертикали больше — игнорируем свайп
+    if (Math.abs(deltaY) > Math.abs(deltaX)) return;
 
-     if (deltaX < -OPEN_THRESHOLD) {
-       openSwipe();
-     } else {
-       closeSwipe();
-     }
-   });
+    // 👉 Если движение меньше DEAD_ZONE — не считаем свайпом
+    if (Math.abs(deltaX) < DEAD_ZONE) return;
 
-   // Закрываем свайп, если нажали вне блока
-   document.addEventListener('click', (e) => {
-     if (opened && !swipeRoot.contains(e.target)) closeSwipe();
-   });
- }
+    hasMovedHorizontally = true;
+
+    // Только влево
+    if (deltaX < 0) {
+      e.preventDefault();
+      const translate = Math.max(deltaX, -MAX_RIGHT);
+      content.style.transform = `translateX(${translate}px)`;
+    }
+  });
+
+  content.addEventListener('touchend', () => {
+    if (ignoreSwipe) return;
+    dragging = false;
+
+    // 👉 если движение было слишком маленьким — ничего не делаем (тап)
+    if (!hasMovedHorizontally) {
+      // если свайп открыт — закрываем при тапе
+      if (swipeRoot.classList.contains('open')) {
+        closeSwipe();
+      }
+      return;
+    }
+
+    const deltaX = currentX - startX;
+    if (deltaX < -OPEN_THRESHOLD) {
+      openSwipe();
+    } else {
+      closeSwipe();
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (opened && !swipeRoot.contains(e.target)) closeSwipe();
+  });
+}
+
 // =================================================================
 // 🌟 ФУНКЦИЯ: Отображение деталей программы с упражнениями (исправлено)
 // =================================================================
