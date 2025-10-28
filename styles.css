@@ -221,19 +221,6 @@ button:active {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 /* ========================================================== */
 /* ЗАГОЛОВКИ И КНОПКИ (iOS BUTTONS & HEADERS) */
 /* ========================================================== */
@@ -3437,10 +3424,6 @@ button.btn.btn-delete-photo {
 
 
 
-
-
-
-
 /* ====== SWIPE ====== */
 
 .exercise-swipe {
@@ -3510,7 +3493,4 @@ button.btn.btn-delete-photo {
 .exercise-swipe.open .swipe-content {
   cursor: default;
 }
-
-
-
 
