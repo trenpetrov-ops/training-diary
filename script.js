@@ -1474,6 +1474,9 @@ function attachSwipeActions(swipeRoot, selectedProgram, exercise) {
   let startX = 0;
   let startY = 0;
   let currentX = 0;
+  let lastX = 0;
+  let lastTime = 0;
+  let velocity = 0;
   let dragging = false;
   let opened = false;
   let ignoreSwipe = false;
@@ -1481,16 +1484,17 @@ function attachSwipeActions(swipeRoot, selectedProgram, exercise) {
 
   const MAX_RIGHT = rightActions ? rightActions.offsetWidth || 120 : 120;
   const OPEN_THRESHOLD = 40;
-  const DEAD_ZONE = 12; // 👈 зона нечувствительности (12px)
+  const DEAD_ZONE = 12;
+  const VELOCITY_THRESHOLD = 0.35; // скорость взмаха
+  const BOUNCE_DISTANCE = 15; // насколько «отпружинивает» за предел
 
-  // ✏️ — Кнопка "редактировать"
+  // --- Кнопки ---
   rightActions?.querySelector('.action-edit')?.addEventListener('click', (e) => {
     e.stopPropagation();
     closeSwipe();
     openEditExerciseModal(selectedProgram, exercise);
   });
 
-  // 🗑 — Кнопка "удалить"
   rightActions?.querySelector('.action-delete')?.addEventListener('click', (e) => {
     e.stopPropagation();
     closeSwipe();
@@ -1503,22 +1507,35 @@ function attachSwipeActions(swipeRoot, selectedProgram, exercise) {
   });
 
   function closeSwipe() {
-    content.style.transition = 'transform 200ms ease';
+    content.style.transition = 'transform 200ms cubic-bezier(0.22, 1.61, 0.36, 1)';
     content.style.transform = 'translateX(0)';
     swipeRoot.classList.remove('open');
     opened = false;
-    setTimeout(() => (content.style.transition = ''), 220);
+    setTimeout(() => (content.style.transition = ''), 250);
   }
 
   function openSwipe() {
-    content.style.transition = 'transform 200ms ease';
+    content.style.transition = 'transform 200ms cubic-bezier(0.22, 1.61, 0.36, 1)';
     content.style.transform = `translateX(-${MAX_RIGHT}px)`;
     swipeRoot.classList.add('open');
     opened = true;
-    setTimeout(() => (content.style.transition = ''), 220);
+    setTimeout(() => (content.style.transition = ''), 250);
   }
 
-  // === Обработка свайпа ===
+  // 👇 Мягкое "отпружинивание" при чрезмерном свайпе
+  function bounceTo(position) {
+    content.style.transition = 'transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1)';
+    content.style.transform = `translateX(${position}px)`;
+    setTimeout(() => {
+      content.style.transition = 'transform 200ms ease-out';
+      content.style.transform = opened
+        ? `translateX(-${MAX_RIGHT}px)`
+        : 'translateX(0px)';
+      setTimeout(() => (content.style.transition = ''), 220);
+    }, 200);
+  }
+
+  // === Свайп ===
   content.addEventListener('touchstart', (e) => {
     if (e.target.closest('button') || e.target.closest('.menu-btn') || e.target.closest('svg')) {
       ignoreSwipe = true;
@@ -1529,49 +1546,79 @@ function attachSwipeActions(swipeRoot, selectedProgram, exercise) {
     hasMovedHorizontally = false;
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
+    lastX = startX;
+    lastTime = Date.now();
   });
 
   content.addEventListener('touchmove', (e) => {
     if (!dragging || ignoreSwipe) return;
-
     const touch = e.touches[0];
-    const deltaX = touch.clientX - startX;
+    currentX = touch.clientX;
+    const deltaX = currentX - startX;
     const deltaY = touch.clientY - startY;
 
-    // 👉 Если движение по вертикали больше — игнорируем свайп
     if (Math.abs(deltaY) > Math.abs(deltaX)) return;
-
-    // 👉 Если движение меньше DEAD_ZONE — не считаем свайпом
     if (Math.abs(deltaX) < DEAD_ZONE) return;
 
     hasMovedHorizontally = true;
+    if (e.cancelable) e.preventDefault();
 
-    // Только влево
-    if (deltaX < 0) {
-      e.preventDefault();
-      const translate = Math.max(deltaX, -MAX_RIGHT);
-      content.style.transform = `translateX(${translate}px)`;
+    const now = Date.now();
+    const dt = now - lastTime;
+    if (dt > 0) velocity = (currentX - lastX) / dt;
+    lastX = currentX;
+    lastTime = now;
+
+    let translate;
+
+    if (opened) {
+      translate = Math.min(BOUNCE_DISTANCE, Math.max(deltaX - MAX_RIGHT, -MAX_RIGHT - BOUNCE_DISTANCE));
+    } else {
+      translate = Math.min(BOUNCE_DISTANCE, Math.max(deltaX, -MAX_RIGHT - BOUNCE_DISTANCE));
     }
+
+    content.style.transform = `translateX(${translate}px)`;
   });
 
   content.addEventListener('touchend', () => {
     if (ignoreSwipe) return;
     dragging = false;
 
-    // 👉 если движение было слишком маленьким — ничего не делаем (тап)
+    const deltaX = currentX - startX;
+
+    // короткий тап
     if (!hasMovedHorizontally) {
-      // если свайп открыт — закрываем при тапе
-      if (swipeRoot.classList.contains('open')) {
-        closeSwipe();
-      }
+      if (opened) closeSwipe();
       return;
     }
 
-    const deltaX = currentX - startX;
-    if (deltaX < -OPEN_THRESHOLD) {
+    // “ФИЗИКА” — скорость
+    if (velocity < -VELOCITY_THRESHOLD) {
       openSwipe();
-    } else {
+      return;
+    }
+    if (velocity > VELOCITY_THRESHOLD) {
       closeSwipe();
+      return;
+    }
+
+    // Если ушёл слишком далеко влево или вправо — отпружиниваем
+    if (deltaX < -MAX_RIGHT - 10) {
+      bounceTo(-MAX_RIGHT - 10);
+      return;
+    }
+    if (deltaX > 10 && opened) {
+      bounceTo(10);
+      return;
+    }
+
+    // Стандартная логика
+    if (!opened && deltaX < -OPEN_THRESHOLD) {
+      openSwipe();
+    } else if (opened && deltaX > OPEN_THRESHOLD) {
+      closeSwipe();
+    } else {
+      opened ? openSwipe() : closeSwipe();
     }
   });
 
@@ -1579,6 +1626,7 @@ function attachSwipeActions(swipeRoot, selectedProgram, exercise) {
     if (opened && !swipeRoot.contains(e.target)) closeSwipe();
   });
 }
+
 
 // =================================================================
 // 🌟 ФУНКЦИЯ: Отображение деталей программы с упражнениями (исправлено)
