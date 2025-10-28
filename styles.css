@@ -17,9 +17,18 @@ html, body {
     display: flex !important;
     flex-direction: column;
     min-height: 100vh;
-    background-color: #f2f2f7;
-   
+    background-color: #f2f2f7;   
+}
 
+
+/* Для всех элементов с прокруткой */
+*::-webkit-scrollbar {
+  display: none;
+}
+
+* {
+  -ms-overflow-style: none; /* IE/Edge */
+  scrollbar-width: none; /* Firefox */
 }
 
 /* Контент выше навигации */
@@ -120,8 +129,8 @@ html, body {
     display: flex;
     height: 58px;
     background-color: #ffffff;
-    border-top: 1px solid #c7c7cc;
-    box-shadow: 2px 3px 4px 0px rgba(0, 0, 0, 0.05);
+    border-top: 0.5px solid #c7c7cc;
+    box-shadow: 2px 2px 4px 0px rgba(0, 0, 0, 0.05);
     z-index: 1000;
     width: 84%;
     margin: 0 auto 50px auto;
