@@ -1,3 +1,7 @@
+
+
+
+
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import {
     getAuth,
@@ -348,7 +352,19 @@ function dateToInputFormat(dateString) {
     return '';
 }
 
+// =================================================================
+// 🌟 нав панель
+// =================================================================
+const nav = document.querySelector('.navigation');
+const buttons = document.querySelectorAll('.nav-btn');
 
+buttons.forEach((btn, i) => {
+  btn.addEventListener('click', () => {
+    buttons.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    nav.dataset.active = i; // двигаем фон
+  });
+});
 
 
 // =================================================================
@@ -1627,7 +1643,6 @@ function attachSwipeActions(swipeRoot, selectedProgram, exercise) {
   });
 }
 
-
 // =================================================================
 // 🌟 ФУНКЦИЯ: Отображение деталей программы с упражнениями (исправлено)
 // =================================================================
@@ -1684,11 +1699,7 @@ function renderProgramDetailsPage() {
 
             const menuBtn = createElement('button', 'btn menu-btn');
             menuBtn.innerHTML = `
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                    <circle cx="5" cy="12" r="2"/>
-                    <circle cx="12" cy="12" r="2"/>
-                    <circle cx="19" cy="12" r="2"/>
-                </svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Bxs-edit-alt SVG Icon</title><path d="M16 2.012l3 3L16.713 7.3l-3-3zM4 14v3h3l8.299-8.287l-3-3zm0 6h16v2H4z" fill="currentColor"/></svg>
             `;
             menuBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
