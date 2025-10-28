@@ -2,6 +2,7 @@
 /* БАЗОВЫЕ СТИЛИ И СБРОСЫ (RESET) */
 /* ========================================================== */
 @import url('https://fonts.googleapis.com/css2?family=SF+Pro+Text:wght@400;500;600;700&display=swap');
+
 html, body {
     height: 100%;
     margin: 0;
@@ -16,6 +17,7 @@ html, body {
     flex-direction: column;
     min-height: 100vh;
     background-color: #f2f2f7;
+   
 
 }
 
@@ -24,7 +26,7 @@ html, body {
     flex: 1; /* растягивается на всю оставшуюся высоту */
     display: flex;
     flex-direction: column;
-    padding: 20px;
+    padding: 14px;
 }
 
 /* Верхняя панель */
@@ -115,51 +117,123 @@ html, body {
     left: 0;
     right: 0;
     display: flex;
-    height: 65px; /* Высота таб-бара */
+    height: 58px;
     background-color: #ffffff;
     border-top: 1px solid #c7c7cc;
-    box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.05);
+    box-shadow: 2px 3px 4px 0px rgba(0, 0, 0, 0.05);
     z-index: 1000;
+    width: 84%;
+    margin: 0 auto 16px auto;
+    border-radius: 50px;
+     justify-content: space-around;
+      align-items: center;
+      overflow: hidden;
 }
+
+
+
+
 
 .nav-btn {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    border: none;
-    background: none;
-    cursor: pointer;
-    font-size: 10px;
-    font-weight: 500;
-    color: #8e8e93; /* Стандартный серый */
-    padding: 0;
-    transition: color 0.2s ease;
+ flex: 1;
+  position: relative;
+  background: transparent;
+  border: none;
+  outline: none;
+  cursor: pointer;
+  color: #444;
+  transition: color 0.3s ease;
+  z-index: 2;
 }
 
-.nav-btn.active {
-    color: #007aff; /* Активный синий iOS */
-}
-
-/* Иконки можно заменить на SVG или Font Awesome, но здесь используем текст */
-.nav-btn::before {
-    font-size: 24px;
-    margin-bottom: 4px;
-}
 
 .nav-btn svg {
-    color: #767676;
-    width: 36px;
-    height: 36px;
+    color: #484747;
+    width: 30px;
+    height: 30px;
+    transition: transform 0.3s ease, color 0.3s ease;
 }
 .nav-btn.active svg {
-    color: #007aff;
-    width: 43px;
-    height: 43px;
+    color: #078bef;
+    width: 32px;
+    height: 32px;
+    transform: scale(1.15);
+
 }
 /*#programs-btn::before { content: '🏋️'; }*/
 /*#journal-btn::before { content: '📖'; }*/
+
+
+
+
+/* ========================================================== */
+/* НАВИГАЦИОННАЯ ПАНЕЛЬ (TAB BAR) */
+/* ========================================================== */
+
+
+
+
+
+.nav-btn .icon {
+  display: inline-block;
+  transition: transform 0.3s ease, color 0.3s ease;
+}
+
+/* Активная кнопка — синяя и с увеличением */
+.nav-btn.active .icon {
+  color: #078bef;
+  transform: scale(1.15);
+}
+
+/* Плавающий фон */
+.navigation::before {
+  content: '';
+  position: absolute;
+  height: 100%;
+  width: calc(100% / 4);
+  top: 0;
+  left: 0;
+  background: #e6e6e6;
+  border-radius: 36px;
+  z-index: 1;
+  transition: left 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* Перемещение подсветки */
+.navigation[data-active="0"]::before { left: 0; }
+.navigation[data-active="1"]::before { left: calc(100% / 4); }
+.navigation[data-active="2"]::before { left: calc(100% / 4 * 2); }
+.navigation[data-active="3"]::before { left: calc(100% / 4 * 3); }
+
+button {
+  outline: none;
+  box-shadow: none;
+  -webkit-tap-highlight-color: transparent; /* 🔹 Убирает синий фон при тапе */
+  -webkit-focus-ring-color: transparent;    /* 🔹 Убирает кольцо фокуса в Safari */
+  background-color: transparent;            /* если у тебя своя заливка */
+}
+
+button:focus,
+button:active {
+  outline: none;
+  box-shadow: none;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 /* ========================================================== */
 /* ЗАГОЛОВКИ И КНОПКИ (iOS BUTTONS & HEADERS) */
@@ -379,6 +453,13 @@ button.btn.menu-btn {
     color: #828282;
     border-radius: 8px;
 }
+
+button.btn.menu-btn svg {
+    width: 17px;
+    height: 17px;
+    color: #737373;
+}
+
 .modal-overlay-edit {
     display: flex;
     position: fixed;
@@ -1133,7 +1214,7 @@ button.btn.delete-media-btn{
     border-radius: 0 0 10px 10px;
     background-color: #f7f7f7;
     border-bottom: 0.5px solid #bababa;
-    font-size: 13px;
+    font-size: 12px;
     font-style: italic;
     color: #555;
     display:flex;
@@ -1154,9 +1235,9 @@ button.btn.delete-media-btn{
 }
 
 .media-icons-inline svg {
-    width: 16px;
-    height: 16px;
-    color: #7a7878;
+    width: 13px;
+    height: 13px;
+    color: #989696;
 }
 
 
@@ -1540,39 +1621,6 @@ body {
 
 
 
-/* ========================================================== */
-/* НАВИГАЦИОННАЯ ПАНЕЛЬ (TAB BAR) */
-/* ========================================================== */
-
-
-.nav-btn {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    border: none;
-    background: none;
-    cursor: pointer;
-    font-size: 10px;
-    font-weight: 500;
-    color: #8e8e93; /* Стандартный серый */
-    padding: 0;
-    transition: color 0.2s ease;
-}
-
-.nav-btn.active {
-    color: #007aff; /* Активный синий iOS */
-}
-
-/* Иконки можно заменить на SVG или Font Awesome, но здесь используем текст */
-.nav-btn::before {
-    font-size: 24px;
-    margin-bottom: 4px;
-}
-
-/*#programs-btn::before { content: '🏋️'; }*/
-/*#journal-btn::before { content: '📖'; }*/
 
 /* ========================================================== */
 /* ЗАГОЛОВКИ И КНОПКИ (iOS BUTTONS & HEADERS) */
@@ -1697,7 +1745,7 @@ div#program-details-content h3 {
     padding: 0;
     border: none;
     background-color: #ffffff;
-    border-radius: 8px;
+    border-radius: 10px;
 }
 
 .exercise-header {
@@ -3400,8 +3448,9 @@ button.btn.btn-delete-photo {
   position: relative;
   width: 100%;
   overflow: hidden;
-  background: #f5f5f5;
+  background: #f0f0f0;
   touch-action: pan-y;
+  border-radius: 10px 10px 0px 0px;
 }
 
 /* === Кнопки справа (появляются при свайпе влево) === */
@@ -3415,7 +3464,7 @@ button.btn.btn-delete-photo {
   justify-content: flex-end;
   gap: 8px;
   padding: 0 10px;
-  background: #ffe8e8; /* мягкий фон */
+  background: #f0f0f0; /* мягкий фон */
   z-index: 1; /* ниже контента */
 }
 
@@ -3462,3 +3511,7 @@ button.btn.btn-delete-photo {
 .exercise-swipe.open .swipe-content {
   cursor: default;
 }
+
+
+
+
