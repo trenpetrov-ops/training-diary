@@ -12,7 +12,6 @@ html, body {
     overscroll-behavior: contain;
 }
 
-
 .container {
     display: flex !important;
     flex-direction: column;
