@@ -2,6 +2,7 @@
 /* БАЗОВЫЕ СТИЛИ И СБРОСЫ (RESET) */
 /* ========================================================== */
 @import url('https://fonts.googleapis.com/css2?family=SF+Pro+Text:wght@400;500;600;700&display=swap');
+
 html, body {
     height: 100%;
     margin: 0;
@@ -11,15 +12,22 @@ html, body {
     touch-action: manipulation; /* Отключает жесты масштабирования */
     overscroll-behavior: contain;
 }
-
 .container {
     display: flex !important;
     flex-direction: column;
     min-height: 100vh;
-    background-color: #f2f2f7;   
+    background-color: #f2f2f7;
 }
 
+/* Для всех элементов с прокруткой */
+*::-webkit-scrollbar {
+  display: none;
+}
 
+* {
+  -ms-overflow-style: none; /* IE/Edge */
+  scrollbar-width: none; /* Firefox */
+}
 
 
 /* Контент выше навигации */
@@ -28,6 +36,7 @@ html, body {
     display: flex;
     flex-direction: column;
     padding: 14px;
+    padding-bottom: 100px;
 }
 
 /* Верхняя панель */
@@ -94,10 +103,6 @@ html, body {
 }
 
 
-
-
-
-
 /* Страница циклов */
 .programs-list-page {
     flex: 1; /* растягиваем список на всю доступную высоту */
@@ -120,19 +125,16 @@ html, body {
     display: flex;
     height: 58px;
     background-color: #ffffff;
-    border-top: 0.5px solid #c7c7cc;
-    box-shadow: 2px 2px 4px 0px rgba(0, 0, 0, 0.05);
+    border-bottom: 0.5px solid #e7e7e7;
+    border-top: 0.5px solid #e7e7e7;
     z-index: 1000;
     width: 84%;
-    margin: 0 auto 50px auto;
+    margin: 0 auto 40px auto;
     border-radius: 50px;
-     justify-content: space-around;
-      align-items: center;
-      overflow: hidden;
+    justify-content: space-around;
+    align-items: center;
+    overflow: hidden;
 }
-
-
-
 
 
 .nav-btn {
@@ -188,22 +190,22 @@ html, body {
 
 /* Плавающий фон */
 .navigation::before {
-  content: '';
-  position: absolute;
-  height: 100%;
-  width: calc(100% / 4);
-  top: 0;
-  left: 0;
-  background: #e6e6e6;
-  border-radius: 36px;
-  z-index: 1;
-  transition: left 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+    content: '';
+    position: absolute;
+    height: 52px;
+    width: calc(97% / 4);
+    top: 3px;
+    left: 3px;
+    background: #e6e6e6;
+    border-radius: 36px;
+    z-index: 1;
+    transition: left 0.4s cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 /* Перемещение подсветки */
-.navigation[data-active="0"]::before { left: 0; }
-.navigation[data-active="1"]::before { left: calc(100% / 4); }
-.navigation[data-active="2"]::before { left: calc(100% / 4 * 2); }
+.navigation[data-active="0"]::before { left: 3px; }
+.navigation[data-active="1"]::before { left: calc(103% / 4); }
+.navigation[data-active="2"]::before { left: calc(101% / 4 * 2); }
 .navigation[data-active="3"]::before { left: calc(100% / 4 * 3); }
 
 button {
@@ -219,6 +221,19 @@ button:active {
   outline: none;
   box-shadow: none;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -442,11 +457,7 @@ button.btn.menu-btn {
     border-radius: 8px;
 }
 
-button.btn.menu-btn svg {
-    width: 17px;
-    height: 17px;
-    color: #737373;
-}
+
 
 .modal-overlay-edit {
     display: flex;
@@ -1086,9 +1097,7 @@ div#auth-screen {
     padding: 0 5px;
 }
 
-.edit-note-btn.has-note {
-    color: #8e8e93; /* Фиолетовый, если комментарий есть */
-}
+
 button.btn.edit-note-btn.has-note svg {
     width: 17px;
     height: 17px;
@@ -1206,6 +1215,7 @@ button.btn.delete-media-btn{
     font-style: italic;
     color: #555;
     display:flex;
+    flex-direction: column;
 }
 .exercise-note-collapsed p {
     margin: 0;
@@ -1217,7 +1227,8 @@ button.btn.delete-media-btn{
 .media-icons-inline {
     display: inline-flex;
     gap: 4px;
-    margin-left: 6px;
+    margin-left: 5px;
+    margin-top: 5px;
     vertical-align: middle;
     align-items: flex-end;
 }
@@ -1249,9 +1260,9 @@ button.btn.delete-media-btn{
 
 .comment-wrapper {
     margin-top: 20px;
-    padding-bottom: 16px;
+    padding-bottom: 31px;
     display: flex;
-    flex-direction: row-reverse;
+    flex-direction: column;
     align-items: flex-start;
 }
 button.btn.comment-toggle-btn {
@@ -1272,11 +1283,22 @@ button.btn.comment-toggle-btn {
 }
 
 .training-note-display {
-    width: 100%;
+    width: 91%;
     background: #f7f7f7;
     border-radius: 8px;
-    border-bottom: 0.5px solid #bababa;
-    padding: 9px 16px;
+    border-bottom: 0.5px solid #e7e7e7;
+    border-right: 0.5px solid #e7e7e7;
+    padding: 10px 16px;
+    margin-top: 2px;
+}
+
+.comment-btn-group {
+    display: flex;
+    font-size: 13px;
+    align-items: flex-start;
+}
+span.comment-label {
+    padding-top: 7px;
 }
 button.btn.comment-toggle-btn.has-note svg {
     width: 26px;
@@ -1794,7 +1816,7 @@ div#program-details-content h3 {
 
 /* Строка подхода (Set Row) */
 .set-row {
-    padding: 0px 86px 6px 69px;
+    padding: 0px 86px 0px 69px;
     border-bottom: 0.5px solid #e5e5ea;
     font-size: 15px;
     display: flex;
@@ -1899,13 +1921,23 @@ div#program-details-content h3 {
 button.btn.delete-set-btn {
     background: none;
     color: #ed392f;
+    width:41px;
+    height:41px;
+    padding: 0;
 }
+button.btn.delete-set-btn svg{
+    display:block;
+}
+
 span.set-label {
     font-size: 13px;
 }
 span.set-display {
     margin-left: 15px;
     flex-grow: 1;
+}
+span.set-display small {
+    margin-right: 6px;
 }
 
 small.unit-label {
@@ -1952,15 +1984,13 @@ small.unit-label {
 }
 
 .add-set-btn {
-    display: block;
-    background: none;
     color: #078bef;
-    padding: 0px 78px;
+    padding: 8px 0px 8px 0px;
     font-size: 22px;
     border: none;
-    border-radius: 8px;
-    margin: 6px auto;
+    margin: 0px auto 0px 59px;
     font-weight: 600;
+    width: 50%;
 }
 
 .add-set-btn:active {
@@ -1996,12 +2026,14 @@ small.unit-label {
 
 
 /* КНОПКА КОМЕНТ УПР */
-button.btn.edit-note-btn {
-    width: 29px;
-    height: 29px;
-    margin-top: 4px;
-    margin-right: 9px;
+
+
+button.btn.edit-note-btn svg {
+    width: 17px;
+    height: 17px;
+    color: #737373;
 }
+
 /* кнопка редактировать и удалить  */
 .modal-remove-edit {
     background: #ffffff00;
@@ -3426,6 +3458,10 @@ button.btn.btn-delete-photo {
 
 
 
+
+
+
+
 /* ====== SWIPE ====== */
 
 .exercise-swipe {
@@ -3495,4 +3531,7 @@ button.btn.btn-delete-photo {
 .exercise-swipe.open .swipe-content {
   cursor: default;
 }
+
+
+
 
