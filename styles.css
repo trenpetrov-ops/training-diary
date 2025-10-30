@@ -12,6 +12,40 @@ html, body {
     touch-action: manipulation; /* Отключает жесты масштабирования */
     overscroll-behavior: contain;
 }
+/* Убираем focus-обводку и подсветку при тапе на мобильных */
+
+
+/* Убираем серый фон при тапе в Chrome/Safari */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Если элементы кликабельные DIV'ы */
+div[role="button"],
+div[tabindex] {
+  outline: none !important;
+}
+.program-card:focus,
+.program-card:focus-visible {
+  outline: none !important;
+  background-color: inherit !important;
+}
+/* убираем выделение при тапе и фокусе на кнопках */
+button {
+  -webkit-tap-highlight-color: transparent; /* убирает серый фон при тапе */
+  outline: none !important;                 /* убирает голубой контур */
+  box-shadow: none !important;              /* убирает внутренние тени Bootstrap */
+}
+
+/* на случай если у кнопок есть псевдо-классы от bootstrap/tailwind */
+button:focus,
+button:focus-visible,
+button:active {
+  outline: none !important;
+  box-shadow: none !important;
+
+}
+
 .container {
     display: flex !important;
     flex-direction: column;
@@ -125,7 +159,7 @@ html, body {
     display: flex;
     height: 58px;
     background-color: #ffffff;
-    border-bottom: 0.5px solid #e7e7e7;
+    border-bottom: 1.5px solid #e7e7e7;
     border-top: 0.5px solid #e7e7e7;
     z-index: 1000;
     width: 84%;
@@ -156,13 +190,7 @@ html, body {
     height: 30px;
     transition: transform 0.3s ease, color 0.3s ease;
 }
-.nav-btn.active svg {
-    color: #078bef;
-    width: 32px;
-    height: 32px;
-    transform: scale(1.15);
 
-}
 /*#programs-btn::before { content: '🏋️'; }*/
 /*#journal-btn::before { content: '📖'; }*/
 
@@ -247,6 +275,7 @@ h3 {
     padding: 26px 0 8px 0;
     margin: 0;
     color: #1c1c1e;
+    margin-bottom: 16px;
 }
 
 .section-title {
@@ -261,8 +290,8 @@ h3 {
     border: none;
     border-radius: 8px;
     cursor: pointer;
-    font-weight: 600;
-    font-size: 15px;
+    font-weight: 500;
+    font-size: 14px;
     transition: opacity 0.2s;
     white-space: nowrap;
 }
@@ -331,7 +360,7 @@ input {
 
 input:focus {
     outline: none;
-    box-shadow: inset 0 0 0 2px #007aff;
+    box-shadow: inset 0 0 0 1.5px #007aff;
 }
 
 .input-group {
@@ -343,59 +372,59 @@ input:focus {
 /* ========================================================== */
 /* СТРАНИЦА ПРОГРАММ  + клиенты*/
 /* ========================================================== */
-.clients-list.list-section,
-.programs-list{
-    display: flex;
+.clients-list.list-section, .programs-list {
     padding: 0;
     background-color: #f2f2f7;
     border-radius: 10px;
-    margin-top: 16px;
-    margin-bottom: 20px;
-    box-shadow: none;
-    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
 }
-button.btn.btn-primary.add-client-btn,
-.list-item.client-item,
-button.btn.btn-primary.add-program-btn,
-.list-item.program-item, .add-cycle-btn {
-    height: 68px;
-    width: 88px;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-evenly;
-    background-color: #f9f9f9;
-    border-radius: 8px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+button.btn.btn-primary.add-client-btn, .list-item.client-item, button.btn.btn-primary.add-program-btn, .list-item.program-item, .add-cycle-btn {
+    min-height: 84px;
+    background-color: #ffffff;
+    border-radius: 10px;
     cursor: pointer;
-    margin: 2px 3px !important;
-    font-size: 16px;
-    text-align: left;
     padding: 12px 9px 0px 13px;
     font-weight: 500;
+    border-bottom: 2.5px solid #e7e7e7;
+    border-left: 1px solid #e7e7e7;
+    border-top: 1px solid #e7e7e7;
+    border-right: 1px solid #e7e7e7;
+    flex: 1 1 calc(33.333% - 16px);
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
 }
 .list-item.client-item,
 .programs-list-page .list-item.program-item{
     font-size: 14px;
 }
-button.btn.btn-primary.add-client-btn,
-button.btn.btn-primary.add-program-btn,
-.add-cycle-btn{
-    height: 80.67px;
-    width: 110px;
+button.btn.btn-primary.add-cycle-btn, button.btn.btn-primary.add-client-btn, button.btn.btn-primary.add-program-btn, .add-cycle-btn {
     padding-bottom: 10px;
-    text-align: center;
+    text-align: center !important;
     font-size: 26px;
-    background-color: #97caf4;
+    border-bottom: 2.5px solid #e7e7e7;
+    border-left: 1px solid #e7e7e7;
+    border-top: 1px solid #e7e7e7;
+    border-right: 1px solid #e7e7e7;
+    box-sizing: border-box;
+    background: #ffffff;
+    margin: 0;
+    display: flex;
+    justify-content: center;
 }
-
+button.btn.btn-primary.add-cycle-btn {
+    background: #ffffff;
+    display: flex;
+    justify-content: center;
+}
 .program-item > div:first-child {
     flex-grow: 1;
 }
 
-.program-item > div:last-child {
-    display: flex;
-    gap: 8px;
-}
+
 
 /* ========================================================== */
 /* модалка Циклы ,Программы */
@@ -430,7 +459,10 @@ button.btn.btn-primary.add-program-btn,
 
 button.btn.btn-primary {
     margin-left: 10px;
-    padding: 10px 15px;
+    padding: 9px 14px;
+    color: #268eff;
+    border: 1.5px solid #268eff;
+    background: none;
 }
 
 /* модалка Циклы ,Программы удалить править*/
@@ -485,39 +517,16 @@ button.btn.menu-btn {
 /* СТРАНИЦА ДЕТАЛЕЙ ПРОГРАММЫ */
 /* ========================================================== */
 
-.exercise-item {
-    display: block;
-    margin-bottom: 12px;
-    padding: 0;
-    border: none;
-    background-color: transparent;
-}
 
-.exercise-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 16px;
-    background-color: white;
-    border-radius: 10px;
-    margin-bottom: 1px;
-    font-weight: 600;
-}
+
+
 
 .control-buttons {
     display: flex;
     gap: 8px;
 }
 
-.exercise-title {
-    display: flex;
-    align-items: center;
-    font-size: 16px;
-}
 
-.exercise-number {
-    margin-right: 8px;
-}
 
 .sets-container {
     display: none;
@@ -550,11 +559,7 @@ button.btn.menu-btn {
 }
 
 /* Строка подхода (Set Row) */
-.set-row {
-    padding: 8px 98px 8px 69px;
-    border-bottom: 0.5px solid #e5e5ea;
-    font-size: 15px;
-}
+
 span.set-label {
     font-size: 13px;
 }
@@ -621,17 +626,7 @@ small.unit-label {
     background-color: #e5e5ea;
 }
 
-/* Кнопка "Завершить тренировку" - Floats */
-.complete-training-btn {
-    display: block;
-    width: 100%;
-    margin-top: 30px;
-    padding: 16px;
-    font-size: 18px;
-    background-color: #54ce74; /* Зеленый iOS */
-    color: white;
-    border-radius: 12px;
-}
+
 
 /* ========================================================== */
 /* СТРАНИЦА ДНЕВНИКА */
@@ -747,15 +742,36 @@ small.unit-label {
     opacity: 1;
     transform: translateX(-50%) translateY(0);
 }
+.list-item > div:first-child {
+    flex: 1;
+    min-width: 0;
+    word-break: break-all;
+    overflow-wrap: anywhere;
+    white-space: normal;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
 
 .muted {
     font-size: 13px;
     color: #8e8e93;
     text-align: center;
-    padding: 24px 0;
+    padding: 5px 0;
     width: 100%;
     font-weight: 300;
 }
+
+
+
+
+
+
+
+
+
+
+
 /* ========================================================== */
 /* ВЕРХНЯЯ НАВИГАЦИЯ (ЛИЧНЫЕ/ПЕРСОНАЛЬНЫЕ/ШАБЛОНЫ) */
 /* ========================================================== */
@@ -792,12 +808,7 @@ small.unit-label {
 /* ========================================================== */
 /* ... (Оставьте ваш существующий код, но убедитесь, что в нем есть следующие стили) ... */
 
-/* Добавьте в раздел "КНОПКИ" (если еще нет) */
-.program-item > div:last-child {
-    display: flex;
-    gap: 8px;
-    align-items: center; /* Выравнивание кнопок */
-}
+
 
 .list-item .go-btn {
     background: #007aff; /* Синяя кнопка "Перейти" */
@@ -1096,17 +1107,17 @@ div#auth-screen {
     font-size: 16px;
     padding: 0 5px;
 }
-
-
-button.btn.edit-note-btn.has-note svg {
-    width: 17px;
-    height: 17px;
+button.btn.edit-note-btn svg {
+    width: 19px;
+    height: 19px;
+    color: #585858;
 }
+
+
 /* Контейнер для отображения комментария к упражнению */
 .exercise-note-display {
     padding: 6px 17px 18px 20px; /* Отступ для свернутого состояния */
     background-color: #ffffff;
-    border-bottom: 0.5px solid #e5e5ea;
     font-size: 14px;
 }
 
@@ -1122,6 +1133,7 @@ button.btn.edit-note-btn.has-note svg {
     border-radius: 0 0 10px 10px;
     background-color: #f7f7f7;
     display: flex;
+    flex-direction: column;
 
 }
 
@@ -1190,15 +1202,28 @@ button.btn.delete-media-btn{
     border: none;
     padding: 0;
 }
+button.btn.btn-secondary span {
+    padding-left: 10px;
+    padding-top: 4px;
+    color: #313131;
+}
+button.btn.btn-secondary svg {
+    display: block;
+    width: 29px;
+    height: 29px;
+}
 .comExer button.btn.btn-secondary {
     background: none;
-    color: #7a7878;
+    color: #5d5b5b;
     border: none;
     padding: 0;
     margin-bottom: 10px;
     cursor: pointer;
     margin-top: 14px;
-    width: 28px;
+    width: 185px;
+    display: flex
+;
+    align-items: center;
 }
 
 .comExer .modal-controls {
@@ -1265,21 +1290,18 @@ button.btn.delete-media-btn{
     flex-direction: column;
     align-items: flex-start;
 }
-button.btn.comment-toggle-btn {
-    width: 22px;
-    height: 22px;
-    margin-right: 11px;
-}
+
 .comment-toggle-btn {
     background: none;
-    color: #6f6f6f;
+    color: #585858;
     border: none;
     padding: 0;
-    margin-bottom: 10px;
+    margin-bottom: 4px;
     font-size: 15px;
     font-weight: 500;
     cursor: pointer;
     margin-left: 19px;
+    margin-right: 11px;
 }
 
 .training-note-display {
@@ -1300,8 +1322,9 @@ button.btn.comment-toggle-btn {
 span.comment-label {
     padding-top: 7px;
 }
-button.btn.comment-toggle-btn.has-note svg {
-    width: 26px;
+button.btn.comment-toggle-btn svg {
+    width: 25px;
+    height: 25px;
 }
 
 .comment-text-display {
@@ -1326,19 +1349,14 @@ button.btn.comment-toggle-btn.has-note svg {
 .complete-training-btn {
     display: block;
     width: 79%;
-    padding: 11px;
+    padding: 9px;
     font-size: 15px;
-    background-color: #078bef;
-    color: white;
+    color: #268eff;
     border-radius: 10px;
     margin: 0 auto;
-}
+    border: 1.5px solid #268eff;
 }
 
-
-.comment-wrapper .comment-toggle-btn.has-note {
-    color: #78787b;
-}
 
 
 
@@ -1713,7 +1731,7 @@ input {
 
 input:focus {
     outline: none;
-    box-shadow: inset 0 0 0 2px #007aff;
+    box-shadow: inset 0 0 0 1.5px #535353;
 }
 
 .input-group {
@@ -1722,21 +1740,7 @@ input:focus {
     margin-bottom: 20px;
 }
 
-/* ========================================================== */
-/* СТРАНИЦА ПРОГРАММ */
-/* ========================================================== */
 
-
-
-
-.program-item > div:first-child {
-    flex-grow: 1;
-}
-
-.program-item > div:last-child {
-    display: flex;
-    gap: 8px;
-}
 
 /* ========================================================== */
 /* СТРАНИЦА ДЕТАЛЕЙ ПРОГРАММЫ */
@@ -1746,7 +1750,6 @@ div#program-details-content h3 {
     border-bottom: 1px solid #000000;
     width: 88%;
     overflow-wrap: break-word;
-    margin-bottom: 16px;
 }
 
 .exercise-item {
@@ -1766,7 +1769,7 @@ div#program-details-content h3 {
     background-color: white;
     border-radius: 10px;
     margin-bottom: 1px;
-    font-weight: 600;
+    font-weight: 500;
 }
 
 .control-buttons {
@@ -1777,7 +1780,8 @@ div#program-details-content h3 {
 .exercise-title {
     display: flex;
     align-items: center;
-    font-size: 16px;
+    font-size: 14px;
+    color: #000000;
 }
 
 .exercise-number {
@@ -1789,7 +1793,7 @@ div#program-details-content h3 {
     border-bottom-left-radius: 10px;
     border-bottom-right-radius: 10px;
     transition: all 0.3s ease-in-out;
-    border: 1px solid #c7c7cc;
+    border: 0.5px solid #dedede;
     border-top: none;
 }
 
@@ -1818,7 +1822,7 @@ div#program-details-content h3 {
 .set-row {
     padding: 0px 86px 0px 69px;
     border-bottom: 0.5px solid #e5e5ea;
-    font-size: 15px;
+    font-size: 14px;
     display: flex;
     align-items: center;
 }
@@ -1989,7 +1993,6 @@ small.unit-label {
     font-size: 22px;
     border: none;
     margin: 0px auto 0px 59px;
-    font-weight: 600;
     width: 50%;
 }
 
@@ -2015,50 +2018,50 @@ small.unit-label {
     display: flex;
     justify-content: space-around;
     gap: 10px;
+    flex-direction: row-reverse;
 }
 
 .duplicate-controls .btn {
     flex: 1;
     margin-left: 0 !important;
-    padding: 8px 16px!important;
+    padding: 7px 16px!important;
+    border: 1.5px solid #535353;
 }
 
 
 
-/* КНОПКА КОМЕНТ УПР */
-
-
-button.btn.edit-note-btn svg {
-    width: 17px;
-    height: 17px;
-    color: #737373;
-}
 
 /* кнопка редактировать и удалить  */
 .modal-remove-edit {
     background: #ffffff00;
     text-align: center;
+    display: flex;
 }
 
 
 .modal-remove-edit button.btn.btn-primary, .modal-remove-edit button.btn.cancel-btn {
     background: #ffffff;
     box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
-    padding: 15px;
+    padding: 7px;
     margin-right: 13px;
+    border: none;
+    width: 75px;
+    height: 75px;
 }
 
 .modal-remove-edit button.btn.cancel-btn svg {
     color: #cd3931;
-    height: 34px;
-    width: 34px;
+    height: 35px;
+    width: 35px;
 }
 
 .modal-remove-edit button.btn.btn-primary svg {
     color: #515151;
-    height: 34px;
-    width: 34px;
+    height: 47px;
+    width: 48px;
+    padding: 0px;
 }
+
 /* редактировать окно  */
 .modal-edit {
     display: flex
@@ -2073,10 +2076,7 @@ button.btn.edit-note-btn svg {
 }
 
 
-.modal-edit button.btn.btn-primary {
-    background: #078bef;
 
-}
 
 /* окно редактир упр   */
 .modal-compact input {
@@ -2171,17 +2171,24 @@ button.btn.edit-note-btn svg {
 button.btn.btn-primary.add-exercise-btn {
     width: 100%;
     background: #ffffff;
-    color: #078bef;
+    color: #268eff;
     margin: 0;
+    padding: 13px 15px;
+    border: none;
 }
 
 .modal-overlay.program-details .modal-content {
     display: flex;
+    flex-direction: row;
+    align-items: center;
 }
 
 .modal-overlay.program-details .modal-content .modal-buttons button {
     margin-left: 10px;
-    padding: 10px 15px;
+    padding: 9px 14px;
+    border: 1.5px solid #268eff;
+    background: none;
+    color: #268eff;
 }
 
 
@@ -2522,7 +2529,7 @@ select.program-select {
 
 /* ⚡ Сегодня */
 .calendar-cell.today {
-    border: 2px solid #007aff;
+    border: 1.5px solid #007aff;
     border-radius: 8px;
     position: relative;
 }
@@ -2531,8 +2538,8 @@ select.program-select {
 .calendar-cell.today .day-number::after {
     content: '';
     display: block;
-    width: 6px;
-    height: 6px;
+    width: 5px;
+    height: 5px;
     border-radius: 50%;
     background-color: #007aff;
     margin: 9px auto 0 auto;
@@ -2719,6 +2726,7 @@ button.calendar-nav-btn svg {
 .save-date-btn, .cancel-btn {
     margin-left: 6px;
     font-size: 14px;
+    border: 1.5px solid #535353;
 }
 
 .delete-record-btn {
@@ -2905,12 +2913,7 @@ button.calendar-nav-btn svg {
 /* ========================================================== */
 /* ... (Оставьте ваш существующий код, но убедитесь, что в нем есть следующие стили) ... */
 
-/* Добавьте в раздел "КНОПКИ" (если еще нет) */
-.program-item > div:last-child {
-    display: flex;
-    gap: 8px;
-    align-items: center; /* Выравнивание кнопок */
-}
+/
 
 .list-item .go-btn {
     background: #007aff; /* Синяя кнопка "Перейти" */
@@ -3102,6 +3105,21 @@ button.calendar-nav-btn svg {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+/* ========================================================== */
+/* БАДЫ */
+/* ========================================================== */
+
 /* Стили для новой группы управления неделями */
 .week-controls-group {
     display: flex;
@@ -3141,8 +3159,8 @@ button.calendar-nav-btn svg {
 
 }
 button.btn.btn-danger.confirm-btn {
-    background: #d64242;
-    color: white;
+    color: #d64242;
+    border: 1.5px solid #d64242;
 }
 .modal-content.modal-compact .modal-title {
     font-size: 1.1em;
@@ -3465,27 +3483,42 @@ button.btn.btn-delete-photo {
 /* ====== SWIPE ====== */
 
 .exercise-swipe {
-  position: relative;
-  width: 100%;
-  overflow: hidden;
-  background: #f0f0f0;
-  touch-action: pan-y;
-  border-radius: 10px 10px 0px 0px;
+    position: relative;
+    width: 100%;
+    overflow: hidden;
+    background: #f0f0f0;
+    touch-action: pan-y;
+    border-radius: 10px 10px 0 0;
+    border-top: 0.5px solid #dedede;
+    border-right: 0.5px solid #dedede;
+    border-left: 0.5px solid #dedede;
 }
 
 /* === Кнопки справа (появляются при свайпе влево) === */
 .exercise-swipe .swipe-actions.right {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 0 10px;
-  background: #f0f0f0; /* мягкий фон */
-  z-index: 1; /* ниже контента */
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 0 10px;
+    background: #f0f0f0;
+    z-index: 1;
+    border-radius: 0px 10px 0 0;
+}
+
+.exercise-swipe svg {
+    width: 27px;
+    height: 27px;
+    color: #535252;
+}
+button.action-btn.action-delete svg {
+    width: 19px;
+    height: 19px;
+    color: #cd3931;
 }
 
 /* === Контент упражнения (то, что двигается) === */
@@ -3503,13 +3536,8 @@ button.btn.btn-delete-photo {
 /* === Кнопки действий === */
 .action-btn {
   border: none;
-  background: #fff;
-  border-radius: 8px;
-  padding: 8px 10px;
   font-size: 14px;
   cursor: pointer;
-  min-width: 44px;
-  min-height: 36px;
   transition: background 0.2s;
 }
 
@@ -3531,6 +3559,30 @@ button.btn.btn-delete-photo {
 .exercise-swipe.open .swipe-content {
   cursor: default;
 }
+
+
+#programs-icon svg {
+    width: 81% !important;
+    height: 81% !important;
+}
+
+#journal-icon svg {
+    width: 76% !important;
+    height: 76% !important;
+}
+#supplement-icon svg {
+  width: 65% !important;
+  height: 65% !important;
+}
+#reports-icon svg {
+    width: 61% !important;
+    height: 61% !important;
+}
+
+
+
+
+
 
 
 
