@@ -6,8 +6,10 @@
     <meta name="theme-color" content="#000000">
     <title>Дневник тренировок</title>
     <link rel="manifest" href="./manifest.json">
-
     <link rel="stylesheet" href="./styles.css">
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
+
 </head>
 <body>
 
@@ -46,13 +48,249 @@
     <div id="root"></div>
 
     <div class="navigation">
-        <button id="programs-btn" class="nav-btn"><svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 11 11"><title>Fitness-centre-11 SVG Icon</title><path d="M7 6H4V5h3zM2 3v1H1v1a.5.5 0 0 0 0 1v1h1v1h1.5V3zm8 2V4H9V3H7.5v5H9V7h1V6a.5.5 0 0 0 0-1z" fill="currentColor"/></svg></button>
-        <button id="journal-btn" class="nav-btn"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Notebook-check SVG Icon</title><path fill="currentColor" d="m16.75 22.16l-2.75-3L15.16 18l1.59 1.59L20.34 16l1.16 1.41zM3 7V5h2V4a2 2 0 0 1 2-2h6v7l2.5-1.5L18 9V2h1c1.05 0 2 .95 2 2v9.8a6.005 6.005 0 0 0-8.2 8.2H7c-1.05 0-2-.95-2-2v-1H3v-2h2v-4H3v-2h2V7zm2-2v2h2V5zm0 14h2v-2H5zm0-6h2v-2H5z"/></svg></button>
-        <button id="supplements-btn" class="nav-btn"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><title>Document-pill-20-filled SVG Icon</title><path fill="currentColor" d="M10 2v4.5A1.5 1.5 0 0 0 11.5 8H16v.913a3.6 3.6 0 0 0-2.06 1.027l-4 4A3.62 3.62 0 0 0 9.202 18H5.5A1.5 1.5 0 0 1 4 16.5v-13A1.5 1.5 0 0 1 5.5 2zm1 .25V6.5a.5.5 0 0 0 .5.5h4.25zm7.354 8.397a2.62 2.62 0 0 0-3.708 0l-4 4a2.621 2.621 0 0 0 3.707 3.707l4-4a2.62 2.62 0 0 0 0-3.707m-3 .707a1.621 1.621 0 1 1 2.292 2.293L16 15.293L13.707 13zm-1.5 4.292a.5.5 0 0 1 0 .708l-1 1a.5.5 0 0 1-.708-.708l1-1a.5.5 0 0 1 .708 0"/></svg></button>
-        <button id="reports-btn" class="nav-btn"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><title>Document-report SVG Icon</title><path fill="currentColor" fill-rule="evenodd" d="M6 2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7.414A2 2 0 0 0 15.414 6L12 2.586A2 2 0 0 0 10.586 2zm2 10a1 1 0 1 0-2 0v3a1 1 0 1 0 2 0zm2-3a1 1 0 0 1 1 1v5a1 1 0 1 1-2 0v-5a1 1 0 0 1 1-1m4-1a1 1 0 1 0-2 0v7a1 1 0 1 0 2 0z" clip-rule="evenodd"/></svg></button>
+        <button id="programs-btn" class="nav-btn">
+            <div id="programs-icon" class="lottie-icon">
+                <!-- SVG статичен по умолчанию -->
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" preserveAspectRatio="xMidYMid meet" style="width:100%;height:100%;">
+                    <defs>
+                        <clipPath id="__lottie_element_74442"><rect width="48" height="48" x="0" y="0"/></clipPath>
+                    </defs>
+
+                    <style>
+                        /* === КАДРЫ АНИМАЦИЙ (одноразовые) === */
+                        @keyframes swayOnce {
+                          0% { transform: rotate(0deg); }
+                          25% { transform: rotate(4deg); }
+                          75% { transform: rotate(-4deg); }
+                          100% { transform: rotate(0deg); }
+                        }
+                        @keyframes dotUpOnce {
+                          0% { transform: translateY(0); opacity: 1; }
+                          50% { transform: translateY(-2px); opacity: .95; }
+                          100% { transform: translateY(0); opacity: 1; }
+                        }
+                        @keyframes dotDownOnce {
+                          0% { transform: translateY(0); opacity: 1; }
+                          50% { transform: translateY(2px); opacity: .95; }
+                          100% { transform: translateY(0); opacity: 1; }
+                        }
+
+                        /* триггер анимаций (вешаем на #icon) */
+                        #icon.play #bell {
+                          transform-origin: 24px 24px;
+                          animation: swayOnce 2s ease-in-out 1 both;
+                        }
+                        #icon.play .dot-top    { animation: dotUpOnce   2s ease-in-out 1 both; }
+                        #icon.play .dot-bottom { animation: dotDownOnce 2s ease-in-out 1 both; }
+
+                        /* статика по умолчанию */
+                        .dot, #bell { transform: none; opacity: 1; }
+                    </style>
+
+                    <!-- Обёртка для синхронного триггера -->
+                    <g id="icon">
+                        <!-- (1) покачивающаяся часть -->
+                        <g id="bell" clip-path="url(#__lottie_element_74442)">
+                            <!-- Центральная часть гантели -->
+                            <g transform="matrix(0.8833087683,0,0,0.8833087683,2.80059,2.80059)" opacity="1">
+                                <g opacity="1" transform="matrix(1,0,0,1,24,24.076)">
+                                    <path fill="#fff" d="M6.091,3c0,0-12.182,0-12.182,0c0,0,0-6,0-6c0,0,12.182,0,12.182,0c0,0,0,6,0,6z"></path>
+                                    <path stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="#000" stroke-width="1" d="M6.091,3c0,0-12.182,0-12.182,0c0,0,0-6,0-6c0,0,12.182,0,12.182,0c0,0,0,6,0,6z"></path>
+                                </g>
+                                <g opacity="1" transform="matrix(1,0,0,1,8.716,24.076)">
+                                    <path fill="#fff" d="M0.345,5.935c0,0-0.690,0-0.690,0c-0.744,0-1.348-0.604-1.348-1.348c0,0,0-9.174,0-9.174c0-0.745,0.604-1.349,1.348-1.349c0,0,0.690,0,0.690,0c0.745,0,1.349,0.603,1.349,1.348c0,0,0,9.174,0,9.174C1.694,5.331,1.090,5.935,0.345,5.935z"></path>
+                                    <path stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="#000" stroke-width="1" d="M0.345,5.935c0,0-0.690,0-0.690,0c-0.744,0-1.348-0.604-1.348-1.348c0,0,0-9.174,0-9.174c0-0.745,0.604-1.349,1.348-1.349c0,0,0.690,0,0.690,0c0.745,0,1.349,0.603,1.349,1.348c0,0,0,9.174,0,9.174C1.694,5.331,1.090,5.935,0.345,5.935z"></path>
+                                </g>
+                                <g opacity="1" transform="matrix(1,0,0,1,39.284,24.076)">
+                                    <path fill="#fff" d="M-0.345,-5.935c0,0,0.690,0,0.690,0c0.744,0,1.349,0.604,1.349,1.349c0,0,0,9.174,0,9.174c0,0.745-0.604,1.349-1.349,1.349c0,0-0.690,0-0.690,0c-0.745,0-1.349-0.604-1.349-1.349c0,0,0-9.174,0-9.174C-1.694,-5.331-1.090,-5.935-0.345,-5.935z"></path>
+                                    <path stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="#000" stroke-width="1" d="M-0.345,-5.935c0,0,0.690,0,0.690,0c0.744,0,1.349,0.604,1.349,1.349c0,0,0,9.174,0,9.174c0,0.745-0.604,1.349-1.349,1.349c0,0-0.690,0-0.690,0c-0.745,0-1.349-0.604-1.349-1.349c0,0,0-9.174,0-9.174C-1.694,-5.331-1.090,-5.935-0.345,-5.935z"></path>
+                                </g>
+                            </g>
+                            <!-- Внешние пластины -->
+                            <g transform="matrix(0.8833087683,0,0,0.8833087683,2.80059,2.80059)" opacity="1">
+                                <g opacity="1" transform="matrix(1,0,0,1,14.159,24.076)">
+                                    <path fill="#fff" d="M1.273,9.046c0,0-2.546,0-2.546,0C-2.641,9.046-3.75,7.936-3.75,6.568c0,0,0-13.136,0-13.136c0-1.368,1.109-2.478,2.477-2.478c0,0,2.546,0,2.546,0c1.368,0,2.477,1.110,2.477,2.478c0,0,0,13.136,0,13.136C3.75,7.936,2.641,9.046,1.273,9.046z"></path>
+                                    <path stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="rgb(0,122,255)" stroke-width="1" d="M1.273,9.046c0,0-2.546,0-2.546,0C-2.641,9.046-3.75,7.936-3.75,6.568c0,0,0-13.136,0-13.136c0-1.368,1.109-2.478,2.477-2.478c0,0,2.546,0,2.546,0c1.368,0,2.477,1.110,2.477,2.478c0,0,0,13.136,0,13.136C3.75,7.936,2.641,9.046,1.273,9.046z"></path>
+                                </g>
+                                <g opacity="1" transform="matrix(1,0,0,1,33.841,24.076)">
+                                    <path fill="#fff" d="M-1.273,-9.046c0,0,2.546,0,2.546,0c1.368,0,2.477,1.110,2.477,2.478c0,0,0,13.136,0,13.136c0,1.368-1.109,2.478-2.477,2.478c0,0-2.546,0-2.546,0c-1.368,0-2.477-1.110-2.477-2.478c0,0,0-13.136,0-13.136C-3.75,-7.936-2.641,-9.046-1.273,-9.046z"></path>
+                                    <path stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="rgb(0,122,255)" stroke-width="1" d="M-1.273,-9.046c0,0,2.546,0,2.546,0c1.368,0,2.477,1.110,2.477,2.478c0,0,0,13.136,0,13.136c0,1.368-1.109,2.478-2.477,2.478c0,0-2.546,0-2.546,0c-1.368,0-2.477-1.110-2.477-2.478c0,0,0-13.136,0-13.136C-3.75,-7.936-2.641,-9.046-1.273,-9.046z"></path>
+                                </g>
+                            </g>
+                        </g>
+
+                        <!-- (2) «точечки» (верх/низ) — анимируются вместе с колебанием -->
+                        <g id="dots">
+                            <!-- верхние -->
+                            <g opacity="1" transform="matrix(1,0,0,1,32.909,10.359)">
+                                <path class="dot dot-top" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="rgb(0,122,255)" stroke-width="1" d="M-0.512,0.505 C-0.512,0.505 -0.417,0.411 -0.285,0.281"></path>
+                            </g>
+                            <g opacity="1" transform="matrix(1,0,0,1,14.909,10.359)">
+                                <path class="dot dot-top" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="rgb(0,122,255)" stroke-width="1" d="M0.512,0.505 C0.512,0.505 0.417,0.411 0.285,0.281"></path>
+                            </g>
+                            <g opacity="1" transform="matrix(1,0,0,1,23.771,7.703)">
+                                <path class="dot dot-top" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="rgb(0,122,255)" stroke-width="1" d="M-0.005,0.719 C-0.005,0.719 -0.004,0.585 -0.003,0.4"></path>
+                            </g>
+                            <!-- нижние -->
+                            <g opacity="1" transform="matrix(1,0,0,1,14.909,37.641)">
+                                <path class="dot dot-bottom" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="rgb(0,122,255)" stroke-width="1" d="M0.512,-0.505 C0.512,-0.505 0.417,-0.411 0.285,-0.281"></path>
+                            </g>
+                            <g opacity="1" transform="matrix(1,0,0,1,32.909,37.641)">
+                                <path class="dot dot-bottom" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="rgb(0,122,255)" stroke-width="1" d="M-0.512,-0.505 C-0.512,-0.505 -0.417,-0.411 -0.285,-0.281"></path>
+                            </g>
+                            <g opacity="1" transform="matrix(1,0,0,1,24.047,40.298)">
+                                <path class="dot dot-bottom" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="rgb(0,122,255)" stroke-width="1" d="M0.005,-0.719 C0.005,-0.719 0.004,-0.585 0.003,-0.4"></path>
+                            </g>
+                        </g>
+                    </g>
+                </svg>
+            </div>
+        </button>
+
+        <script>
+            document.addEventListener('DOMContentLoaded', () => {
+              const btn  = document.getElementById('programs-btn');
+              const icon = btn.querySelector('#icon'); // общий триггер для bell + dots
+
+              function playOnce() {
+                // снять/вернуть класс, чтобы анимации запускались каждый раз
+                icon.classList.remove('play');
+                // форс-рефлоу — гарантирует перезапуск даже при повторном выборе
+                void icon.offsetWidth;
+                icon.classList.add('play');
+
+                // убрать класс по завершении (через 2с), чтобы при возврате работало снова
+                setTimeout(() => icon.classList.remove('play'), 2000);
+              }
+
+              // 1) клик по пункту — анимация 1 раз
+              btn.addEventListener('click', playOnce);
+
+              // 2) если твой роутер/меню помечает активный пункт классом "active"
+              //    — анимация при установке класса (возвращение на пункт)
+              const mo = new MutationObserver(muts => {
+                for (const m of muts) {
+                  if (m.attributeName === 'class' || m.attributeName === 'aria-selected' || m.attributeName === 'aria-current') {
+                    const isActive =
+                      btn.classList.contains('active') ||
+                      btn.getAttribute('aria-selected') === 'true' ||
+                      btn.getAttribute('aria-current') === 'page';
+                    if (isActive) playOnce();
+                  }
+                }
+              });
+              mo.observe(btn, { attributes: true });
+
+              // 3) если пункт скрывают/показывают (SPA), проигрываем при появлении, если он активен
+              const io = new IntersectionObserver(entries => {
+                entries.forEach(e => {
+                  if (e.isIntersecting) {
+                    const isActive =
+                      btn.classList.contains('active') ||
+                      btn.getAttribute('aria-selected') === 'true' ||
+                      btn.getAttribute('aria-current') === 'page';
+                    if (isActive) playOnce();
+                  }
+                });
+              });
+              io.observe(btn);
+            });
+        </script>
+
+        <button id="journal-btn" class="nav-btn">
+            <div id="journal-icon" class="lottie-icon"></div>
+            <script>
+                document.addEventListener('DOMContentLoaded', () => {
+                  const journalAnim = lottie.loadAnimation({
+                    container: document.getElementById('journal-icon'),
+                    renderer: 'svg',
+                    loop: false,
+                    autoplay: false,
+                    path: './icon-animations/menuCalendar.json'
+                  });
+
+                  const journalBtn = document.getElementById('journal-btn');
+                  let isPlaying = false;
+
+                  journalBtn.addEventListener('click', () => {
+                    if (isPlaying) return;
+                    isPlaying = true;
+
+                    journalAnim.goToAndPlay(0, true);
+
+                    journalAnim.addEventListener('complete', () => {
+                      isPlaying = false;
+                      journalAnim.pause(); // останавливаем на последнем кадре
+                    });
+                  });
+                });
+            </script>
+
+        </button>
+        <button id="supplements-btn" class="nav-btn">
+            <div id="supplement-icon" class="lottie-icon"></div>
+            <script>
+                document.addEventListener('DOMContentLoaded', () => {
+                  const supplementsAnim = lottie.loadAnimation({
+                    container: document.getElementById('supplement-icon'),
+                    renderer: 'svg',
+                    loop: false,
+                    autoplay: false,
+                    path: './icon-animations/menuBad.json'
+                  });
+
+                  const supplementsBtn = document.getElementById('supplements-btn');
+                  let isPlaying = false;
+
+                  supplementsBtn.addEventListener('click', () => {
+                    if (isPlaying) return;
+                    isPlaying = true;
+
+                    supplementsAnim.goToAndPlay(0, true);
+
+                    supplementsAnim.addEventListener('complete', () => {
+                      isPlaying = false;
+                      supplementsAnim.pause(); // останавливаем на последнем кадре
+                    });
+                  });
+                });
+            </script>
+        </button>
+        <button id="reports-btn" class="nav-btn">
+            <div id="reports-icon" class="lottie-icon"></div>
+            <script>
+                document.addEventListener('DOMContentLoaded', () => {
+                  const reportsAnim = lottie.loadAnimation({
+                    container: document.getElementById('reports-icon'),
+                    renderer: 'svg',
+                    loop: false,
+                    autoplay: false,
+                    path: './icon-animations/menuReports.json'
+                  });
+
+                  const reportsBtn = document.getElementById('reports-btn');
+                  let isPlaying = false;
+
+                  reportsBtn.addEventListener('click', () => {
+                    if (isPlaying) return;
+                    isPlaying = true;
+
+                    reportsAnim.goToAndPlay(0, true);
+
+                    reportsAnim.addEventListener('complete', () => {
+                      isPlaying = false;
+                      reportsAnim.pause(); // останавливаем на последнем кадре
+                    });
+                  });
+                });
+            </script>
+        </button>
+
     </div>
 </div>
 
 <script type="module" src="./script.js"></script>
 </body>
 </html>
+
+
