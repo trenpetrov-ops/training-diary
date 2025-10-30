@@ -236,22 +236,21 @@ function getClientsCollection() {
 
 
 
-
-
-
-
 // 🔥 ДОБАВЛЕНО: Коллекция для планов БАДов
-function getSupplementPlanDocRef() {
+function getCycleDocRef() {
     if (!state.selectedCycleId) return null;
 
-    let path;
     if (state.currentMode === 'own') {
-        path = `artifacts/${appId}/users/${userId}/cycles/${state.selectedCycleId}`;
-    } else if (state.currentMode === 'personal' && state.selectedClientId) {
-        path = `artifacts/${appId}/users/${userId}/clients/${state.selectedClientId}/cycles/${state.selectedCycleId}`;
+        return doc(db, `artifacts/${appId}/users/${userId}/cycles/${state.selectedCycleId}`);
     }
-    return path ? doc(db, path) : null;
+    else if (state.currentMode === 'personal' && state.selectedClientId) {
+        return doc(db, `artifacts/${appId}/users/${userId}/clients/${state.selectedClientId}/cycles/${state.selectedCycleId}`);
+    }
+
+    return null;
 }
+
+
 
 // 🔥 Коллекция для Отчетов, привязанная к циклу
 function getReportsCollection() {
@@ -696,7 +695,6 @@ function renderCyclesPage() {
     // Кнопка "Добавить цикл"
     // -----------------------------------------------------------
     const addCycleBtn = createElement('button', 'btn btn-primary add-cycle-btn', '+');
-    addCycleBtn.style.margin = '12px';
     addCycleBtn.addEventListener('click', () => {
         openAddCycleModal(async (name) => {
             const newCycle = {
@@ -733,7 +731,7 @@ function openCycleMenuModal(cycle) {
 
     // Кнопка "Редактировать"
     const editBtn = createElement('button', 'btn btn-primary');
-    editBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><title>Pen-to-square SVG Icon</title><path fill="currentColor" d="M471.6 21.7c-21.9-21.9-57.3-21.9-79.2 0l-30.1 30l97.9 97.9l30.1-30.1c21.9-21.9 21.9-57.3 0-79.2zm-299.2 220c-6.1 6.1-10.8 13.6-13.5 21.9l-29.6 88.8c-2.9 8.6-.6 18.1 5.8 24.6s15.9 8.7 24.6 5.8l88.8-29.6c8.2-2.7 15.7-7.4 21.9-13.5l167.3-167.4l-98-98zM96 64c-53 0-96 43-96 96v256c0 53 43 96 96 96h256c53 0 96-43 96-96v-96c0-17.7-14.3-32-32-32s-32 14.3-32 32v96c0 17.7-14.3 32-32 32H96c-17.7 0-32-14.3-32-32V160c0-17.7 14.3-32 32-32h96c17.7 0 32-14.3 32-32s-14.3-32-32-32z"/></svg>';
+    editBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24"><title>Edit SVG Icon</title><path fill="currentColor" d="M3.548 20.938h16.9a.5.5 0 0 0 0-1h-16.9a.5.5 0 0 0 0 1M9.71 17.18a2.587 2.587 0 0 0 1.12-.65l9.54-9.54a1.75 1.75 0 0 0 0-2.47l-.94-.93a1.788 1.788 0 0 0-2.47 0l-9.54 9.53a2.473 2.473 0 0 0-.64 1.12L6.04 17a.737.737 0 0 0 .19.72a.767.767 0 0 0 .53.22Zm.41-1.36a1.468 1.468 0 0 1-.67.39l-.97.26l-1-1l.26-.97a1.521 1.521 0 0 1 .39-.67l.38-.37l1.99 1.99Zm1.09-1.08l-1.99-1.99l6.73-6.73l1.99 1.99Zm8.45-8.45L18.65 7.3l-1.99-1.99l1.01-1.02a.748.748 0 0 1 1.06 0l.93.94a.754.754 0 0 1 0 1.06"></path></svg>';
     editBtn.addEventListener('click', () => {
         document.body.removeChild(modal);
         openEditCycleModal(cycle);
@@ -741,7 +739,7 @@ function openCycleMenuModal(cycle) {
 
     // Кнопка "Удалить"
     const deleteBtn = createElement('button', 'btn cancel-btn');
-    deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><title>Trash3-fill SVG Icon</title><path fill="currentColor" d="M11 1.5v1h3.5a.5.5 0 0 1 0 1h-.538l-.853 10.66A2 2 0 0 1 11.115 16h-6.23a2 2 0 0 1-1.994-1.84L2.038 3.5H1.5a.5.5 0 0 1 0-1H5v-1A1.5 1.5 0 0 1 6.5 0h3A1.5 1.5 0 0 1 11 1.5m-5 0v1h4v-1a.5.5 0 0 0-.5-.5h-3a.5.5 0 0 0-.5.5M4.5 5.029l.5 8.5a.5.5 0 1 0 .998-.06l-.5-8.5a.5.5 0 1 0-.998.06m6.53-.528a.5.5 0 0 0-.528.47l-.5 8.5a.5.5 0 0 0 .998.058l.5-8.5a.5.5 0 0 0-.47-.528M8 4.5a.5.5 0 0 0-.5.5v8.5a.5.5 0 0 0 1 0V5a.5.5 0 0 0-.5-.5"></path></svg>';
+    deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Trash-24 SVG Icon</title><path fill="currentColor" d="M16 1.75V3h5.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H8V1.75C8 .784 8.784 0 9.75 0h4.5C15.216 0 16 .784 16 1.75m-6.5 0V3h5V1.75a.25.25 0 0 0-.25-.25h-4.5a.25.25 0 0 0-.25.25M4.997 6.178a.75.75 0 1 0-1.493.144L4.916 20.92a1.75 1.75 0 0 0 1.742 1.58h10.684a1.75 1.75 0 0 0 1.742-1.581l1.413-14.597a.75.75 0 0 0-1.494-.144l-1.412 14.596a.25.25 0 0 1-.249.226H6.658a.25.25 0 0 1-.249-.226z"></path><path fill="currentColor" d="M9.206 7.501a.75.75 0 0 1 .793.705l.5 8.5A.75.75 0 1 1 9 16.794l-.5-8.5a.75.75 0 0 1 .705-.793Zm6.293.793A.75.75 0 1 0 14 8.206l-.5 8.5a.75.75 0 0 0 1.498.088l.5-8.5Z"></path></svg>';
     deleteBtn.addEventListener('click', () => {
         document.body.removeChild(modal);
         openConfirmModal("Удалить этот цикл?", async () => {
@@ -940,7 +938,6 @@ function renderProgramsInCyclePage() {
     // Кнопка "Добавить программу"
     // -----------------------------------------------------------
     const addProgramBtn = createElement('button', 'btn btn-primary add-program-btn', '+');
-    addProgramBtn.style.margin = '12px';
     addProgramBtn.addEventListener('click', () => {
         openAddProgramModal(async (name) => {
             const newProgram = {
@@ -974,7 +971,7 @@ function openProgramMenuModal(program) {
 
     // Редактировать
     const editBtn = createElement('button', 'btn btn-primary');
-    editBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><title>Pen-to-square SVG Icon</title><path fill="currentColor" d="M471.6 21.7c-21.9-21.9-57.3-21.9-79.2 0l-30.1 30l97.9 97.9l30.1-30.1c21.9-21.9 21.9-57.3 0-79.2zm-299.2 220c-6.1 6.1-10.8 13.6-13.5 21.9l-29.6 88.8c-2.9 8.6-.6 18.1 5.8 24.6s15.9 8.7 24.6 5.8l88.8-29.6c8.2-2.7 15.7-7.4 21.9-13.5l167.3-167.4l-98-98zM96 64c-53 0-96 43-96 96v256c0 53 43 96 96 96h256c53 0 96-43 96-96v-96c0-17.7-14.3-32-32-32s-32 14.3-32 32v96c0 17.7-14.3 32-32 32H96c-17.7 0-32-14.3-32-32V160c0-17.7 14.3-32 32-32h96c17.7 0 32-14.3 32-32s-14.3-32-32-32z"/></svg>';
+    editBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24"><title>Edit SVG Icon</title><path fill="currentColor" d="M3.548 20.938h16.9a.5.5 0 0 0 0-1h-16.9a.5.5 0 0 0 0 1M9.71 17.18a2.587 2.587 0 0 0 1.12-.65l9.54-9.54a1.75 1.75 0 0 0 0-2.47l-.94-.93a1.788 1.788 0 0 0-2.47 0l-9.54 9.53a2.473 2.473 0 0 0-.64 1.12L6.04 17a.737.737 0 0 0 .19.72a.767.767 0 0 0 .53.22Zm.41-1.36a1.468 1.468 0 0 1-.67.39l-.97.26l-1-1l.26-.97a1.521 1.521 0 0 1 .39-.67l.38-.37l1.99 1.99Zm1.09-1.08l-1.99-1.99l6.73-6.73l1.99 1.99Zm8.45-8.45L18.65 7.3l-1.99-1.99l1.01-1.02a.748.748 0 0 1 1.06 0l.93.94a.754.754 0 0 1 0 1.06"></path></svg>';
     editBtn.addEventListener('click', () => {
         document.body.removeChild(modal);
         openEditProgramModal(program);
@@ -982,7 +979,7 @@ function openProgramMenuModal(program) {
 
     // Удалить
     const deleteBtn = createElement('button', 'btn cancel-btn');
-    deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><title>Trash3-fill SVG Icon</title><path fill="currentColor" d="M11 1.5v1h3.5a.5.5 0 0 1 0 1h-.538l-.853 10.66A2 2 0 0 1 11.115 16h-6.23a2 2 0 0 1-1.994-1.84L2.038 3.5H1.5a.5.5 0 0 1 0-1H5v-1A1.5 1.5 0 0 1 6.5 0h3A1.5 1.5 0 0 1 11 1.5m-5 0v1h4v-1a.5.5 0 0 0-.5-.5h-3a.5.5 0 0 0-.5.5M4.5 5.029l.5 8.5a.5.5 0 1 0 .998-.06l-.5-8.5a.5.5 0 1 0-.998.06m6.53-.528a.5.5 0 0 0-.528.47l-.5 8.5a.5.5 0 0 0 .998.058l.5-8.5a.5.5 0 0 0-.47-.528M8 4.5a.5.5 0 0 0-.5.5v8.5a.5.5 0 0 0 1 0V5a.5.5 0 0 0-.5-.5"></path></svg>';
+    deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Trash-24 SVG Icon</title><path fill="currentColor" d="M16 1.75V3h5.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H8V1.75C8 .784 8.784 0 9.75 0h4.5C15.216 0 16 .784 16 1.75m-6.5 0V3h5V1.75a.25.25 0 0 0-.25-.25h-4.5a.25.25 0 0 0-.25.25M4.997 6.178a.75.75 0 1 0-1.493.144L4.916 20.92a1.75 1.75 0 0 0 1.742 1.58h10.684a1.75 1.75 0 0 0 1.742-1.581l1.413-14.597a.75.75 0 0 0-1.494-.144l-1.412 14.596a.25.25 0 0 1-.249.226H6.658a.25.25 0 0 1-.249-.226z"></path><path fill="currentColor" d="M9.206 7.501a.75.75 0 0 1 .793.705l.5 8.5A.75.75 0 1 1 9 16.794l-.5-8.5a.75.75 0 0 1 .705-.793Zm6.293.793A.75.75 0 1 0 14 8.206l-.5 8.5a.75.75 0 0 0 1.498.088l.5-8.5Z"></path></svg>';
     deleteBtn.addEventListener('click', () => {
         document.body.removeChild(modal);
         openConfirmModal("Удалить эту программу?", async () => {
@@ -1226,7 +1223,9 @@ function openCommentModal(exerciseId, currentNote, titleText, onSave) {
    // Кнопка "Медиа" с SVG вместо текста 📎
    const addMediaBtn = createElement('button', 'btn btn-secondary');
    addMediaBtn.innerHTML = `
-       <svg xmlns="http://www.w3.org/2000/svg"  viewBox="0 0 24 24"><title>Add-a-photo-rounded SVG Icon</title><path fill="currentColor" d="M20 7q-.425 0-.712-.288T19 6V5h-1q-.425 0-.712-.288T17 4t.288-.712T18 3h1V2q0-.425.288-.712T20 1t.713.288T21 2v1h1q.425 0 .713.288T23 4t-.288.713T22 5h-1v1q0 .425-.288.713T20 7m-9 10.5q1.875 0 3.188-1.312T15.5 13t-1.312-3.187T11 8.5T7.813 9.813T6.5 13t1.313 3.188T11 17.5m0-2q-1.05 0-1.775-.725T8.5 13t.725-1.775T11 10.5t1.775.725T13.5 13t-.725 1.775T11 15.5M3 21q-.825 0-1.412-.587T1 19V7q0-.825.588-1.412T3 5h3.15L7.4 3.65q.275-.3.663-.475T8.875 3H14q.425 0 .713.288T15 4v1.5q0 .625.438 1.063T16.5 7h.5v.5q0 .625.438 1.063T18.5 9H20q.425 0 .713.288T21 10v9q0 .825-.587 1.413T19 21z"/></svg>
+
+       <svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 56 56"><title>Camera-on-rectangle SVG Icon</title><path fill="currentColor" d="M6.155 41.944h3.763V47c0 4.038 2.078 6.076 6.155 6.076h33.772C53.922 53.076 56 51.038 56 47V26.479c0-4.038-2.078-6.077-6.155-6.077H45.26c-1.53 0-2-.294-2.882-1.293l-.313-.334v-4.312c0-4.038-2.059-6.076-6.135-6.076H6.155C2.058 8.387 0 10.425 0 14.463v21.424c0 4.038 2.058 6.057 6.155 6.057m.058-3.156c-1.96 0-3.057-1.039-3.057-3.077V14.64c0-2.039 1.097-3.097 3.057-3.097H35.87c1.94 0 3.038 1.058 3.038 3.097v1.372c-.568-.216-1.235-.314-2.098-.314h-7.82c-2.019 0-3.019.588-3.999 1.666l-1.587 1.745c-.863.98-1.353 1.293-2.882 1.293h-4.45c-4.076 0-6.154 2.039-6.154 6.077v12.309Zm9.919 11.133c-1.94 0-3.058-1.058-3.058-3.096v-20.19c0-2.019 1.117-3.077 3.058-3.077h5.174c1.764 0 2.725-.333 3.685-1.43l1.549-1.706c1.117-1.255 1.685-1.568 3.43-1.568h5.86c1.726 0 2.294.314 3.43 1.568l1.53 1.705c.98 1.098 1.92 1.431 3.685 1.431h5.312c1.94 0 3.057 1.058 3.057 3.077v20.19c0 2.038-1.117 3.096-3.057 3.096Zm16.837-3.136c5.92 0 10.682-4.743 10.682-10.721c0-5.96-4.743-10.703-10.682-10.703a10.654 10.654 0 0 0-10.702 10.702c0 5.979 4.763 10.722 10.702 10.722m14.073-15.504c1.333 0 2.43-1.078 2.43-2.411a2.43 2.43 0 1 0-4.86 0c0 1.333 1.097 2.41 2.43 2.41M32.97 43.806a7.734 7.734 0 0 1-7.742-7.742c0-4.293 3.469-7.723 7.742-7.723a7.7 7.7 0 0 1 7.722 7.722a7.704 7.704 0 0 1-7.722 7.743"/></svg>
+    <span class="add-media-text">Добавить медиа</span>
    `;
    addMediaBtn.addEventListener('click', () => fileInput.click());
 
@@ -1697,7 +1696,7 @@ function renderProgramDetailsPage() {
 const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-note' : ''}`);
             // карандаш — оставляю твой SVG как есть
             editNoteBtn.innerHTML = `
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Bxs-edit-alt SVG Icon</title><path d="M16 2.012l3 3L16.713 7.3l-3-3zM4 14v3h3l8.299-8.287l-3-3zm0 6h16v2H4z" fill="currentColor"/></svg>
+               <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24"><title>Edit SVG Icon</title><path fill="currentColor" d="M3.548 20.938h16.9a.5.5 0 0 0 0-1h-16.9a.5.5 0 0 0 0 1M9.71 17.18a2.587 2.587 0 0 0 1.12-.65l9.54-9.54a1.75 1.75 0 0 0 0-2.47l-.94-.93a1.788 1.788 0 0 0-2.47 0l-9.54 9.53a2.473 2.473 0 0 0-.64 1.12L6.04 17a.737.737 0 0 0 .19.72a.767.767 0 0 0 .53.22Zm.41-1.36a1.468 1.468 0 0 1-.67.39l-.97.26l-1-1l.26-.97a1.521 1.521 0 0 1 .39-.67l.38-.37l1.99 1.99Zm1.09-1.08l-1.99-1.99l6.73-6.73l1.99 1.99Zm8.45-8.45L18.65 7.3l-1.99-1.99l1.01-1.02a.748.748 0 0 1 1.06 0l.93.94a.754.754 0 0 1 0 1.06"/></svg>
                 `;
 
             editNoteBtn.addEventListener('click', (e) => {
@@ -1720,8 +1719,12 @@ const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-
             // 👉 Только ПРАВАЯ зона (появляется при свайпе влево)
             const rightActions = createElement('div', 'swipe-actions right');
             rightActions.innerHTML = `
-              <button class="action-btn action-edit">✏️</button>
-              <button class="action-btn action-delete">🗑</button>
+              <button class="action-btn action-edit">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Setting-vert SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" d="M11.5 8.5v-4m-5 10v4m10-2v2m-5 0v-6m-5-8v6m10-6v8m-7-4h4m-9 6h4m6 2h4"/></svg>
+              </button>
+              <button class="action-btn action-delete">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Trash-24 SVG Icon</title><path fill="currentColor" d="M16 1.75V3h5.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H8V1.75C8 .784 8.784 0 9.75 0h4.5C15.216 0 16 .784 16 1.75m-6.5 0V3h5V1.75a.25.25 0 0 0-.25-.25h-4.5a.25.25 0 0 0-.25.25M4.997 6.178a.75.75 0 1 0-1.493.144L4.916 20.92a1.75 1.75 0 0 0 1.742 1.58h10.684a1.75 1.75 0 0 0 1.742-1.581l1.413-14.597a.75.75 0 0 0-1.494-.144l-1.412 14.596a.25.25 0 0 1-.249.226H6.658a.25.25 0 0 1-.249-.226z"></path><path fill="currentColor" d="M9.206 7.501a.75.75 0 0 1 .793.705l.5 8.5A.75.75 0 1 1 9 16.794l-.5-8.5a.75.75 0 0 1 .705-.793Zm6.293.793A.75.75 0 1 0 14 8.206l-.5 8.5a.75.75 0 0 0 1.498.088l.5-8.5Z"></path></svg>
+              </button>
             `;
 
             // Контент, который ездит
@@ -1854,7 +1857,7 @@ const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-
                     const mediaContainer = createElement('div', 'note-media-preview');
                     mediaContainer.style.display = 'flex';
                     mediaContainer.style.gап = '8px';
-                    mediaContainer.style.marginTop = '5px';
+                    mediaContainer.style.marginTop = '10px';
 
                     exercise.media.forEach(file => {
                         if (file.type === 'photo') {
@@ -1865,6 +1868,7 @@ const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-
                             img.style.height = '40px';
                             img.style.objectFit = 'cover';
                             img.style.borderRadius = '5px';
+                            img.style.marginRight = '7px';
                             img.style.cursor = 'pointer';
                             img.onclick = () => openPhotoFullScreen(file.url);
                             mediaContainer.append(img);
@@ -1879,6 +1883,7 @@ const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-
                             videoThumb.style.height = '40px';
                             videoThumb.style.objectFit = 'cover';
                             videoThumb.style.borderRadius = '5px';
+                            videoThumb.style.marginRight = '7px';
                             videoThumb.style.cursor = 'pointer';
                             videoThumb.onclick = () => openMediaFullScreen(file.url, 'video');
                             mediaContainer.append(videoThumb);
@@ -1908,10 +1913,10 @@ const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-
                     const icons = createElement('span', 'media-icons-inline');
 
                     const photoSVG = `
-                        <svg xmlns="http://www.w3.org/2000/svg"  viewBox="0 0 24 24"><title>Camera-photo-solid SVG Icon</title><path fill="currentColor" fill-rule="evenodd" d="M7.5 4.586A2 2 0 0 1 8.914 4h6.172a2 2 0 0 1 1.414.586L17.914 6H19a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h1.086zM10 12a2 2 0 1 1 4 0a2 2 0 0 1-4 0m2-4a4 4 0 1 0 0 8a4 4 0 0 0 0-8" clip-rule="evenodd"/></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Camera SVG Icon</title><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M3 9a2 2 0 0 1 2-2h.93a2 2 0 0 0 1.664-.89l.812-1.22A2 2 0 0 1 10.07 4h3.86a2 2 0 0 1 1.664.89l.812 1.22A2 2 0 0 0 18.07 7H19a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M15 13a3 3 0 1 1-6 0a3 3 0 0 1 6 0"/></g></svg>
                     `;
                     const videoSVG = `
-                        <svg xmlns="http://www.w3.org/2000/svg"  viewBox="0 0 16 16"><title>Video-camera-16-solid SVG Icon</title><path fill="currentColor" d="M3 4a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h5a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm12 .75a.75.75 0 0 0-1.28-.53л-2 2a.75.75 0 0 0-.22.53v2.5c0 .199.079.39.22.53л2 2a.75.75 0 0 0 1.28-.53z"/></svg>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Video-camera SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="m15.75 10.5l4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25"/></svg>
                     `;
 
                     const hasPhoto = exercise.media.some(m => m.type === 'photo' || /\.(jpg|jpeg|png|webp)$/i.test(m.url));
@@ -1961,9 +1966,7 @@ const commentButtonGroup = createElement('div', 'comment-btn-group');
 // --- иконка (SVG внутри кнопки) ---
 const commentBtn = createElement('button', `btn comment-toggle-btn ${hasTrainingNote ? 'has-note' : ''}`);
 commentBtn.innerHTML = `
-  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
-    <path d="M16 2.012l3 3L16.713 7.3l-3-3zM4 14v3h3l8.299-8.287l-3-3zm0 6h16v2H4z" fill="currentColor"/>
-  </svg>
+  <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24"><title>Edit SVG Icon</title><path fill="currentColor" d="M3.548 20.938h16.9a.5.5 0 0 0 0-1h-16.9a.5.5 0 0 0 0 1M9.71 17.18a2.587 2.587 0 0 0 1.12-.65l9.54-9.54a1.75 1.75 0 0 0 0-2.47l-.94-.93a1.788 1.788 0 0 0-2.47 0l-9.54 9.53a2.473 2.473 0 0 0-.64 1.12L6.04 17a.737.737 0 0 0 .19.72a.767.767 0 0 0 .53.22Zm.41-1.36a1.468 1.468 0 0 1-.67.39l-.97.26l-1-1l.26-.97a1.521 1.521 0 0 1 .39-.67l.38-.37l1.99 1.99Zm1.09-1.08l-1.99-1.99l6.73-6.73l1.99 1.99Zm8.45-8.45L18.65 7.3l-1.99-1.99l1.01-1.02a.748.748 0 0 1 1.06 0l.93.94a.754.754 0 0 1 0 1.06"></path></svg>
 `;
 
 // --- текст рядом с иконкой ---
@@ -3111,18 +3114,19 @@ container.append(deleteBtn);
 // 🔥 НОВАЯ ФУНКЦИЯ FIREBASE: Обновление плана добавок
 // =================================================================
 async function updateSupplementPlanInFirestore(newPlan) {
-    const docRef = getSupplementPlanDocRef();
-    if (!docRef) {
+    const cycleRef = getCycleDocRef(); // 👈 теперь цикл, а не supplements
+    if (!cycleRef) {
         showToast('Ошибка: Не выбран цикл для сохранения плана добавок.');
         return;
     }
 
     try {
-        await updateDoc(docRef, { supplementPlan: newPlan });
-        // showToast('План добавок сохранен!'); // Убрали, чтобы не спамить при вводе
+        await updateDoc(cycleRef, { supplementPlan: newPlan });
+        // showToast('План добавок сохранен!');
+        console.log("✅ supplementPlan обновлён в документе цикла:", newPlan);
     } catch (error) {
         console.error("Ошибка при сохранении плана добавок:", error);
-        showToast('Ошибка сохранения плана добавок. Проверьте правила Firebase!');
+        showToast('Ошибка сохранения плана добавок. Проверьте правила Firestore!');
     }
 }
 
@@ -3817,6 +3821,96 @@ function createProgramsHtml(programsInCycle) {
     return html;
 }
 
+
+// ====== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ======
+
+// Безопасно получить список имён добавок
+function getSupplementNames(planData) {
+  if (!planData || !Array.isArray(planData.supplements)) return [];
+  return planData.supplements.map(s => (typeof s === 'object' && s?.name) ? s.name : String(s));
+}
+
+// Переименование препарата
+async function renameSupplement(oldName, newName) {
+  if (!oldName || !newName || oldName === newName) return;
+  const plan = JSON.parse(JSON.stringify(state.supplementPlan || { supplements: [], data: [] }));
+  const names = getSupplementNames(plan);
+  const idx = names.indexOf(oldName);
+  if (idx === -1) return;
+
+  plan.supplements[idx] = newName;
+
+  (plan.data || []).forEach(day => {
+    if (!day.doses) day.doses = {};
+    if (Object.prototype.hasOwnProperty.call(day.doses, oldName)) {
+      if (!Object.prototype.hasOwnProperty.call(day.doses, newName)) {
+        day.doses[newName] = day.doses[oldName];
+      }
+      delete day.doses[oldName];
+    }
+  });
+
+  await updateSupplementPlanInFirestore(plan);
+}
+
+// Drag&Drop перестановка колонок
+function enableHeaderDnd(thead, planData) {
+  const names = getSupplementNames(planData);
+  let dragFrom = null;
+
+  thead.querySelectorAll('th.supplement-col').forEach((th, i) => {
+    const isReal = i < names.length;
+    th.draggable = isReal;
+
+    th.addEventListener('dragstart', e => {
+      if (!isReal) return;
+      dragFrom = i;
+      e.dataTransfer.effectAllowed = 'move';
+      th.classList.add('dragging');
+    });
+
+    th.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      th.classList.add('dragover');
+    });
+
+    th.addEventListener('dragleave', () => th.classList.remove('dragover'));
+
+    th.addEventListener('drop', async () => {
+      th.classList.remove('dragover');
+      thead.querySelectorAll('th.supplement-col').forEach(el => el.classList.remove('dragging'));
+      if (dragFrom === null) return;
+
+      const dragTo = i;
+      if (dragTo === dragFrom || dragTo >= names.length) { dragFrom = null; return; }
+
+      const plan = JSON.parse(JSON.stringify(state.supplementPlan));
+      const arr = getSupplementNames(plan);
+      const moved = arr.splice(dragFrom, 1)[0];
+      arr.splice(dragTo, 0, moved);
+      plan.supplements = arr;
+
+      await updateSupplementPlanInFirestore(plan);
+      dragFrom = null;
+    });
+
+    th.addEventListener('dragend', () => {
+      thead.querySelectorAll('th.supplement-col').forEach(el => el.classList.remove('dragging'));
+      dragFrom = null;
+    });
+  });
+}
+
+
+
+
+
+
+
+
+
+
 // =================================================================
 // 🌟 НОВАЯ ФУНКЦИЯ: РЕНДЕР ПЛАНА БАДОВ/ДОБАВОК (Обновлена)
 // =================================================================
@@ -3967,151 +4061,190 @@ function renderSupplementsPage() {
     contentContainer.append(controlsWrapper);
     contentContainer.append(pdfControls); // Отдельная секция для фильтра дат
 
-    // -----------------------------------------------------------
-    // РЕНДЕРИНГ ТАБЛИЦЫ
-    // -----------------------------------------------------------
-    // ... (Остальной код рендеринга таблицы остается без изменений) ...
+// -----------------------------------------------------------
+// РЕНДЕРИНГ ТАБЛИЦЫ
+// -----------------------------------------------------------
+const planData = state.supplementPlan || { supplements: [], data: [] };
+const todayDateString = getTodayDateString(); // Сегодняшняя дата в формате ДД.ММ.ГГГГ
+let todayRowElement = null; // Переменная для хранения элемента строки
 
-    const planData = state.supplementPlan || { supplements: [], data: [] };
-    const todayDateString = getTodayDateString(); // Сегодняшняя дата в формате ДД.ММ.ГГГГ
-    let todayRowElement = null; // Переменная для хранения элемента строки
+if (planData.supplements.length === 0 && planData.data.length === 0) {
+    contentContainer.append(createElement('div', 'muted', 'Начните с добавления первого препарата.'));
+} else {
+    const tableWrapper = createElement('div', 'supplement-table-wrapper');
+    tableWrapper.id = 'supplement-table-wrapper'; // 🔥 ДОБАВЛЕНО: ID для прокрутки
 
-    if (planData.supplements.length === 0 && planData.data.length === 0) {
-        contentContainer.append(createElement('div', 'muted', 'Начните с добавления первого препарата.'));
-    } else {
-        const tableWrapper = createElement('div', 'supplement-table-wrapper');
-        tableWrapper.id = 'supplement-table-wrapper'; // 🔥 ДОБАВЛЕНО: ID для прокрутки
+    const table = createElement('table', 'supplement-plan-table');
 
-        const table = createElement('table', 'supplement-plan-table');
+    // 🔹 ЗАГОЛОВОК ТАБЛИЦЫ (Препараты)
+    const thead = createElement('thead');
+    const headerRow = createElement('tr');
+    headerRow.append(createElement('th', 'date-col', 'Дата'));
+    headerRow.append(createElement('th', 'day-col'));
 
-        // ЗАГОЛОВОК ТАБЛИЦЫ (Препараты)
-        const thead = createElement('thead');
-        const headerRow = createElement('tr');
-        headerRow.append(createElement('th', 'date-col', 'Дата'));
-        headerRow.append(createElement('th', 'day-col'));
+    const realNames = getSupplementNames(planData);
+    const displayNames = [...realNames];
+    while (displayNames.length < 5) displayNames.push(''); // минимум 5 колонок
 
-        planData.supplements.forEach(supName => {
+    // Строим столбцы
+    displayNames.forEach((name, i) => {
+        const th = createElement('th', 'supplement-col');
+        th.dataset.index = i;
+        const header = createElement('div', 'supplement-header');
 
+        const nameInput = createElement('input');
+        nameInput.type = 'text';
+        nameInput.placeholder = `Препарат ${i + 1}`;
+        nameInput.value = name || '';
+
+        // Кнопка удаления — только для реально существующих препаратов
+        if (i < realNames.length) {
             const deleteBtn = createElement('button', 'btn delete-supplement-btn');
-            deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><title>Ios-close-empty SVG Icon</title><path fill="currentColor" d="M340.2 160l-84.4 84.3-84-83.9-11.8 11.8 84 83.8-84 83.9 11.8 11.7 84-83.8 84.4 84.2 11.8-11.7-84.4-84.3 84.4-84.2z"/></svg>';
-            deleteBtn.dataset.name = supName;
+            deleteBtn.innerHTML =
+                '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><path fill="currentColor" d="M340.2 160l-84.4 84.3-84-83.9-11.8 11.8 84 83.8-84 83.9 11.8 11.7 84-83.8 84.4 84.2 11.8-11.7-84.4-84.3 84.4-84.2z"/></svg>';
 
-            const th = createElement('th', 'supplement-col');
-            const supHeader = createElement('div', 'supplement-header');
-            const supNameSpan = createElement('span', '', supName);
-
-
-            supHeader.append(deleteBtn);
-            supHeader.append(supNameSpan);
-
-            th.append(supHeader);
-            headerRow.append(th);
-
-        });
-
-        thead.append(headerRow);
-        table.append(thead);
-
-        // ТЕЛО ТАБЛИЦЫ (Даты и Дозировки)
-        const tbody = createElement('tbody');
-        planData.data.forEach((dayRecord, dayIndex) => {
-            let rowClasses = '';
-            // 🔥 ЛОГИКА: Сравнение и подсветка текущей даты
-            if (dayRecord.date === todayDateString) {
-                rowClasses += ' today-highlight';
-            }
-            if (dayRecord.dayOfWeek === 'вс' || dayRecord.dayOfWeek === 'сб') {
-                rowClasses += ' weekend';
-            }
-
-            const tr = createElement('tr', rowClasses.trim());
-            tr.dataset.date = dayRecord.date; // Добавляем полную дату для идентификации
-
-            // 🔥 ИЗМЕНЕНИЕ: Формат даты на ДД.ММ
-            tr.append(createElement('td', 'date-col', formatDayAndMonth(dayRecord.date)));
-
-            tr.append(createElement('td', 'day-col', dayRecord.dayOfWeek));
-
-            planData.supplements.forEach(supName => {
-                const td = createElement('td', 'dose-col');
-                const doseInput = createElement('input', 'dose-input');
-                doseInput.type = 'text';
-                doseInput.placeholder = '';
-                doseInput.value = dayRecord.doses && dayRecord.doses[supName] ? dayRecord.doses[supName] : '';
-                doseInput.dataset.supName = supName;
-                doseInput.dataset.dayIndex = dayIndex;
-
-                // Отложенное сохранение для дозировок
-                doseInput.addEventListener('input', (e) => {
-                    debouncedSaveDoseData(
-                        supName,
-                        dayIndex,
-                        e.target.value
-                    );
+            deleteBtn.addEventListener('click', async () => {
+                const plan = JSON.parse(JSON.stringify(state.supplementPlan));
+                const oldName = realNames[i];
+                plan.supplements = getSupplementNames(plan).filter(n => n !== oldName);
+                plan.data = (plan.data || []).map(d => {
+                    if (d.doses) delete d.doses[oldName];
+                    return d;
                 });
-
-                td.append(doseInput);
-                tr.append(td);
+                await updateSupplementPlanInFirestore(plan);
             });
-            tbody.append(tr);
-
-            if (dayRecord.date === todayDateString) {
-                todayRowElement = tr;
-            }
-        });
-        table.append(tbody);
-        tableWrapper.append(table);
-        contentContainer.append(tableWrapper);
-
-        // 🔥 ЛОГИКА: Автоматическая прокрутка к сегодняшней дате
-        if (todayRowElement) {
-            // Используем setTimeout, чтобы прокрутка сработала после того, как все элементы вставлены в DOM
-            setTimeout(() => {
-                const wrapper = document.getElementById('supplement-table-wrapper');
-                if (wrapper) {
-                    const rowRect = todayRowElement.getBoundingClientRect();
-                    const wrapperRect = wrapper.getBoundingClientRect();
-
-                    // Рассчитываем позицию прокрутки для центрирования строки
-                    // (rowRect.top - wrapperRect.top) - это положение строки относительно верхней границы обертки
-                    // + wrapper.scrollTop - добавляем текущую прокрутку
-                    // - (wrapperRect.height / 2) + (rowRect.height / 2) - центрируем
-                    const scrollPosition = rowRect.top - wrapperRect.top + wrapper.scrollTop - (wrapperRect.height / 2) + (rowRect.height / 2);
-
-                    wrapper.scrollTo({
-                        top: scrollPosition,
-                        behavior: 'smooth'
-                    });
-                }
-            }, 100);
+            header.append(deleteBtn);
         }
 
-        // Обработчик удаления препарата
-        tableWrapper.querySelectorAll('.delete-supplement-btn').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const supName = btn.dataset.name;
-                const newPlan = JSON.parse(JSON.stringify(state.supplementPlan));
-
-                // 1. Удаляем из списка препаратов
-                newPlan.supplements = newPlan.supplements.filter(name => name !== supName);
-
-                // 2. Удаляем дозировки этого препарата из всех записей
-                newPlan.data = newPlan.data.map(dayRecord => {
-                    if (dayRecord.doses) {
-                        delete dayRecord.doses[supName];
-                    }
-                    return dayRecord;
-                });
-
-                await updateSupplementPlanInFirestore(newPlan);
-            });
+        // ✅ Добавление / Переименование
+        nameInput.addEventListener('keydown', e => {
+            if (e.key === 'Enter') nameInput.blur();
         });
 
-    }
+        nameInput.addEventListener('blur', async () => {
+            const newVal = nameInput.value.trim();
 
-    root.append(contentContainer);
+            // Добавление нового
+            if (i >= realNames.length) {
+                if (!newVal) return;
+                if (realNames.includes(newVal)) {
+                    showToast('Такой препарат уже есть.');
+                    nameInput.value = '';
+                    return;
+                }
+
+                const plan = JSON.parse(JSON.stringify(state.supplementPlan));
+                plan.supplements = getSupplementNames(plan);
+                plan.supplements.push(newVal);
+
+                plan.data = (plan.data || []).map(d => {
+                    d.doses = d.doses || {};
+                    if (!d.doses[newVal]) d.doses[newVal] = '';
+                    return d;
+                });
+
+                await updateSupplementPlanInFirestore(plan);
+                return;
+            }
+
+            // Переименование существующего
+            const oldVal = realNames[i];
+            if (newVal && newVal !== oldVal) {
+                if (realNames.includes(newVal)) {
+                    showToast('Такой препарат уже есть.');
+                    nameInput.value = oldVal;
+                    return;
+                }
+                await renameSupplement(oldVal, newVal);
+            } else if (!newVal) {
+                nameInput.value = oldVal;
+            }
+        });
+
+        header.append(nameInput);
+        th.append(header);
+        headerRow.append(th);
+    });
+
+    thead.append(headerRow);
+    table.append(thead);
+
+    // 🔹 Включаем drag&drop для перестановки колонок
+    setTimeout(() => enableHeaderDnd(thead, planData), 0);
+
+    // 🔹 ТЕЛО ТАБЛИЦЫ (Даты и Дозировки)
+    const tbody = createElement('tbody');
+    planData.data.forEach((dayRecord, dayIndex) => {
+        let rowClasses = '';
+        if (dayRecord.date === todayDateString) rowClasses += ' today-highlight';
+        if (dayRecord.dayOfWeek === 'вс' || dayRecord.dayOfWeek === 'сб') rowClasses += ' weekend';
+
+        const tr = createElement('tr', rowClasses.trim());
+        tr.dataset.date = dayRecord.date;
+
+        // Формат даты ДД.ММ
+        tr.append(createElement('td', 'date-col', formatDayAndMonth(dayRecord.date)));
+        tr.append(createElement('td', 'day-col', dayRecord.dayOfWeek));
+
+        // Ячейки дозировок
+        displayNames.forEach(supName => {
+            const td = createElement('td', 'dose-col');
+
+            if (!supName) {
+                const disabled = createElement('input', 'dose-input');
+                disabled.disabled = true;
+                td.append(disabled);
+                tr.append(td);
+                return;
+            }
+
+            const doseInput = createElement('input', 'dose-input');
+            doseInput.type = 'text';
+            doseInput.value =
+                (dayRecord.doses && dayRecord.doses[supName]) ? dayRecord.doses[supName] : '';
+
+            doseInput.addEventListener('input', e => {
+                debouncedSaveDoseData(supName, dayIndex, e.target.value);
+            });
+
+            td.append(doseInput);
+            tr.append(td);
+        });
+
+        tbody.append(tr);
+        if (dayRecord.date === todayDateString) todayRowElement = tr;
+    });
+
+    table.append(tbody);
+    tableWrapper.append(table);
+    contentContainer.append(tableWrapper);
 }
 
+
+
+
+
+// 🔥 ЛОГИКА: Автоматическая прокрутка к сегодняшней дате
+if (todayRowElement) {
+    setTimeout(() => {
+        const wrapper = document.getElementById('supplement-table-wrapper');
+        if (wrapper) {
+            const rowRect = todayRowElement.getBoundingClientRect();
+            const wrapperRect = wrapper.getBoundingClientRect();
+            const scrollPosition =
+                rowRect.top - wrapperRect.top + wrapper.scrollTop -
+                (wrapperRect.height / 2) + (rowRect.height / 2);
+
+            wrapper.scrollTo({
+                top: scrollPosition,
+                behavior: 'smooth'
+            });
+        }
+    }, 100);
+}
+
+root.append(contentContainer);
+}
 
 
 
@@ -5198,14 +5331,31 @@ function setupDynamicListeners() {
         });
     }
 
-    // 5. БАДы — только если выбран цикл
-    const supplementsRef = getSupplementPlanDocRef?.();
-    if (supplementsRef && state.selectedCycleId) {
-        supplementsUnsubscribe = onSnapshot(supplementsRef, docSnap => {
-            state.supplementPlan = docSnap.exists() ? docSnap.data() : { supplements: [], data: [] };
+// 5. БАДы — только если выбран цикл
+if (state.selectedCycleId) {
+    const cycleRef = getCycleDocRef?.();
+    if (cycleRef) {
+        supplementsUnsubscribe = onSnapshot(cycleRef, docSnap => {
+            const docData = docSnap.exists() ? docSnap.data() : {};
+            const supplementPlan = docData.supplementPlan || {};
+            console.log("📦 Firestore snapshot (cycle.supplementPlan):", supplementPlan);
+
+            state.supplementPlan = {
+                supplements: Array.isArray(supplementPlan.supplements)
+                    ? supplementPlan.supplements
+                    : [],
+                data: Array.isArray(supplementPlan.data)
+                    ? supplementPlan.data
+                    : []
+            };
+
+            console.log("✅ Загружено в state.supplementPlan:", state.supplementPlan);
+
             if (state.currentPage === 'supplements') render();
         });
     }
+}
+
 
     // 6. Отчёты — только если выбран цикл
     if (state.selectedCycleId) {
@@ -5515,43 +5665,27 @@ document.getElementById('programs-btn')?.addEventListener('click', () => {
 // 🔥 ОБРАБОТЧИК ДЛЯ КНОПКИ "ДНЕВНИК"
 document.getElementById('journal-btn')?.addEventListener('click', () => {
     if (state.currentMode) {
-        if (state.currentPage !== 'journal') {
-            // Сохраняем текущую страницу перед переходом в дневник
-            state.previousPage = state.currentPage;
-            state.currentPage = 'journal';
-        } else {
-            // Если мы уже в дневнике, повторное нажатие возвращает на previousPage
-            state.currentPage = state.previousPage;
-        }
+        state.currentPage = 'journal';
         render();
     }
 });
 
-// 🔥 ДОБАВЛЕНО: ОБРАБОТЧИК ДЛЯ КНОПКИ "БАДЫ" - ИСПРАВЛЕН
+// 🔥 ОБРАБОТЧИК ДЛЯ КНОПКИ "БАДЫ" - ИСПРАВЛЕН
 document.getElementById('supplements-btn')?.addEventListener('click', () => {
     if (state.currentMode) {
-        if (state.currentPage !== 'supplements') {
-            state.previousPage = state.currentPage; // Сохраняем, откуда пришли
-            state.currentPage = 'supplements';
-        } else {
-            state.currentPage = state.previousPage; // Повторное нажатие - возвращаемся на предыдущую
-        }
+        state.currentPage = 'supplements';
         render();
     }
 });
 
-// 🔥 ДОБАВЛЕНО: ОБРАБОТЧИК ДЛЯ КНОПКИ "ОТЧЕТЫ"
+// 🔥 ОБРАБОТЧИК ДЛЯ КНОПКИ "ОТЧЕТЫ" - ИСПРАВЛЕН
 document.getElementById('reports-btn')?.addEventListener('click', () => {
     if (state.currentMode) {
-        if (state.currentPage !== 'reports') {
-            state.previousPage = state.currentPage;
-            state.currentPage = 'reports';
-        } else {
-            state.currentPage = state.previousPage;
-        }
+        state.currentPage = 'reports';
         render();
     }
 });
+
 
 // 🔥 ОБРАБОТЧИК: СОБСТВЕННЫЕ ТРЕНИРОВКИ
 document.getElementById('select-own-mode')?.addEventListener('click', () => {
