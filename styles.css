@@ -7,7 +7,7 @@ html, body {
   height: 100%;
   margin: 0;
   padding: 0;
-  overflow: hidden;                /* 🚫 Убираем скролл с body */
+             /* 🚫 Убираем скролл с body */
   overscroll-behavior: none;       /* 🚫 Отключаем pull-to-refresh */
   -webkit-overflow-scrolling: auto;
   touch-action: none;              /* 🚫 Блокируем глобальные свайпы */
