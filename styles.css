@@ -3247,14 +3247,19 @@ button.btn.btn-danger.confirm-btn {
 
 /* Контейнер для прокрутки таблицы */
 .supplement-table-wrapper {
-    overflow-x: auto;
-    border: 1px solid var(--color-border-light);
+    overflow: auto;
+    -webkit-overflow-scrolling: touch; /* Для плавного скролла на iOS */
+    overscroll-behavior-x: contain;
+      overscroll-behavior-y: contain;
+      touch-action: pan-x pan-y; /* разрешаем оба направления */
     border-radius: 8px;
     background-color: #fff;
     max-height: calc(57vh); /* Еще сильнее уменьшаем высоту для мобильных */
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch; /* Для плавного скролла на iOS */
     border: 1px solid #c2c2c2;
+}
+/* Чтобы Safari не “тянул” при горизонтальном свайпе */
+.supplement-table-wrapper::-webkit-scrollbar {
+  display: none; /* скрывает скроллбар визуально */
 }
 
 /* Общие стили для таблицы */
