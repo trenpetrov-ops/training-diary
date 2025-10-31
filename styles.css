@@ -4,30 +4,19 @@
 @import url('https://fonts.googleapis.com/css2?family=SF+Pro+Text:wght@400;500;600;700&display=swap');
 
 html, body {
-  height: 100%;
-  margin: 0;
-  padding: 0;
-             /* 🚫 Убираем скролл с body */
-  overscroll-behavior: none;       /* 🚫 Отключаем pull-to-refresh */
-  -webkit-overflow-scrolling: auto;
-  touch-action: none;              /* 🚫 Блокируем глобальные свайпы */
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    touch-action: none;
+      overscroll-behavior: none;
+      -webkit-overflow-scrolling: auto;
+      
 }
-/* Разрешаем скролл ТОЛЬКО внутри нужных контейнеров */
-#root,
-.scrollable,
-.supplement-table-wrapper {
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch; /* ✅ Плавный нативный скролл */
-  overscroll-behavior: contain;      /* 🚫 Без bounce */
-  touch-action: pan-y; 
-  touch-action: pan-x;/* ✅ Разрешаем только вертикальный скролл */
+html, body {
+    touch-action: manipulation; /* Отключает жесты масштабирования */
+    overscroll-behavior: contain;
 }
-
-/* Чтобы контент не дергался при касании */
-body, #root {
-
-  -webkit-transform: translateZ(0);
-}
+/* Убираем focus-обводку и подсветку при тапе на мобильных */
 
 
 /* Убираем серый фон при тапе в Chrome/Safari */
