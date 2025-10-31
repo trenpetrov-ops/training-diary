@@ -1451,29 +1451,11 @@ button.btn.comment-toggle-btn svg {
     table-layout: fixed; /* ГАРАНТИЯ: столбцы не сжимаются */
 }
 
-.supplement-plan-table th,
-.supplement-plan-table td {
-    border: 1px solid #d1d1d1;
-    padding: 0; /* Убираем padding по умолчанию */
-    text-align: center;
-    white-space: normal;
-    position: relative;
-    box-sizing: border-box;
-    vertical-align: middle;
-}
 
-/* 1. Сжатие и фиксация ширины первых двух столбцов (еще агрессивнее) */
 
-/* 🔥 УЛЬТРА-СЖАТИЕ: Дата */
-.supplement-plan-table th.date-col,
-.supplement-plan-table td.date-col {
-    width: 45px; /* Очень узкий столбец даты */
-    min-width: 45px;
-    max-width: 45px; /* 🔥 НОВАЯ ФИКСАЦИЯ: Гарантирует, что столбец не расширится */
-    font-size: 0.7em; /* Очень маленький шрифт */
-    line-height: 1.1; /* Сжимаем межстрочный интервал */
-    padding: 2px 1px; /* Минимальный padding */
-}
+
+
+
 
 /* 🔥 УЛЬТРА-СЖАТИЕ: День недели */
 .supplement-plan-table th.day-col, .supplement-plan-table td.day-col {
@@ -1492,33 +1474,15 @@ button.btn.comment-toggle-btn svg {
     position: sticky;
     top: 0;
     z-index: 10;
-    padding: 0px 3px 9px 3px;
     vertical-align: middle;
     height: 43px;
     font-size: 9px;
 }
 
 /* Стили для заголовка препарата (самый критичный элемент) */
-.supplement-plan-table .supplement-header {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    padding: 0 1px;
-    height: 100%;
-}
 
-/* 2. Обновленные значения для закрепления столбцов (левое смещение) */
-.supplement-plan-table th.date-col, .supplement-plan-table td.date-col {
-    position: sticky;
-    left: 0;
-    z-index: 20;
-    background-color: #e9e9e9;
-    width: 0%;
-}
+
+
 .supplement-plan-table th.day-col,
 .supplement-plan-table td.day-col {
     position: sticky;
@@ -1527,12 +1491,7 @@ button.btn.comment-toggle-btn svg {
     background-color: #e9e9e9;
 }
 
-/* Стили для даты и дня недели в теле таблицы */
-.supplement-plan-table td.date-col {
-    background-color: #f8f8f8;
-    z-index: 5;
-    line-height: 1.1; /* Сжимаем межстрочный интервал */
-}
+
 .supplement-plan-table td.day-col {
     background-color: #f8f8f8;
     z-index: 5;
@@ -1543,7 +1502,7 @@ button.btn.comment-toggle-btn svg {
 /* Выходные дни */
 .supplement-plan-table .weekend .day-col,
 .supplement-plan-table .weekend .date-col{
-    background-color: #ffeaea;
+    background-color: #e9e9e9;
 }
 
 /* 3. Поле ввода дозировки (соответствует 50px ширине столбца) */
@@ -1627,8 +1586,9 @@ button.btn.comment-toggle-btn svg {
     min-width: 150px;
 }
 
-.today-highlight{
-     background: #FFF0F5;
+.today-highlight td {
+    border-bottom: 1.5px solid #67b0ff !important;
+    border-top: 1.5px solid #67b0ff !important;
 }
 
 
@@ -3185,9 +3145,86 @@ button.btn.btn-danger.confirm-btn {
 
 
 /* --- СТИЛИ ДЛЯ СТРАНИЦЫ ПЛАНА БАДОВ/ДОБАВОК (SUPPLEMENTS) --- */
+.sup-name {
+  cursor: pointer;
+  font-weight: 500;
+  padding: 4px;
+  text-align: center;
+  user-select: none;
+}
 
+.sup-name:hover {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 6px;
+}
 
+.modal-backdrop {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
 
+.modal-window {
+  background: #fff;
+  padding: 20px;
+  border-radius: 12px;
+  min-width: 300px;
+  text-align: center;
+}
+
+.modal-buttons {
+  display: flex;
+  justify-content: space-around;
+  margin-top: 20px;
+}
+
+.modal-input {
+  width: 90%;
+  padding: 8px;
+  margin-top: 10px;
+  font-size: 15px;
+}
+
+.position-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.btn.small-btn {
+  padding: 5px 8px;
+  font-size: 14px;
+}
+
+.btn.btn-danger {
+  background: #e74c3c;
+  color: #fff;
+}
+
+.btn.btn-danger:hover {
+  background: #c0392b;
+}
+
+.supplement-col,
+.dose-col {
+  min-width: 50px;
+  max-width: 50px;
+  width: 50px;
+  text-align: center;
+}
+
+.dose-input {
+  width: 100%;
+  box-sizing: border-box;
+  text-align: center;
+}
 /* --- СТИЛИ ДЛЯ СТРАНИЦЫ ПЛАНА БАДОВ/ДОБАВОК (SUPPLEMENTS) --- */
 
 /* Контейнер для прокрутки таблицы */
@@ -3196,9 +3233,10 @@ button.btn.btn-danger.confirm-btn {
     border: 1px solid var(--color-border-light);
     border-radius: 8px;
     background-color: #fff;
-    max-height: calc(68vh); /* Еще сильнее уменьшаем высоту для мобильных */
+    max-height: calc(57vh); /* Еще сильнее уменьшаем высоту для мобильных */
     overflow-y: auto;
     -webkit-overflow-scrolling: touch; /* Для плавного скролла на iOS */
+    border: 1px solid #c2c2c2;
 }
 
 /* Общие стили для таблицы */
@@ -3207,34 +3245,16 @@ button.btn.btn-danger.confirm-btn {
        используем min-width для 6 столбцов (75px + 6*50px = 375px) */
     width: auto;
     border-collapse: collapse;
-    min-width: 375px;
+    min-width: 100%;
     font-size: 0.75em; /* Очень маленький базовый шрифт */
     table-layout: fixed; /* ГАРАНТИЯ: столбцы не сжимаются */
 }
 
-.supplement-plan-table th,
-.supplement-plan-table td {
-    border: 1px solid #d1d1d1;
-    padding: 0; /* Убираем padding по умолчанию */
-    text-align: center;
-    white-space: normal;
-    position: relative;
-    box-sizing: border-box;
-    vertical-align: middle;
-}
+
 
 /* 1. Сжатие и фиксация ширины первых двух столбцов (еще агрессивнее) */
 
-/* 🔥 УЛЬТРА-СЖАТИЕ: Дата */
-.supplement-plan-table th.date-col,
-.supplement-plan-table td.date-col {
-    width: 45px; /* Очень узкий столбец даты */
-    min-width: 45px;
-    max-width: 45px; /* 🔥 НОВАЯ ФИКСАЦИЯ: Гарантирует, что столбец не расширится */
-    font-size: 0.7em; /* Очень маленький шрифт */
-    line-height: 1.1; /* Сжимаем межстрочный интервал */
-    padding: 2px 1px; /* Минимальный padding */
-}
+
 
 /* 🔥 УЛЬТРА-СЖАТИЕ: День недели */
 .supplement-plan-table th.day-col, .supplement-plan-table td.day-col {
@@ -3249,11 +3269,10 @@ button.btn.btn-danger.confirm-btn {
 
 /* Стили для заголовков таблицы (Дата, День) */
 .supplement-plan-table thead th {
-    background-color: #f8f8f8;
+    background: none;
     position: sticky;
     top: 0;
     z-index: 10;
-    padding: 0px 3px 9px 3px;
     vertical-align: middle;
     height: 43px;
     font-size: 9px;
@@ -3271,15 +3290,13 @@ button.btn.btn-danger.confirm-btn {
     padding: 0 1px;
     height: 100%;
 }
-
-/* 2. Обновленные значения для закрепления столбцов (левое смещение) */
-.supplement-plan-table th.date-col, .supplement-plan-table td.date-col {
-    position: sticky;
-    left: 0;
-    z-index: 20;
-    background-color: #e9e9e9;
-    width: 0%;
+.supplement-plan-table thead tr th .supplement-header,
+.supplement-plan-table thead tr .date-col{
+    border-left: 1px solid #ddaf99 !important;
+    background: #fddfd0;
+    font-weight: 500;
 }
+
 .supplement-plan-table th.day-col,
 .supplement-plan-table td.day-col {
     position: sticky;
@@ -3288,17 +3305,48 @@ button.btn.btn-danger.confirm-btn {
     background-color: #e9e9e9;
 }
 
-/* Стили для даты и дня недели в теле таблицы */
-.supplement-plan-table td.date-col {
-    background-color: #f8f8f8;
-    z-index: 5;
-    line-height: 1.1; /* Сжимаем межстрочный интервал */
+
+
+
+
+/* первый столб даты  */
+
+.supplement-plan-table th.date-col, .supplement-plan-table td.date-col {
+    position: sticky;
+    left: 0;
+    background-color: #fafafa;
+    width: 43px;
+    font-size: 9px;
+    text-align: center;
 }
+
+.supplement-plan-table td.date-col {
+    z-index: 5;
+}
+
+.supplement-plan-table th.date-col, .supplement-plan-table td.date-col {
+    z-index: 20;
+}
+
+.supplement-plan-table td.date-col {
+    z-index: 5;
+}
+
+.supplement-plan-table th, .supplement-plan-table td {
+    padding: 0;
+}
+
+.supplement-plan-table td {
+    border: 1px solid #d1d1d1;
+}
+
+
 .supplement-plan-table td.day-col {
     background-color: #f8f8f8;
     z-index: 5;
     line-height: 1.1;
     padding: 0 7px;
+    font-weight: 600;
 }
 
 /* Выходные дни */
@@ -3578,6 +3626,7 @@ button.action-btn.action-delete svg {
     width: 61% !important;
     height: 61% !important;
 }
+
 
 
 
