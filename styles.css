@@ -3300,7 +3300,7 @@ button.btn.btn-danger.confirm-btn {
 .supplement-plan-table th.day-col,
 .supplement-plan-table td.day-col {
     position: sticky;
-    left: 45px; /* Сдвигаем на ширину date-col (45px) */
+    left: 42px; /* Сдвигаем на ширину date-col (45px) */
     z-index: 20;
     background-color: #e9e9e9;
 }
@@ -3315,7 +3315,9 @@ button.btn.btn-danger.confirm-btn {
     position: sticky;
     left: 0;
     background-color: #fafafa;
-    width: 43px;
+    width: 42px;
+    max-width: 42px;
+    min-width: 42px;
     font-size: 9px;
     text-align: center;
 }
@@ -3345,8 +3347,12 @@ button.btn.btn-danger.confirm-btn {
     background-color: #f8f8f8;
     z-index: 5;
     line-height: 1.1;
-    padding: 0 7px;
+    padding: 0;
     font-weight: 600;
+    min-width: 42px;
+    width: 42px;
+    text-align: center;
+    left: 42px;
 }
 
 /* Выходные дни */
@@ -3356,9 +3362,9 @@ button.btn.btn-danger.confirm-btn {
 
 /* 3. Поле ввода дозировки (соответствует 50px ширине столбца) */
 .dose-col {
-    width: 50px; /* Ширина ячейки соответствует ширине столбца препарата */
-    min-width: 50px;
-    max-width: 50px; /* 🔥 НОВАЯ ФИКСАЦИЯ: Гарантирует, что столбец не расширится */
+    width: 42px; /* Ширина ячейки соответствует ширине столбца препарата */
+    min-width: 42px;
+    max-width: 42px; /* 🔥 НОВАЯ ФИКСАЦИЯ: Гарантирует, что столбец не расширится */
     padding: 0; /* Убираем padding у самой ячейки */
 }
 .dose-input {
