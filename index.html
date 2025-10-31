@@ -295,6 +295,51 @@
 
     </div>
 </div>
+<script>
+(async function lockOrientationWithFallback() {
+  // 1) Нативный лок там, где он есть (Android/Chrome и часть десктопов)
+  try {
+    if (screen.orientation && screen.orientation.lock) {
+      await screen.orientation.lock('portrait');
+    }
+  } catch (e) {
+    // тихо игнорируем — iOS сюда обычно попадает
+  }
+
+  // 2) Фолбэк для iOS: показываем оверлей в альбомной ориентации
+  const overlayId = 'rotate-overlay';
+  let overlay = document.getElementById(overlayId);
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = overlayId;
+    overlay.innerHTML = `
+      <div class="rotate-box">
+        <div class="rotate-icon">📱↩️</div>
+        <div class="rotate-text">Пожалуйста, поверните устройство вертикально</div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+  }
+
+  function setScrollLocked(locked) {
+    // Блокируем «протягивание» и скрол под оверлеем
+    document.documentElement.style.overflow = locked ? 'hidden' : '';
+    document.body.style.overscrollBehavior = locked ? 'none' : '';
+    document.body.style.touchAction = locked ? 'none' : '';
+  }
+
+  function updateOverlay() {
+    const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+    overlay.style.display = isLandscape ? 'flex' : 'none';
+    setScrollLocked(isLandscape);
+  }
+
+  // Первичная установка и слушатели
+  updateOverlay();
+  window.addEventListener('orientationchange', updateOverlay);
+  window.addEventListener('resize', updateOverlay);
+})();
+</script>
 
 <script type="module" src="./script.js"></script>
 </body>
