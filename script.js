@@ -3902,71 +3902,332 @@ function enableHeaderDnd(thead, planData) {
   });
 }
 
+// =================================================================
+// 🌟 функцию модалки БАДОВ/ДОБАВОК
+// =================================================================
 
+function openSupplementEditModal(index, currentName) {
+  const plan = JSON.parse(JSON.stringify(state.supplementPlan));
+  const names = getSupplementNames(plan);
+  const isExisting = !!currentName && currentName.trim() !== '';
 
+  // Создаём затемнение
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
 
+  const modal = document.createElement('div');
+  modal.className = 'modal-window';
+  modal.innerHTML = `
+    <h3>${isExisting ? 'Редактирование препарата' : 'Добавить препарат'}</h3>
+    <input type="text" class="modal-input" value="${currentName || ''}" placeholder="Введите имя препарата">
+    ${isExisting ? `
+      <div class="position-controls">
+        <button class="btn small-btn" id="pos-left">←</button>
+        <span>Позиция: <b id="pos-value">${index + 1}</b></span>
+        <button class="btn small-btn" id="pos-right">→</button>
+      </div>
+    ` : ''}
+    <div class="modal-buttons">
+      ${isExisting ? '<button class="btn btn-danger" id="delete-sup">Удалить</button>' : ''}
+      <button class="btn btn-secondary" id="cancel-modal">Отмена</button>
+      <button class="btn btn-primary" id="save-modal">ОК</button>
+    </div>
+  `;
 
+  backdrop.append(modal);
+  document.body.append(backdrop);
 
+  const input = modal.querySelector('.modal-input');
+  const posValue = modal.querySelector('#pos-value');
+  let newPos = index;
 
+  // ===== стрелки для позиции =====
+  if (isExisting) {
+    modal.querySelector('#pos-left').addEventListener('click', () => {
+      if (newPos > 0) {
+        newPos--;
+        posValue.textContent = newPos + 1;
+      }
+    });
+    modal.querySelector('#pos-right').addEventListener('click', () => {
+      if (newPos < names.length - 1) {
+        newPos++;
+        posValue.textContent = newPos + 1;
+      }
+    });
+  }
 
+  // ===== удаление через openConfirmModal =====
+  if (isExisting) {
+    modal.querySelector('#delete-sup').addEventListener('click', () => {
+      // Сначала закрываем текущее окно редактирования
+      backdrop.remove();
 
+      // Затем вызываем твою модалку подтверждения
+      openConfirmModal(`Удалить препарат "${currentName}"?`, async () => {
+        plan.supplements = names.filter((_, i) => i !== index);
+        plan.data = (plan.data || []).map(d => {
+          if (d.doses) delete d.doses[currentName];
+          return d;
+        });
+
+        await updateSupplementPlanInFirestore(plan);
+      });
+    });
+  }
+
+  // ===== сохранение =====
+  modal.querySelector('#save-modal').addEventListener('click', async () => {
+    const newName = input.value.trim();
+    if (!newName) return showToast('Введите имя препарата');
+
+    if (names.includes(newName) && newName !== currentName) {
+      return showToast('Такой препарат уже есть.');
+    }
+
+    // Добавление нового
+    if (!isExisting) {
+      plan.supplements[index] = newName;
+      plan.data = (plan.data || []).map(d => {
+        d.doses = d.doses || {};
+        d.doses[newName] = '';
+        return d;
+      });
+      await updateSupplementPlanInFirestore(plan);
+      backdrop.remove();
+      return;
+    }
+
+    // Переименование
+    (plan.data || []).forEach(d => {
+      if (!d.doses) d.doses = {};
+      if (d.doses[currentName]) {
+        d.doses[newName] = d.doses[currentName];
+        delete d.doses[currentName];
+      }
+    });
+
+    plan.supplements[index] = newName;
+
+    // Перемещение
+    if (newPos !== index) {
+      const moved = plan.supplements.splice(index, 1)[0];
+      plan.supplements.splice(newPos, 0, moved);
+    }
+
+    await updateSupplementPlanInFirestore(plan);
+    backdrop.remove();
+  });
+
+  modal.querySelector('#cancel-modal').addEventListener('click', () => backdrop.remove());
+  backdrop.addEventListener('click', e => {
+    if (e.target === backdrop) backdrop.remove();
+  });
+}
+// =====================================================================
+// 📦 МОДАЛЬНОЕ ОКНО ВЫБОРА ЦИКЛА
+// =====================================================================
+function openCycleSelectModal() {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+
+    const box = document.createElement('div');
+    box.className = 'modal-box';
+    box.style.maxWidth = '400px';
+    box.style.textAlign = 'center';
+
+    const title = createElement('h3', null, 'Выберите цикл');
+    box.append(title);
+
+    const list = createElement('div', 'cycle-list');
+    list.style.display = 'flex';
+    list.style.flexDirection = 'column';
+    list.style.gap = '8px';
+    list.style.margin = '15px 0';
+
+    if (!state.cycles || state.cycles.length === 0) {
+        list.append(createElement('div', 'muted', 'Циклов пока нет.'));
+    } else {
+        state.cycles.forEach(cycle => {
+            const btn = createElement('button', 'btn btn-light', cycle.name);
+            btn.addEventListener('click', async () => {
+                state.selectedCycleId = cycle.id;
+                console.log('✅ Цикл выбран через модалку:', cycle.name);
+                document.body.removeChild(modal);
+                setupDynamicListeners();
+                render();
+            });
+            list.append(btn);
+        });
+    }
+
+    const cancel = createElement('button', 'btn btn-outline', 'Отмена');
+    cancel.addEventListener('click', () => document.body.removeChild(modal));
+
+    box.append(list, cancel);
+    modal.append(box);
+    document.body.append(modal);
+}
+
+// =====================================================================
+// 📅 МОДАЛЬНОЕ ОКНО ВЫБОРА ДАТ ДЛЯ PDF
+// =====================================================================
+function openPdfDateModal(currentCycle) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-content modal-compact';
+    modal.style.maxWidth = '400px';
+    modal.style.textAlign = 'center';
+
+    modal.append(createElement('h3', null, 'Выберите период отчета'));
+
+    // --- поля выбора дат ---
+    const defaultStart = currentCycle.startDateString || getTodayDateString();
+    const defaultEnd = getTodayDateString();
+
+    const startInput = createElement('input', 'date-filter-input');
+    startInput.type = 'date';
+    startInput.value = dateToInputFormat(defaultStart);
+    startInput.style.margin = '10px';
+
+    const endInput = createElement('input', 'date-filter-input');
+    endInput.type = 'date';
+    endInput.value = dateToInputFormat(defaultEnd);
+    endInput.style.margin = '10px';
+
+    modal.append(
+        createElement('label', null, 'С даты:'),
+        startInput,
+        createElement('label', null, 'По дату:'),
+        endInput
+    );
+
+    // --- кнопки ---
+    const controls = createElement('div', 'modal-controls');
+    const cancelBtn = createElement('button', 'btn btn-secondary', 'Отмена');
+    const okBtn = createElement('button', 'btn btn-primary', 'ОК');
+
+    cancelBtn.addEventListener('click', () => overlay.remove());
+    okBtn.addEventListener('click', () => {
+        if (!startInput.value || !endInput.value) {
+            showToast('Выберите обе даты.');
+            return;
+        }
+
+        const start = startInput.value.split('-').reverse().join('.');
+        const end = endInput.value.split('-').reverse().join('.');
+
+        // генерируем HTML и открываем PDF-страницу
+        const reportHtml = generateCycleReportHtml(currentCycle, start, end);
+        if (reportHtml) {
+            state.reportHtmlCache = reportHtml;
+            state.currentPage = 'cycleReport';
+            render();
+        }
+
+        overlay.remove();
+    });
+
+    controls.append(cancelBtn, okBtn);
+    modal.append(controls);
+    overlay.append(modal);
+    document.body.append(overlay);
+}
 
 // =================================================================
 // 🌟 НОВАЯ ФУНКЦИЯ: РЕНДЕР ПЛАНА БАДОВ/ДОБАВОК (Обновлена)
 // =================================================================
-function renderSupplementsPage() {
-    const currentCycle = state.cycles.find(c => c.id === state.selectedCycleId);
+async function renderSupplementsPage() {
+   const root = document.getElementById('root');
 
+
+
+    // --- Если цикл ещё не выбран — сразу модалка ---
+    if (!state.selectedCycleId) {
+        openCycleSelectModal();
+        return;
+    }
+
+    // --- Иначе грузим как обычно ---
+    const currentCycle = state.cycles?.find(c => c.id === state.selectedCycleId);
     const contentContainer = document.createElement('div');
     contentContainer.id = 'supplements-content';
     contentContainer.className = 'supplements-page';
 
     if (!currentCycle) {
-        contentContainer.append(createElement('h3', null, 'План приема БАДов'));
-        contentContainer.append(createElement('div', 'muted', 'Выберите цикл на вкладке "Программы" для создания плана приема добавок.'));
+        contentContainer.append(
+            createElement('h3', null, 'План приема БАДов'),
+            createElement('div', 'muted', 'Цикл не найден. Выберите другой.')
+        );
         root.append(contentContainer);
         return;
     }
 
-    const backButtonText = '← К программам цикла';
-    const backButton = createElement('button', 'btn back-btn', backButtonText);
-
-    backButton.addEventListener('click', () => {
-        state.currentPage = 'programsInCycle';
-        render();
-    });
-    contentContainer.append(backButton);
-
+    // --- Заголовок ---
     contentContainer.append(createElement('h3', null, `План добавок: ${currentCycle.name}`));
 
-    // -----------------------------------------------------------
-    // 🔥 БЛОК УПРАВЛЕНИЯ ПРЕПАРАТАМИ, ДАТАМИ И PDF
-    // -----------------------------------------------------------
+const selectCyclPdfWrapp = createElement('div', 'selectCycl-Pdf-Wrapp');
+
+    // --- Кнопка выбора цикла ---
+    const selectCycleBtn = createElement('button', 'btn btn-secondary', 'Выбор цикла');
+    selectCycleBtn.addEventListener('click', openCycleSelectModal);
+    contentContainer.append(selectCycleBtn);
+
+    // --- Проверяем план добавок ---
+    if (!state.supplementPlan || !state.supplementPlan.data) {
+        contentContainer.append(
+            createElement('div', 'muted', 'План добавок пока не загружен.')
+        );
+        root.append(contentContainer);
+        return;
+    }
+
+    // --- Всё готово, можно рендерить план ---
+    console.log('✅ План добавок загружен:', state.supplementPlan);
+    root.append(contentContainer);
+
+    // TODO: здесь у тебя дальше идёт рендер таблицы / карточек добавок
+
+  // 📄 Кнопка "Сводный PDF" + модалка выбора дат
+    const pdfButton = createElement('button', 'btn btn-primaryPdf');
+    pdfButton.innerHTML = `
+   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><title>Filetype-pdf SVG Icon</title><path fill="currentColor" fill-rule="evenodd" d="M14 4.5V14a2 2 0 0 1-2 2h-1v-1h1a1 1 0 0 0 1-1V4.5h-2A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v9H2V2a2 2 0 0 1 2-2h5.5zM1.6 11.85H0v3.999h.791v-1.342h.803q.43 0 .732-.173q.305-.175.463-.474a1.4 1.4 0 0 0 .161-.677q0-.375-.158-.677a1.2 1.2 0 0 0-.46-.477q-.3-.18-.732-.179m.545 1.333a.8.8 0 0 1-.085.38a.57.57 0 0 1-.238.241a.8.8 0 0 1-.375.082H.788V12.48h.66q.327 0 .512.181q.185.183.185.522m1.217-1.333v3.999h1.46q.602 0 .998-.237a1.45 1.45 0 0 0 .595-.689q.196-.45.196-1.084q0-.63-.196-1.075a1.43 1.43 0 0 0-.589-.68q-.396-.234-1.005-.234zm.791.645h.563q.371 0 .609.152a.9.9 0 0 1 .354.454q.118.302.118.753a2.3 2.3 0 0 1-.068.592a1.1 1.1 0 0 1-.196.422a.8.8 0 0 1-.334.252a1.3 1.3 0 0 1-.483.082h-.563zm3.743 1.763v1.591h-.79V11.85h2.548v.653H7.896v1.117h1.606v.638z"/></svg>
+
+    `;
+
+    pdfButton.addEventListener('click', () => {
+        openPdfDateModal(currentCycle);
+    });
+
+    contentContainer.append(selectCyclPdfWrapp);
+
+selectCyclPdfWrapp.append(selectCycleBtn,pdfButton);
 
     const controlsWrapper = createElement('div', 'supplements-controls-wrapper');
 
     // Группа кнопок +/- Неделя
     const weekControlsGroup = createElement('div', 'week-controls-group');
 
-    // 1. Кнопка "Добавить препарат" с модальным окном
-    const addSupplementBtn = createElement('button', 'btn btn-primary', '➕ Препарат');
-    weekControlsGroup.append(addSupplementBtn);
 
-    addSupplementBtn.addEventListener('click', () => {
-        // Открываем универсальное модальное окно
-        openCommentModal(
-            'new-supplement',
-            '',
-            'Введите название препарата',
-            async (name) => {
-                if (name) {
-                    await addSupplement(name);
-                } else {
-                    showToast('Название не может быть пустым.');
-                }
-            }
-        );
-    });
+
+   // Удаляем кнопку, если уже есть
+   const existingAddBtn = weekControlsGroup.querySelector('.add-supplement-btn');
+   if (existingAddBtn) existingAddBtn.remove();
+
+   // Проверяем количество добавок
+   const currentSupplements = getSupplementNames(state.supplementPlan);
+   if (currentSupplements.length >= 5) {
+       const addSupplementBtn = createElement('button', 'btn btn-primary add-supplement-btn', '➕ Препарат');
+       weekControlsGroup.append(addSupplementBtn);
+
+       addSupplementBtn.addEventListener('click', () => {
+           // 🔹 Открываем ту же модалку, что при клике на supplement-col
+           openSupplementEditModal(currentSupplements.length, '');
+       });
+   }
+
 
     // Кнопки +/- Неделя
     const removeWeekBtn = createElement('button', 'btn btn-secondary', '–');
@@ -3980,86 +4241,13 @@ function renderSupplementsPage() {
     weekControlsGroup.append(removeWeekBtn, weekLabel, addWeekBtn);
 
 
-    // 🔥 НОВЫЙ БЛОК: УПРАВЛЕНИЕ PDF И ДАТАМИ
-    const pdfControls = createElement('div', 'pdf-controls-group');
-
-    // ВЫБОР ДАТ: Используем local storage для запоминания последнего выбора
-    const defaultStartDate = currentCycle.startDateString;
-    const defaultEndDate = getTodayDateString();
-
-    // Извлекаем сохраненные даты и убеждаемся, что они в формате ДД.ММ.ГГГГ
-    let savedStartDate = localStorage.getItem('pdf_start_date') || defaultStartDate;
-    let savedEndDate = localStorage.getItem('pdf_end_date') || defaultEndDate;
-
-    // Если в localStorage сохранились даты в формате YYYY-MM-DD (после первого сохранения), преобразуем их обратно
-    if (savedStartDate.includes('-')) {
-        savedStartDate = savedStartDate.split('-').reverse().join('.');
-    }
-    if (savedEndDate.includes('-')) {
-        savedEndDate = savedEndDate.split('-').reverse().join('.');
-    }
-
-    const startDateInput = createElement('input', 'date-filter-input');
-    startDateInput.type = 'date';
-    startDateInput.value = dateToInputFormat(savedStartDate);
-    startDateInput.title = 'Дата начала отчета';
-
-    const endDateInput = createElement('input', 'date-filter-input');
-    endDateInput.type = 'date';
-    endDateInput.value = dateToInputFormat(savedEndDate);
-    endDateInput.title = 'Дата окончания отчета';
-
-    // Слушатели для сохранения выбора (сохраняем в формате ДД.ММ.ГГГГ)
-    startDateInput.addEventListener('change', (e) => {
-        // Преобразуем YYYY-MM-DD в ДД.ММ.ГГГГ для хранения
-        localStorage.setItem('pdf_start_date', e.target.value.split('-').reverse().join('.'));
-    });
-    endDateInput.addEventListener('change', (e) => {
-        // Преобразуем YYYY-MM-DD в ДД.ММ.ГГГГ для хранения
-        localStorage.setItem('pdf_end_date', e.target.value.split('-').reverse().join('.'));
-    });
-
-// ... (код до кнопки) ...
-
-    const downloadPdfBtn = createElement('button', 'btn btn-primary download-pdf-btn', '⬇️ Сводный PDF');
-
-    // 🔥 ИЗМЕНЕНИЕ: Теперь кнопка СРАЗУ вызывает генерацию отчета (без модалки опций)
-    downloadPdfBtn.addEventListener('click', () => {
-        const startValue = startDateInput.value; // YYYY-MM-DD
-        const endValue = endDateInput.value;    // YYYY-MM-DD
-
-        if (startValue && endValue) {
-            const startDate = startValue.split('-').reverse().join('.');
-            const endDate = endValue.split('-').reverse().join('.');
-
-            // 1. Генерируем HTML, передавая только нужные параметры
-            const reportHtml = generateCycleReportHtml(
-                currentCycle,
-                startDate,
-                endDate
-            );
-
-            if (reportHtml) {
-                // 2. Переходим на страницу отчета
-                state.reportHtmlCache = reportHtml;
-                state.currentPage = 'cycleReport';
-                render();
-            }
-        } else {
-            showToast('Пожалуйста, выберите начальную и конечную даты.');
-        }
-    });
-
-    pdfControls.append(createElement('span', 'pdf-label', 'Отчет с:'), startDateInput, createElement('span', 'pdf-label', 'по:'), endDateInput, downloadPdfBtn);
-
-    // ... (остальная часть функции) ...
 
 
 
     // Добавляем обе группы управления
     controlsWrapper.append(weekControlsGroup);
     contentContainer.append(controlsWrapper);
-    contentContainer.append(pdfControls); // Отдельная секция для фильтра дат
+
 
 // -----------------------------------------------------------
 // РЕНДЕРИНГ ТАБЛИЦЫ
@@ -4079,8 +4267,10 @@ if (planData.supplements.length === 0 && planData.data.length === 0) {
     // 🔹 ЗАГОЛОВОК ТАБЛИЦЫ (Препараты)
     const thead = createElement('thead');
     const headerRow = createElement('tr');
-    headerRow.append(createElement('th', 'date-col', 'Дата'));
-    headerRow.append(createElement('th', 'day-col'));
+
+    const dateTh = createElement('th', 'date-col', 'Дата / Дни');
+    dateTh.colSpan = 2;
+    headerRow.append(dateTh);
 
     const realNames = getSupplementNames(planData);
     const displayNames = [...realNames];
@@ -4092,76 +4282,15 @@ if (planData.supplements.length === 0 && planData.data.length === 0) {
         th.dataset.index = i;
         const header = createElement('div', 'supplement-header');
 
-        const nameInput = createElement('input');
-        nameInput.type = 'text';
-        nameInput.placeholder = `Препарат ${i + 1}`;
-        nameInput.value = name || '';
-
-        // Кнопка удаления — только для реально существующих препаратов
-        if (i < realNames.length) {
-            const deleteBtn = createElement('button', 'btn delete-supplement-btn');
-            deleteBtn.innerHTML =
-                '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><path fill="currentColor" d="M340.2 160l-84.4 84.3-84-83.9-11.8 11.8 84 83.8-84 83.9 11.8 11.7 84-83.8 84.4 84.2 11.8-11.7-84.4-84.3 84.4-84.2z"/></svg>';
-
-            deleteBtn.addEventListener('click', async () => {
-                const plan = JSON.parse(JSON.stringify(state.supplementPlan));
-                const oldName = realNames[i];
-                plan.supplements = getSupplementNames(plan).filter(n => n !== oldName);
-                plan.data = (plan.data || []).map(d => {
-                    if (d.doses) delete d.doses[oldName];
-                    return d;
-                });
-                await updateSupplementPlanInFirestore(plan);
+            const nameDiv = createElement('div', 'sup-name', name || '—');
+            nameDiv.addEventListener('click', () => {
+              openSupplementEditModal(i, name);
             });
-            header.append(deleteBtn);
-        }
 
-        // ✅ Добавление / Переименование
-        nameInput.addEventListener('keydown', e => {
-            if (e.key === 'Enter') nameInput.blur();
-        });
 
-        nameInput.addEventListener('blur', async () => {
-            const newVal = nameInput.value.trim();
 
-            // Добавление нового
-            if (i >= realNames.length) {
-                if (!newVal) return;
-                if (realNames.includes(newVal)) {
-                    showToast('Такой препарат уже есть.');
-                    nameInput.value = '';
-                    return;
-                }
 
-                const plan = JSON.parse(JSON.stringify(state.supplementPlan));
-                plan.supplements = getSupplementNames(plan);
-                plan.supplements.push(newVal);
-
-                plan.data = (plan.data || []).map(d => {
-                    d.doses = d.doses || {};
-                    if (!d.doses[newVal]) d.doses[newVal] = '';
-                    return d;
-                });
-
-                await updateSupplementPlanInFirestore(plan);
-                return;
-            }
-
-            // Переименование существующего
-            const oldVal = realNames[i];
-            if (newVal && newVal !== oldVal) {
-                if (realNames.includes(newVal)) {
-                    showToast('Такой препарат уже есть.');
-                    nameInput.value = oldVal;
-                    return;
-                }
-                await renameSupplement(oldVal, newVal);
-            } else if (!newVal) {
-                nameInput.value = oldVal;
-            }
-        });
-
-        header.append(nameInput);
+        header.append(nameDiv);
         th.append(header);
         headerRow.append(th);
     });
