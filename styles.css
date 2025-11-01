@@ -3302,13 +3302,12 @@ button.btn.btn-danger.confirm-btn {
 
 /* Общие стили для таблицы */
 .supplement-plan-table {
-    /* 🔥 КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: Автоматическая ширина, чтобы min-width работал,
-       используем min-width для 6 столбцов (75px + 6*50px = 375px) */
     width: auto;
-    border-collapse: collapse;
+    border-collapse: separate;
     min-width: 100%;
-    font-size: 0.75em; /* Очень маленький базовый шрифт */
-    table-layout: fixed; /* ГАРАНТИЯ: столбцы не сжимаются */
+    font-size: 0.75em;
+    border-spacing: 0;
+    table-layout: fixed;
 }
 
 
