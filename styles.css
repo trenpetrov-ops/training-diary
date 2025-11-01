@@ -3347,7 +3347,7 @@ Shorthand property for setting border width, style and color
 Learn more
 
 Don't show: 0.5px solid #dabaaa !important;';
-    border-right: 0.5px solid #dbc0b3;
+    border-right: 1px solid #dbc0b3;
     /* border-left: 0.5px solid #dbc0b3; */
 }
 
@@ -3416,8 +3416,8 @@ Don't show: 0.5px solid #dabaaa !important;';
 }
 
 .supplement-plan-table td {
-    border-right: 0.5px solid #d9d9d9;
-    border-top: 0.5px solid #d9d9d9;
+    border-right: 1px solid #d9d9d9;
+    border-top: 1px solid #d9d9d9;
 }
 
 
