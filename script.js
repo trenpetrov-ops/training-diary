@@ -1638,6 +1638,13 @@ function attachSwipeActions(swipeRoot, selectedProgram, exercise) {
   });
 }
 
+
+
+
+
+
+
+
 // =================================================================
 // 🌟 ФУНКЦИЯ: Отображение деталей программы с упражнениями (исправлено)
 // =================================================================
@@ -1681,9 +1688,12 @@ function renderProgramDetailsPage() {
             const exerciseHeader = createElement('div', `exercise-header ${isExpanded ? 'expanded' : ''}`);
 
             exerciseHeader.addEventListener('click', () => {
+            const wasExpanded = state.expandedExerciseId === exercise.id; // 💡 объявляем здесь
               state.expandedExerciseId =
                 state.expandedExerciseId === exercise.id ? null : exercise.id;
               render();
+
+
             });
 
             const exerciseTitle = createElement('div', 'exercise-title');
@@ -2100,9 +2110,13 @@ contentContainer.append(commentWrapper);
     });
     contentContainer.append(completeTrainingBtn);
 
-    // Итог
+   // Итог
     root.append(contentContainer);
+
+
+
 }
+
 
 // =================================================================
 // Добавляем универсальную функцию full-screen просмотра
@@ -4262,6 +4276,7 @@ if (planData.supplements.length === 0 && planData.data.length === 0) {
     const tableWrapper = createElement('div', 'supplement-table-wrapper');
     tableWrapper.id = 'supplement-table-wrapper'; // 🔥 ДОБАВЛЕНО: ID для прокрутки
 
+ const guard = createElement('div', 'scroll-guard');
     const table = createElement('table', 'supplement-plan-table');
 
     // 🔹 ЗАГОЛОВОК ТАБЛИЦЫ (Препараты)
@@ -4345,7 +4360,8 @@ if (planData.supplements.length === 0 && planData.data.length === 0) {
     });
 
     table.append(tbody);
-    tableWrapper.append(table);
+    tableWrapper.append(guard);
+    guard.append(table);
     contentContainer.append(tableWrapper);
 }
 
