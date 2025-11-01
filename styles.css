@@ -3294,6 +3294,12 @@ button.btn.btn-danger.confirm-btn {
     border-radius: 8px;
     background-color: #fff;
     max-height: calc(57vh); /* Еще сильнее уменьшаем высоту для мобильных */
+    outline: 1px solid #d2d2d2;
+    overflow-x: auto;
+    overflow-y: auto;
+     /* плавный скролл на iPhone */
+        /* 🚫 запрещает горизонтальное "тянущее" движение */
+        /* 🚫 запрещает вертикальное растягивание внутри блока */
 }
 /* Чтобы Safari не “тянул” при горизонтальном свайпе */
 .supplement-table-wrapper::-webkit-scrollbar {
@@ -3308,6 +3314,9 @@ button.btn.btn-danger.confirm-btn {
     font-size: 0.75em;
     border-spacing: 0;
     table-layout: fixed;
+    transform: translateZ(0);     /* фиксит отрыв слоя при инерционном скролле */
+    backface-visibility: hidden;
+    will-change: transform;
 }
 
 
