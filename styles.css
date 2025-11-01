@@ -13,7 +13,7 @@ html, body {
     overflow: hidden;
 
 }
-
+.supplement-table-wrapper,
 .container {
     overflow-y: auto;
     overflow-x: hidden;
@@ -3718,3 +3718,15 @@ button.action-btn.action-delete svg {
     width: 61% !important;
     height: 61% !important;
 }
+
+
+div#supplements-content {
+    overflow: hidden;
+}
+
+
+
+
+
+
+
