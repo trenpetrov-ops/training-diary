@@ -13,7 +13,7 @@ html, body {
     overflow: hidden;
 
 }
-.supplement-table-wrapper,
+
 .container {
     overflow-y: auto;
     overflow-x: hidden;
@@ -3288,18 +3288,21 @@ button.btn.btn-danger.confirm-btn {
 .supplement-table-wrapper {
     overflow: auto;
     -webkit-overflow-scrolling: touch; /* Для плавного скролла на iOS */
-    overscroll-behavior-x: contain;
-    overscroll-behavior-y: contain;
+    /* overscroll-behavior-x: contain; */
+    /* overscroll-behavior-y: contain; */
     touch-action: pan-x pan-y; /* разрешаем оба направления */
     border-radius: 8px;
     background-color: #fff;
     max-height: calc(57vh); /* Еще сильнее уменьшаем высоту для мобильных */
     outline: 1px solid #d2d2d2;
-    overflow-x: auto;
+    /* overflow-x: auto; */
     overflow-y: auto;
      /* плавный скролл на iPhone */
         /* 🚫 запрещает горизонтальное "тянущее" движение */
         /* 🚫 запрещает вертикальное растягивание внутри блока */
+    display: flex;
+    overflow-x: auto;
+    overscroll-behavior: none;
 }
 /* Чтобы Safari не “тянул” при горизонтальном свайпе */
 .supplement-table-wrapper::-webkit-scrollbar {
@@ -3718,15 +3721,5 @@ button.action-btn.action-delete svg {
     width: 61% !important;
     height: 61% !important;
 }
-
-
-div#supplements-content {
-    overflow: hidden;
-}
-
-
-
-
-
 
 
