@@ -1700,7 +1700,7 @@ body {
     background: none;
     font-size: 17px;
     padding: 10px 0;
-    margin-left: -10px;
+    margin-left: -11px;
 }
 
 /* Кнопки удаления */
@@ -2719,13 +2719,39 @@ button.calendar-nav-btn svg {
 
 .record-header {
     display: flex;
-    align-items: center;
-    gap: 8px;
+    gap: 0px;
     font-size: 16px;
     font-weight: 600;
     margin-bottom: 15px;
+    flex-direction: column;
+}
+.record-header .title-del {
+    display: flex;
+    flex-direction: row;
+}
+.record-header .title-del .record-name {
+    font-size: 19px;
+    border-bottom: 1px solid #000000;
+    width: 88%;
+    overflow-wrap: break-word;
+    font-weight: 700;
+    padding: 26px 0px 8px 5px;
+    margin: 0;
+    color: #1c1c1e;
+    margin-bottom: 6px;
+}
+.record-header .title-del button.btn.delete-record-btn {
+    padding: 0 0px 15px 15px;
+    display: flex;
+    align-items: flex-end;
 }
 
+
+.record-header .title-del button.btn.delete-record-btn svg {
+    width: 19px;
+    height: 19px;
+    color: #cd3931;
+}
 .edit-date-btn {
     background: none;
     border: none;
@@ -2745,12 +2771,12 @@ button.calendar-nav-btn svg {
 }
 
 .delete-record-btn {
-    width: 100%;
-    margin-top: 20px;
-    background-color: #ff3b30;
-    color: white;
-    padding: 10px;
-    border-radius: 8px;
+    /* width: 100%; */
+    /* margin-top: 20px; */
+    /* background-color: #ff3b30; */
+    /* color: white; */
+    /* padding: 10px; */
+    /* border-radius: 8px; */
 }
 
 
@@ -2803,16 +2829,52 @@ button.calendar-nav-btn svg {
     color: #333;
 }
 
+#journal-content .back-btn {
+    font-size: 16px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #333;
+    padding: 0;
+    margin-left: 1px;
+    height: 28px;
+}
+div#journal-content .record-header .date-edit {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+div#journal-content .record-header button.edit-date-btn {
+    font-size: 0px;
+}
+div#journal-content .record-header button.edit-date-btn svg {
+    color: #555;
+}
+div#journal-content .record-header .record-date {
+    font-size: 13px;
+    font-style: italic;
+    color: #555;p
+    adding-left: 6px;
+ }
+
+
 /* Упражнение */
 .exercise-block {
-    border-top: 1px solid #e5e5ea;
-    padding: 12px 0;
+    border: 0.5px solid #dedede;
+    background: white;
+    border-radius: 10px;
+    padding: 0px;
+    margin-bottom: 5px;
+    border-bottom: 1px solid #bababa;
+    overflow: hidden;
 }
 
 .exercise-block h4 {
-    font-size: 15px;
-    margin-bottom: 6px;
-    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 14px;
+    font-weight: 500;
+    margin-top: 0px;
+    padding: 14px 0px 0px 14px;
 }
 
 /* Подходы */
@@ -2820,7 +2882,7 @@ button.calendar-nav-btn svg {
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
-    margin-bottom: 8px;
+    padding: 0px 0px 22px 14px;
 }
 
 .sets-line span {
@@ -2832,9 +2894,14 @@ button.calendar-nav-btn svg {
 
 /* Комментарий к упражнению */
 .exercise-note {
-    font-size: 14px;
     color: #555;
-    margin-bottom: 8px;
+    margin: 0px;
+    background-color: #f7f7f7;
+    padding: 11px 15px 11px 15px;
+    font-size: 13px;
+    font-style: italic;
+    line-height: 1.4;
+    border-top: 1px solid #f0f0f0;
 }
 
 /* Медиа (фото / видео) */
@@ -2842,15 +2909,16 @@ button.calendar-nav-btn svg {
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
+    background-color: #f7f7f7;
+    padding: 0px 15px 13px 15px;
 }
 
-.media-thumb {
-    width: 80px;
-    height: 80px;
+.media-wrap .media-thumb {
+    width: 35px;
+    height: 35px;
     object-fit: cover;
-    border-radius: 8px;
+    border-radius: 5px;
     cursor: pointer;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
 
 .media-thumb:hover {
@@ -3300,7 +3368,7 @@ button.btn.btn-danger.confirm-btn {
      /* плавный скролл на iPhone */
         /* 🚫 запрещает горизонтальное "тянущее" движение */
         /* 🚫 запрещает вертикальное растягивание внутри блока */
-
+    /* display: flex; */
     overflow-x: auto;
     overscroll-behavior: none;
 }
@@ -3721,5 +3789,3 @@ button.action-btn.action-delete svg {
     width: 61% !important;
     height: 61% !important;
 }
-
-
