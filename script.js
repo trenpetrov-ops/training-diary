@@ -2986,11 +2986,35 @@ function renderJournalRecordDetails(container) {
     // Заголовок
 // 🔹 Заголовок с редактированием даты
 const titleWrapper = createElement('div', 'record-header');
+const titleDel = createElement('div', 'title-del');
+const dateEdit = createElement('div', 'date-edit');
 
-let dateElement = createElement('span', 'record-date', `${record.date}  — ${record.programName}`);
-const editBtn = createElement('button', 'edit-date-btn', '✏️');
+// 🔥 Кнопка удаления тренировки
+const deleteBtn = createElement('button', 'btn delete-record-btn');
+deleteBtn.innerHTML = ' <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Trash-24 SVG Icon</title><path fill="currentColor" d="M16 1.75V3h5.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H8V1.75C8 .784 8.784 0 9.75 0h4.5C15.216 0 16 .784 16 1.75m-6.5 0V3h5V1.75a.25.25 0 0 0-.25-.25h-4.5a.25.25 0 0 0-.25.25M4.997 6.178a.75.75 0 1 0-1.493.144L4.916 20.92a1.75 1.75 0 0 0 1.742 1.58h10.684a1.75 1.75 0 0 0 1.742-1.581l1.413-14.597a.75.75 0 0 0-1.494-.144l-1.412 14.596a.25.25 0 0 1-.249.226H6.658a.25.25 0 0 1-.249-.226z"></path><path fill="currentColor" d="M9.206 7.501a.75.75 0 0 1 .793.705l.5 8.5A.75.75 0 1 1 9 16.794l-.5-8.5a.75.75 0 0 1 .705-.793Zm6.293.793A.75.75 0 1 0 14 8.206l-.5 8.5a.75.75 0 0 0 1.498.088l.5-8.5Z"></path></svg> ';
+deleteBtn.addEventListener('click', () => {
+    openConfirmModal('Удалить эту тренировку?', async () => {
+        try {
+            await deleteDoc(doc(getUserJournalCollection(), record.id));
+            showToast('✅ Тренировка удалена');
+            state.selectedJournalRecord = null;
+            render();
+        } catch (error) {
+            console.error(error);
+            showToast('❌ Ошибка удаления');
+        }
+    });
+});
 
-titleWrapper.append(dateElement, editBtn);
+
+let nameElement = createElement('span', 'record-name', `${record.programName}`);
+let dateElement = createElement('span', 'record-date', `${record.date}`);
+const editBtn = createElement('button', 'edit-date-btn');
+editBtn.innerHTML ='<svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24"><title>Edit SVG Icon</title><path fill="currentColor" d="M3.548 20.938h16.9a.5.5 0 0 0 0-1h-16.9a.5.5 0 0 0 0 1M9.71 17.18a2.587 2.587 0 0 0 1.12-.65l9.54-9.54a1.75 1.75 0 0 0 0-2.47l-.94-.93a1.788 1.788 0 0 0-2.47 0l-9.54 9.53a2.473 2.473 0 0 0-.64 1.12L6.04 17a.737.737 0 0 0 .19.72a.767.767 0 0 0 .53.22Zm.41-1.36a1.468 1.468 0 0 1-.67.39l-.97.26l-1-1l.26-.97a1.521 1.521 0 0 1 .39-.67l.38-.37l1.99 1.99Zm1.09-1.08l-1.99-1.99l6.73-6.73l1.99 1.99Zm8.45-8.45L18.65 7.3l-1.99-1.99l1.01-1.02a.748.748 0 0 1 1.06 0l.93.94a.754.754 0 0 1 0 1.06"></path></svg>';
+
+titleWrapper.append(titleDel, dateEdit);
+titleDel.append(nameElement, deleteBtn);
+dateEdit.append(dateElement, editBtn);
 container.append(titleWrapper);
 
 // 📌 Редактирование даты
@@ -3029,23 +3053,7 @@ editBtn.addEventListener('click', () => {
 });
 
 
-// 🔥 Кнопка удаления тренировки
-const deleteBtn = createElement('button', 'btn delete-record-btn', '🗑 Удалить тренировку');
-deleteBtn.addEventListener('click', () => {
-    openConfirmModal('Удалить эту тренировку?', async () => {
-        try {
-            await deleteDoc(doc(getUserJournalCollection(), record.id));
-            showToast('✅ Тренировка удалена');
-            state.selectedJournalRecord = null;
-            render();
-        } catch (error) {
-            console.error(error);
-            showToast('❌ Ошибка удаления');
-        }
-    });
-});
 
-container.append(deleteBtn);
 
     // 🔹 Комментарий к тренировке + медиа
     if (record.comment || (record.trainingMedia?.length > 0)) {
