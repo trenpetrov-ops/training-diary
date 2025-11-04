@@ -448,6 +448,44 @@
       window.addEventListener('orientationchange', updateOverlay);
       window.addEventListener('resize', updateOverlay);
     })();
+
+
+
+
+const btn = document.createElement('button');
+btn.textContent = 'Проверить уведомления';
+btn.style.cssText = `
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 20px;
+  background: #007aff;
+  color: white;
+  border-radius: 8px;
+  border: none;
+  font-size: 16px;
+`;
+btn.onclick = async () => {
+  if ('Notification' in window) {
+    const permission = await Notification.requestPermission();
+    alert('Результат: ' + permission);
+    if (permission === 'granted') {
+      const reg = await navigator.serviceWorker.ready;
+      reg.showNotification('💊 Training Diary', {
+        body: 'Тестовое уведомление работает ✅',
+        icon: '/training-diary/icons/icon-192.png'
+      });
+    }
+  } else {
+    alert('Notification API не поддерживается ❌');
+  }
+};
+document.body.appendChild(btn);
+
+
+
+	
 </script>
 
 <script type="module" src="./script.js"></script>
