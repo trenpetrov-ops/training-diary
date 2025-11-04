@@ -4239,6 +4239,43 @@ function openPdfDateModal(currentCycle) {
     document.body.append(overlay);
 }
 
+
+// ============================================================
+// 💊 Модалка напоминания о приёме добавок
+// ============================================================
+function openSupplementReminderModal() {
+  const modal = document.createElement('div');
+  modal.className = 'modal reminder-modal';
+  modal.innerHTML = `
+    <div class="modal-content">
+      <h3>💊 Сегодня по плану</h3>
+      <p>Вы приняли добавки?</p>
+      <div class="modal-buttons">
+        <button id="acceptSupplements" class="btn btn-success">✅ Принять</button>
+        <button id="remindLater" class="btn btn-secondary">⏰ Напомнить позже</button>
+      </div>
+    </div>
+  `;
+  document.body.append(modal);
+
+  document.getElementById('acceptSupplements').onclick = () => modal.remove();
+
+  document.getElementById('remindLater').onclick = async () => {
+    modal.remove();
+    const reg = await navigator.serviceWorker.ready;
+
+    setTimeout(() => {
+      reg.showNotification('💊 Напоминание', {
+        body: 'Не забудь принять добавки!',
+        icon: '/training-diary/icons/icon-192.png',
+        data: { action: 'open_supplements' },
+      });
+    }, (state.notificationSettings?.interval || 15) * 60 * 1000); // 15 мин по умолчанию
+  };
+}
+
+
+
 // =================================================================
 // 🌟 НОВАЯ ФУНКЦИЯ: РЕНДЕР ПЛАНА БАДОВ/ДОБАВОК (Обновлена)
 // =================================================================
@@ -4472,9 +4509,155 @@ if (todayRowElement) {
     }, 100);
 }
 
+
+// 🔥 модалка настройки уведомлений
+
+const notifSettingsBtn = createElement('button', 'btn btn-secondary notif-settings-btn', '⚙️ Настройки уведомлений');
+notifSettingsBtn.onclick = openNotificationSettingsModal;
+contentContainer.append(notifSettingsBtn);
+
+function openNotificationSettingsModal() {
+  // 💾 Загружаем сохранённые настройки (если есть)
+  const savedSettings = JSON.parse(localStorage.getItem('notificationSettings') || '{}');
+  state.notificationSettings = {
+    enabled: savedSettings.enabled ?? true,
+    interval: savedSettings.interval ?? 15
+  };
+
+  // Удаляем старую модалку, если она осталась
+  const oldModal = document.querySelector('.notif-settings-modal');
+  if (oldModal) oldModal.remove();
+
+  // Создаём модалку
+  const modal = document.createElement('div');
+  modal.className = 'modal notif-settings-modal';
+  modal.innerHTML = `
+    <div class="modal-content">
+      <h3>⚙️ Настройки уведомлений</h3>
+
+      <label class="checkbox-container">
+        <input type="checkbox" id="enableNotifs" ${state.notificationSettings.enabled ? 'checked' : ''}>
+        <span class="checkmark"></span>
+        Включить уведомления
+      </label>
+
+      <div class="notif-interval">
+        <label>
+          Интервал (мин):
+          <input type="number" id="notifInterval" min="5" max="120"
+                 value="${state.notificationSettings.interval}">
+        </label>
+      </div>
+
+      <hr>
+
+      <div class="notif-test">
+        <button class="btn btn-info" id="testNotifBtn">🔔 Проверить уведомления</button>
+        <p id="notifStatus" class="notif-status muted"></p>
+      </div>
+
+      <div class="notif-buttons">
+        <button class="btn btn-primary" id="saveNotifSettings">💾 Сохранить</button>
+        <button class="btn btn-secondary" id="closeNotifSettings">❌ Закрыть</button>
+      </div>
+    </div>
+  `;
+  document.body.append(modal);
+
+  // 🔗 Элементы
+  const enableInput = modal.querySelector('#enableNotifs');
+  const intervalInput = modal.querySelector('#notifInterval');
+  const statusEl = modal.querySelector('#notifStatus');
+  const testBtn = modal.querySelector('#testNotifBtn');
+
+  // 💾 Сохранение настроек
+  modal.querySelector('#saveNotifSettings').onclick = () => {
+    const newSettings = {
+      enabled: enableInput.checked,
+      interval: parseInt(intervalInput.value, 10)
+    };
+
+    state.notificationSettings = newSettings;
+    localStorage.setItem('notificationSettings', JSON.stringify(newSettings));
+    console.log('✅ Настройки уведомлений сохранены:', newSettings);
+
+    // Показываем, что сохранено
+    statusEl.textContent = '✅ Настройки сохранены';
+    setTimeout(() => modal.remove(), 800); // плавное закрытие
+  };
+
+  // ❌ Закрыть
+  modal.querySelector('#closeNotifSettings').onclick = () => modal.remove();
+
+  // 🔔 Кнопка проверки уведомлений
+  testBtn.onclick = async () => {
+    statusEl.textContent = '⏳ Проверяем уведомления...';
+
+    if (!('Notification' in window)) {
+      statusEl.textContent = '❌ Notification API не поддерживается';
+      return;
+    }
+
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+      statusEl.textContent = '⚠️ Разрешение не дано';
+      return;
+    }
+
+    // Показ тестового уведомления
+    const reg = await navigator.serviceWorker.ready;
+    await reg.showNotification('💊 Training Diary', {
+      body: 'Тестовое уведомление работает ✅',
+      icon: '/training-diary/icons/icon-192.png'
+    });
+
+    statusEl.textContent = '✅ Уведомление отправлено';
+  };
+
+  // Закрытие кликом вне окна
+  modal.addEventListener('click', e => {
+    if (e.target === modal) modal.remove();
+  });
+}
+
+
+
+
+
+
+
+
+
 root.append(contentContainer);
 }
 
+// ====================================================================
+// 🔔 Проверка на добавки сегодня и показ уведомления
+// ====================================================================
+async function checkTodaySupplementsNotification() {
+  if (Notification.permission !== 'granted') return;
+  const plan = state.supplementPlan?.data || [];
+  const today = getTodayDateString();
+  const todayData = plan.find(d => d.date === today);
+  if (!todayData) return;
+
+  const doses = todayData.doses || {};
+  const supplements = Object.entries(doses)
+    .filter(([_, dose]) => dose && dose.trim() !== '')
+    .map(([name, dose]) => `${name} — ${dose}`);
+
+  if (supplements.length === 0) return;
+
+  const body = 'Сегодня по плану: ' + supplements.join(', ');
+  const reg = await navigator.serviceWorker.ready;
+  reg.showNotification('💊 Напоминание о приёме добавок', {
+    body,
+    icon: '/training-diary/icons/icon-192.png',
+    data: { action: 'open_supplements' }, // важно для обработки клика
+  });
+}
+
+checkTodaySupplementsNotification();
 
 
 // =================================================================
@@ -5807,6 +5990,16 @@ if ('serviceWorker' in navigator) {
     })
     .catch(err => console.error('Ошибка регистрации SW', err));
 }
+
+// ============================================================
+// 💬 Слушаем сообщения от Service Worker
+// ============================================================
+navigator.serviceWorker.addEventListener('message', e => {
+  if (e.data.type === 'OPEN_SUPPLEMENTS_MODAL') {
+    console.log('📩 Получено сообщение от SW — открываем окно добавок');
+    openSupplementReminderModal();
+  }
+});
 
 
 
