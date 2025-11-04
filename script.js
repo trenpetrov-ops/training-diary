@@ -1,4 +1,4 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js"; 
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import {
     getAuth,
     onAuthStateChanged,
@@ -26,6 +26,14 @@ import {
     getDownloadURL,
     deleteObject // опционально
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+
+// 🔥  Firebase Cloud Messaging (FCM)
+import {
+    getMessaging,
+    getToken,
+    onMessage,
+    isSupported
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging.js";
 
 // =================================================================
 // ✅ ВАША РЕАЛЬНАЯ КОНФИГУРАЦИЯ FIREBASE
@@ -55,13 +63,35 @@ if (!firebaseConfig || Object.keys(firebaseConfig).length === 0) {
     console.error("Firebase config is missing. Please provide it for the app to work correctly.");
 }
 
-// Инициализация Firebase
+// ==========================================================
+// 🚀 ИНИЦИАЛИЗАЦИЯ FIREBASE
+// ==========================================================
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const auth = getAuth(app);
-const storage = getStorage(app); // 🔥 ЭТА СТРОКА ДОЛЖНА БЫТЬ ЗДЕСЬ
-let userId = null;
+    const app = initializeApp(firebaseConfig);
+
+// ==========================================================
+// 🔔 FCM (Firebase Cloud Messaging)
+// ==========================================================
+    let messaging = null;
+    isSupported().then(supported => {
+        if (supported) {
+            messaging = getMessaging(app);
+            console.log('✅ FCM поддерживается');
+        } else {
+            console.log('⚠️ FCM не поддерживается в этом браузере');
+        }
+    });
+// ==========================================================
+// 🔥 Остальные сервисы
+// ==========================================================
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+    const storage = getStorage(app);
+
+// ==========================================================
+// 🧩 Глобальные переменные
+// ==========================================================
+    let userId = null;
 
 
 // 🔥 НОВОЕ: Переменные для хранения функций отписки от слушателей Firebase
@@ -72,6 +102,48 @@ let cyclesUnsubscribe = () => {};
 // 🔥 ДОБАВЛЕНО: Слушатели для БАДОВ и ОТЧЕТОВ
 let supplementsUnsubscribe = () => {};
 let reportsUnsubscribe = () => {};
+
+
+// ==========================================================
+// 🔔 Функция для запроса разрешения и получения FCM токена
+// ==========================================================
+    async function requestPermissionAndGetToken() {
+      if (!messaging) {
+        console.warn('⚠️ FCM не готов');
+        return;
+      }
+
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        alert('❌ Разрешение не получено');
+        return;
+      }
+
+      const swReg = await navigator.serviceWorker.ready;
+
+      const vapidKey = '--- ВСТАВЬ СВОЙ PUBLIC KEY ИЗ Firebase Cloud Messaging ---';
+      const token = await getToken(messaging, { vapidKey, serviceWorkerRegistration: swReg });
+
+      if (token) {
+        console.log('🔑 FCM токен:', token);
+        alert('✅ Получен токен: ' + token);
+
+        // 💾 сохраняем токен в Firestore, если пользователь авторизован
+        const user = auth.currentUser;
+        if (user) {
+          await setDoc(
+            doc(db, 'fcmTokens', user.uid),
+            { token, updatedAt: Date.now() },
+            { merge: true }
+          );
+          console.log('💾 Токен сохранён для пользователя:', user.uid);
+        }
+      } else {
+        console.error('❌ Не удалось получить токен');
+      }
+    }
+
+
 
 
 // --- УПРАВЛЕНИЕ СОСТОЯНИЕМ ---
@@ -6226,6 +6298,11 @@ onAuthStateChanged(auth, (user) => {
 
     if (user) {
         userId = user.uid;
+            console.log('🔑 Пользователь вошёл:', userId);
+
+            // 🔔 Получаем токен и разрешение на пуш
+            requestPermissionAndGetToken();
+
         // Если пользователь только что вошел, режим еще не выбран
         if (state.currentMode === null) {
             state.currentPage = 'modeSelect';
