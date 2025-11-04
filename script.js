@@ -4643,20 +4643,28 @@ function openNotificationSettingsModal() {
   const testBtn = modal.querySelector('#testNotifBtn');
 
   // 💾 Сохранение настроек
-  modal.querySelector('#saveNotifSettings').onclick = () => {
-    const newSettings = {
-      enabled: enableInput.checked,
-      interval: parseInt(intervalInput.value, 10)
-    };
-
-    state.notificationSettings = newSettings;
-    localStorage.setItem('notificationSettings', JSON.stringify(newSettings));
-    console.log('✅ Настройки уведомлений сохранены:', newSettings);
-
-    // Показываем, что сохранено
-    statusEl.textContent = '✅ Настройки сохранены';
-    setTimeout(() => modal.remove(), 800); // плавное закрытие
+modal.querySelector('#saveNotifSettings').onclick = () => {
+  const newSettings = {
+    enabled: enableInput.checked,
+    interval: parseInt(intervalInput.value, 10)
   };
+
+  state.notificationSettings = newSettings;
+  localStorage.setItem('notificationSettings', JSON.stringify(newSettings));
+  console.log('✅ Настройки уведомлений сохранены:', newSettings);
+
+  // Показываем, что сохранено
+  statusEl.textContent = '✅ Настройки сохранены';
+  setTimeout(() => modal.remove(), 800);
+
+  // 🕐 Запускаем или останавливаем уведомления
+  if (newSettings.enabled) {
+    startSupplementReminders(newSettings.interval);
+  } else {
+    stopSupplementReminders();
+  }
+};
+
 
   // ❌ Закрыть
   modal.querySelector('#closeNotifSettings').onclick = () => modal.remove();
@@ -4695,52 +4703,41 @@ function openNotificationSettingsModal() {
 
 
 
-
-
-
-
-
 root.append(contentContainer);
 }
 
-// ====================================================================
-// 🔔 Проверка на добавки сегодня и показ уведомления
-// ====================================================================
-async function checkTodaySupplementsNotification() {
-  if (Notification.permission !== 'granted') return;
-  const plan = state.supplementPlan?.data || [];
-  const today = getTodayDateString();
-  const todayData = plan.find(d => d.date === today);
-  if (!todayData) return;
 
-  const doses = todayData.doses || {};
-  const supplements = Object.entries(doses)
-    .filter(([_, dose]) => dose && dose.trim() !== '')
-    .map(([name, dose]) => `${name} — ${dose}`);
+// ===========================================================
+// 🔁 Цикл уведомлений
+// ===========================================================
+function startSupplementReminders(intervalMinutes) {
+  if (!('serviceWorker' in navigator)) return;
 
-  if (supplements.length === 0) return;
+  const intervalMs = intervalMinutes * 60 * 1000;
 
-  const body = 'Сегодня по плану: ' + supplements.join(', ');
-  const reg = await navigator.serviceWorker.ready;
-  reg.showNotification('💊 Напоминание о приёме добавок', {
-    body,
-    icon: '/training-diary/icons/icon-192.png',
-    data: { action: 'open_supplements' }, // важно для обработки клика
-  });
+  // Останавливаем старый таймер, если был
+  if (window._supplementReminderInterval) {
+    clearInterval(window._supplementReminderInterval);
+  }
+
+  console.log(`🔔 Проверка добавок каждые ${intervalMinutes} минут`);
+
+  // 🔁 Каждые X минут проверяем, есть ли добавки на сегодня
+  window._supplementReminderInterval = setInterval(() => {
+    checkTodaySupplementsNotification();
+  }, intervalMs);
+
+  // 🟢 Проверяем сразу при включении, не ждём первый интервал
+  checkTodaySupplementsNotification();
 }
 
-checkTodaySupplementsNotification();
-
-
-// =================================================================
-// 🌟 НОВЫЙ ФУНКЦИОНАЛ: ОТЧЕТЫ О ПРОГРЕССЕ (ЗАМЕРЫ И ФОТО)
-// =================================================================
-
-// -----------------------------------------------------------
-// 🔥 НОВЫЕ ФУНКЦИИ FIREBASE (Предполагается, что doc, updateDoc, addDoc, deleteDoc доступны)
-// -----------------------------------------------------------
-
-// 🔥 Ваша специфическая функция для получения коллекции отчетов
+function stopSupplementReminders() {
+  if (window._supplementReminderInterval) {
+    clearInterval(window._supplementReminderInterval);
+    window._supplementReminderInterval = null;
+    console.log('⏸ Уведомления остановлены');
+  }
+}
 
 
 
