@@ -121,7 +121,7 @@ let reportsUnsubscribe = () => {};
 
       const swReg = await navigator.serviceWorker.ready;
 
-      const vapidKey = '--- ВСТАВЬ СВОЙ PUBLIC KEY ИЗ Firebase Cloud Messaging ---';
+      const vapidKey = 'BBaQY46G6FiksGao5Q_nwtmICLciZdckKAUsMzFy5tcYuU6Y95qWxyD8qwrc7h1mBamXk8At9iRDHMX8eqsdoA0';
       const token = await getToken(messaging, { vapidKey, serviceWorkerRegistration: swReg });
 
       if (token) {
