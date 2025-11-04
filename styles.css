@@ -51,7 +51,7 @@ div[tabindex] {
 /* убираем выделение при тапе и фокусе на кнопках */
 button {
   -webkit-tap-highlight-color: transparent; /* убирает серый фон при тапе */
-  outline: none !important;                 /* убирает голубой контур */
+  /* outline: none !important; */                 /* убирает голубой контур */
   box-shadow: none !important;              /* убирает внутренние тени Bootstrap */
 }
 
@@ -136,14 +136,15 @@ html, body {
     align-items: center;
     position: sticky;
     z-index: 1000;
+    height: 28px;
 }
 
 .top-back-btn {
-    font-size: 16px;
     background: none;
     border: none;
     cursor: pointer;
-    color: #333;
+    color: #000000;
+    display: flex;
 }
 
 .top-menu-btn {
@@ -152,6 +153,8 @@ html, body {
     border: none;
     cursor: pointer;
     margin-left: auto;
+    display: flex;
+    color: #000000;
 }
 
 
@@ -170,20 +173,21 @@ html, body {
 }
 
 .menu-modal {
-    background: white;
-    border-radius: 10px;
-    padding: 20px;
+    text-align: center;
     display: flex;
-    gap: 20px;
-    box-shadow: 0 0 12px rgba(0,0,0,0.3);
+    background: none;
 }
 
 .menu-icon-btn {
-    background: none;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25)!important;
+    background: #ffffff;
+    padding: 7px;
+    margin-right: 13px;
     border: none;
-    cursor: pointer;
-    padding: 10px;
-    transition: 0.2s;
+    width: 75px;
+    height: 75px;
+    border-radius: 8px;
+    color: #090909;
 }
 
 .menu-icon-btn:hover {
@@ -328,7 +332,7 @@ button:active {
 h3 {
     font-size: 19px;
     font-weight: 700;
-    padding: 26px 0 8px 0;
+    padding: 26px 0 8px 5px;
     margin: 0;
     color: #1c1c1e;
     margin-bottom: 16px;
@@ -469,12 +473,13 @@ button.btn.btn-primary.add-cycle-btn, button.btn.btn-primary.add-client-btn, but
     background: #ffffff;
     margin: 0;
     display: flex;
+    align-items: center;
     justify-content: center;
 }
 button.btn.btn-primary.add-cycle-btn {
     background: #ffffff;
-    display: flex;
-    justify-content: center;
+    /* display: flex; */
+    /* justify-content: center; */
 }
 .program-item > div:first-child {
     flex-grow: 1;
@@ -972,16 +977,16 @@ small.unit-label {
 }
 
 .mode-btn {
-    display: flex;
-    align-items: center;
-    text-align: left;
-    background-color: white;
-    border: 1px solid #e5e5ea;
-    border-radius: 12px;
-    padding: 15px;
-    width: 100%;
-    cursor: pointer;
-    transition: background-color 0.2s, box-shadow 0.2s;
+    /* display: flex; */
+    /* align-items: center; */
+    /* text-align: left; */
+    /* background-color: white; */
+    /* border: 1px solid #e5e5ea; */
+    /* border-radius: 12px; */
+    /* padding: 15px; */
+    /* width: 100%; */
+    /* cursor: pointer; */
+    /* transition: background-color 0.2s, box-shadow 0.2s; */
 }
 
 .mode-btn:active {
@@ -990,7 +995,7 @@ small.unit-label {
 }
 
 .mode-icon {
-    font-size: 32px;
+    /* font-size: 32px; */
     margin-right: 15px;
 }
 
@@ -1263,10 +1268,10 @@ button.btn.btn-secondary span {
     padding-top: 4px;
     color: #313131;
 }
-button.btn.btn-secondary svg {
+.top-bar .topbar-cycle-btns button.btn.btn-secondary svg {
     display: block;
-    width: 29px;
-    height: 29px;
+    width: 23px;
+    height: 23px;
 }
 .comExer button.btn.btn-secondary {
     background: none;
@@ -1297,6 +1302,8 @@ button.btn.btn-secondary svg {
     color: #555;
     display:flex;
     flex-direction: column;
+    =:
+    hidden;
 }
 .exercise-note-collapsed p {
     margin: 0;
@@ -1421,25 +1428,24 @@ button.btn.comment-toggle-btn svg {
 
 /* Стили для новой группы управления неделями */
 .week-controls-group {
-    display: flex;
-    align-items: center;
-    gap: 5px; /* Уменьшаем расстояние между элементами */
-    margin-top: 15px;
-    margin-bottom: 10px;
+    /* display: flex; */
+    /* align-items: center; */
+    /* gap: 5px; */ /* Уменьшаем расстояние между элементами */
+    /* margin-top: 15px; */
+    /* margin-bottom: 10px; */
 }
 
 .week-controls-group .btn {
-    padding: 8px 12px;
-    font-size: 16px;
-    font-weight: bold;
-    min-width: 40px; /* Чтобы кнопки были квадратными */
+    /* padding: 8px 12px; */
+    /* font-size: 16px; */
+    /* font-weight: bold; */
+    /* min-width: 40px; */ /* Чтобы кнопки были квадратными */
 }
 
 .week-controls-group .week-label {
-    font-size: 1.1em;
-    font-weight: 600;
-
-    padding: 0 5px;
+    /* font-size: 1.1em; */
+    /* font-weight: 600; */
+    /* padding: 0 5px; */
 }
 
 /* Измененная обертка для элементов управления */
@@ -1617,28 +1623,28 @@ button.btn.comment-toggle-btn svg {
 
 /* Стиль для группы +/- Неделя */
 .week-controls-group {
-    display: flex;
-    align-items: center;
-    gap: 3px; /* Очень маленький зазор */
+    /* display: flex; */
+    /* align-items: center; */
+    /* gap: 3px; */ /* Очень маленький зазор */
 }
 .week-controls-group .btn {
-    padding: 5px 8px; /* Уменьшаем padding кнопок +/- */
-    font-size: 14px; /* Уменьшаем шрифт кнопок */
-    min-width: 30px; /* Минимальная ширина кнопок */
-    height: 30px; /* Фиксированная высота */
+    /* padding: 5px 8px; */ /* Уменьшаем padding кнопок +/- */
+    /* font-size: 14px; */ /* Уменьшаем шрифт кнопок */
+    /* min-width: 30px; */ /* Минимальная ширина кнопок */
+    /* height: 30px; */ /* Фиксированная высота */
 }
 .week-controls-group .week-label {
-    font-size: 0.9em; /* Уменьшаем шрифт "Неделя" */
-    font-weight: 600;
-    color: var(--color-text-primary);
-    padding: 0 3px;
+    /* font-size: 0.9em; */ /* Уменьшаем шрифт "Неделя" */
+    /* font-weight: 600; */
+    /* color: var(--color-text-primary); */
+    /* padding: 0 3px; */
 }
 
 /* Кнопка "Добавить препарат" */
 .supplements-page .btn-primary {
-    padding: 8px 12px; /* Стандартный padding для основной кнопки */
-    font-size: 0.95em;
-    min-width: 150px;
+    /* padding: 8px 12px; */ /* Стандартный padding для основной кнопки */
+    /* font-size: 0.95em; */
+    /* min-width: 150px; */
 }
 
 .today-highlight td {
@@ -2004,11 +2010,15 @@ small.unit-label {
 
 .add-set-btn {
     color: #078bef;
-    padding: 8px 0px 8px 0px;
+    padding: 10px 0px 10px 0px;
     font-size: 22px;
     border: none;
     margin: 0px auto 0px 59px;
     width: 50%;
+    display: flex;
+    align-content: center;
+    justify-content: center;
+    align-items: center;
 }
 
 .add-set-btn:active {
@@ -2048,9 +2058,9 @@ small.unit-label {
 
 /* кнопка редактировать и удалить  */
 .modal-remove-edit {
-    background: #ffffff00;
     text-align: center;
     display: flex;
+    background: none;
 }
 
 
@@ -2722,7 +2732,7 @@ button.calendar-nav-btn svg {
     gap: 0px;
     font-size: 16px;
     font-weight: 600;
-    margin-bottom: 15px;
+    margin-bottom: 10px;
     flex-direction: column;
 }
 .record-header .title-del {
@@ -2732,22 +2742,25 @@ button.calendar-nav-btn svg {
 .record-header .title-del .record-name {
     font-size: 19px;
     border-bottom: 1px solid #000000;
-    width: 88%;
+    width: 71%;
     overflow-wrap: break-word;
     font-weight: 700;
     padding: 26px 0px 8px 5px;
     margin: 0;
     color: #1c1c1e;
     margin-bottom: 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    -webkit-line-clamp: 1;
 }
-.record-header .title-del button.btn.delete-record-btn {
-    padding: 0 0px 15px 15px;
+.menu-record button.btn.delete-record-btn{
+    padding: 0 8px 4px 0px;
     display: flex;
     align-items: flex-end;
 }
 
 
-.record-header .title-del button.btn.delete-record-btn svg {
+.menu-record button.btn.delete-record-btn svg {
     width: 19px;
     height: 19px;
     color: #cd3931;
@@ -2767,7 +2780,8 @@ button.calendar-nav-btn svg {
 .save-date-btn, .cancel-btn {
     margin-left: 6px;
     font-size: 14px;
-    border: 1.5px solid #535353;
+    /* border: 1.5px solid #535353; */
+    color: #212121;
 }
 
 .delete-record-btn {
@@ -2791,6 +2805,13 @@ button.calendar-nav-btn svg {
     padding: 16px;
     box-shadow: 0 0.5px 2px rgba(0, 0, 0, 0.08);
     margin: 16px;
+}
+
+
+.menu-record {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
 }
 
 /* Кнопка Назад */
@@ -2817,16 +2838,19 @@ button.calendar-nav-btn svg {
 
 /* Комментарий к тренировке */
 .training-comment-block {
-    background: #f8f9fa;
+    background: #f7f7f7;
     border-radius: 10px;
-    padding: 12px;
-    margin-bottom: 16px;
+    padding: 11px 15px;
+    margin-bottom: 5px;
+    border-bottom: 1px solid #bababa;
+    border: 0.5px solid #dedede;
 }
 
 .training-comment-block .comment-text {
-    margin: 0 0 10px;
-    font-size: 14px;
-    color: #333;
+    margin: 0 0 0px;
+    font-size: 13px;
+    color: #555;
+    font-style: italic;
 }
 
 #journal-content .back-btn {
@@ -2834,10 +2858,12 @@ button.calendar-nav-btn svg {
     background: none;
     border: none;
     cursor: pointer;
-    color: #333;
-    padding: 0;
+    color: #000000;
+    padding: 1px 5px;
     margin-left: 1px;
     height: 28px;
+    display: flex;
+    align-items: center;
 }
 div#journal-content .record-header .date-edit {
     display: flex;
@@ -2846,15 +2872,20 @@ div#journal-content .record-header .date-edit {
 }
 div#journal-content .record-header button.edit-date-btn {
     font-size: 0px;
+    display: flex;
+    align-items: flex-end;
 }
 div#journal-content .record-header button.edit-date-btn svg {
     color: #555;
 }
 div#journal-content .record-header .record-date {
-    font-size: 13px;
-    font-style: italic;
-    color: #555;p
+    font-size: 12px;
+    color: #555;
+    p
     adding-left: 6px;
+    padding-left: 11px;
+    display: flex;
+    align-items: flex-end;
  }
 
 
@@ -2876,20 +2907,27 @@ div#journal-content .record-header .record-date {
     margin-top: 0px;
     padding: 14px 0px 0px 14px;
 }
-
+/* перенос строки внутри flex */
+.line-break {
+  flex-basis: 100%;
+  width: 0;
+  height: 0;
+  padding: 0;
+  margin: 0;
+}
 /* Подходы */
 .sets-line {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
-    padding: 0px 0px 22px 14px;
+    padding: 0px 13px 6px 30px;
 }
 
-.sets-line span {
-    background: #e5e5ea;
-    padding: 4px 8px;
-    border-radius: 6px;
-    font-size: 14px;
+.sets-line .set-item {
+    padding: 0px 16px 6px 0;
+    font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+    width: 35px;
 }
 
 /* Комментарий к упражнению */
@@ -2907,17 +2945,17 @@ div#journal-content .record-header .record-date {
 /* Медиа (фото / видео) */
 .media-wrap {
     display: flex;
-    gap: 8px;
+    gap: 5px;
     flex-wrap: wrap;
     background-color: #f7f7f7;
-    padding: 0px 15px 13px 15px;
+    padding: 13px 15px 13px 15px;
 }
 
 .media-wrap .media-thumb {
-    width: 35px;
-    height: 35px;
+    width: 25px;
+    height: 25px;
     object-fit: cover;
-    border-radius: 5px;
+    border-radius: 4px;
     cursor: pointer;
 }
 
@@ -3102,39 +3140,59 @@ div#journal-content .record-header .record-date {
     gap: 15px;
     margin-bottom: 40px;
 }
-
+button#select-own-mode {
+    padding: 4px 15px;
+}
+button#select-own-mode .mode-icon {
+    margin-left: 15px;
+    margin-right: 18px;
+}
+button#select-own-mode .mode-icon svg {
+    width: 58px !important;
+    height: 58px !important;
+}
 .mode-btn {
     display: flex;
     align-items: center;
     text-align: left;
     background-color: white;
-    border: 1px solid #e5e5ea;
     border-radius: 12px;
-    padding: 15px;
+    padding: 22px 15px;
     width: 100%;
     cursor: pointer;
-    transition: background-color 0.2s, box-shadow 0.2s;
+    border-bottom: 2.5px solid #e7e7e7;
+    border-left: 1px solid #e7e7e7;
+    border-top: 1px solid #e7e7e7;
+    border-right: 1px solid #e7e7e7;
 }
 
-.mode-btn:active {
-    background-color: #f0f0f5;
-    box-shadow: 0 0 0 2px #007aff;
+.mode-select-box button#mode-logout-btn {
+    color: #535353;
+    background: none;
+    font-size: 15px;
+    padding: 0;
+    margin-left: 0;
 }
 
-.mode-icon {
-    font-size: 32px;
-    margin-right: 15px;
+
+#select-personal-mode .mode-icon {
+    margin-right: 24px;
+    margin-left: 27px;
+}
+button#select-personal-mode span.mode-icon svg {
+    width: 39px;
+    height: 22px;
 }
 
 .mode-btn h4 {
-    font-size: 18px;
+    font-size: 15px;
     font-weight: 600;
     margin: 0;
     color: #1c1c1e;
 }
 
 .mode-btn p {
-    font-size: 13px;
+    font-size: 12px;
     color: #8e8e93;
     margin: 2px 0 0 0;
 }
@@ -3203,27 +3261,48 @@ div#journal-content .record-header .record-date {
 /* БАДЫ */
 /* ========================================================== */
 
+.top-bar .topbar-cycle-btns {
+    display: flex;
+    height: 28px;
+    justify-content: flex-start;
+}
+
+.top-bar .topbar-cycle-btns button.btn.btn-primaryPdf {
+    padding: 0px 0px 0px 0px;
+    margin-left: 35px;
+    color: #000000;
+}
+
+.top-bar .topbar-cycle-btns button.btn.btn-secondary {
+    padding: 0 0 0 6px;
+    color: #000000;
+}
+.top-bar .topbar-cycle-btns button.btn.btn-secondary svg {
+    display: block;
+    width: 23px;
+    height: 23px;
+}
+
 /* Стили для новой группы управления неделями */
 .week-controls-group {
-    display: flex;
-    align-items: center;
-    gap: 5px; /* Уменьшаем расстояние между элементами */
-    margin-top: 15px;
-    margin-bottom: 10px;
+    /* display: flex; */
+    /* align-items: center; */
+    /* gap: 5px; */ /* Уменьшаем расстояние между элементами */
+    margin-top: 0px;
+    margin-bottom: 0px;
 }
 
 .week-controls-group .btn {
-    padding: 8px 12px;
-    font-size: 16px;
-    font-weight: bold;
-    min-width: 40px; /* Чтобы кнопки были квадратными */
+    /* padding: 8px 12px; */
+    /* font-size: 16px; */
+    /* font-weight: bold; */
+    /* min-width: 40px; */ /* Чтобы кнопки были квадратными */
 }
 
 .week-controls-group .week-label {
-    font-size: 1.1em;
-    font-weight: 600;
-
-    padding: 0 5px;
+    /* font-size: 1.1em; */
+    /* font-weight: 600; */
+    /* padding: 0 5px; */
 }
 
 /* Измененная обертка для элементов управления */
@@ -3304,15 +3383,16 @@ button.btn.btn-danger.confirm-btn {
 
 .modal-buttons {
   display: flex;
-  justify-content: space-around;
-  margin-top: 20px;
+  /* margin-top: 20px; */
+  align-content: space-around;
 }
 
 .modal-input {
   width: 90%;
   padding: 8px;
-  margin-top: 10px;
   font-size: 15px;
+  border-radius: 8px;
+  height: 21px;
 }
 
 .position-controls {
@@ -3328,14 +3408,8 @@ button.btn.btn-danger.confirm-btn {
   font-size: 14px;
 }
 
-.btn.btn-danger {
-  background: #e74c3c;
-  color: #fff;
-}
 
-.btn.btn-danger:hover {
-  background: #c0392b;
-}
+
 
 .supplement-col,
 .dose-col {
@@ -3361,7 +3435,7 @@ button.btn.btn-danger.confirm-btn {
     touch-action: pan-x pan-y; /* разрешаем оба направления */
     border-radius: 8px;
     background-color: #fff;
-    max-height: calc(57vh); /* Еще сильнее уменьшаем высоту для мобильных */
+    max-height: calc(68vh); /* Еще сильнее уменьшаем высоту для мобильных */
     outline: 1px solid #d2d2d2;
     /* overflow-x: auto; */
     overflow-y: auto;
@@ -3563,39 +3637,58 @@ Don't show: 0.5px solid #dabaaa !important;';
 .supplements-controls-wrapper {
     display: flex;
     gap: 8px;
-    margin-bottom: 6px;
-    margin-top: 19px;
-    align-items: center;
-    padding: 0 5px;
-    flex-wrap: nowrap;
+    margin-bottom: 12px;
+    margin-top: 27px;
+    padding: 0 16px;
     justify-content: space-between;
-    flex-direction: row-reverse;
+    flex-direction: row;
 }
-
+.supplements-controls-wrapper .add-supplement-btn-wrap {
+    display: flex;
+}
+span.title-add-btn {
+    color: #000000;
+    font-size: 13px;
+    font-weight: 500;
+    padding-top: 0px;
+}
+button.btn.btn-primary.add-supplement-btn {
+    margin-left: 0px;
+    padding: 0;
+    color: #000000;
+    border: none;
+    background: none;
+    width: 38px;
+    height: 20px;
+    padding-top: 1px;
+}
 /* Стиль для группы +/- Неделя */
 .week-controls-group {
     display: flex;
+    gap: 8px; /* Очень маленький зазор */
     align-items: center;
-    gap: 3px; /* Очень маленький зазор */
 }
 .week-controls-group .btn {
-    padding: 5px 8px; /* Уменьшаем padding кнопок +/- */
-    font-size: 14px; /* Уменьшаем шрифт кнопок */
-    min-width: 30px; /* Минимальная ширина кнопок */
-    height: 30px; /* Фиксированная высота */
+    padding: 0px 0px; /* Уменьшаем padding кнопок +/- */
+    /* font-size: 14px; */ /* Уменьшаем шрифт кнопок */
+    /* min-width: 30px; */ /* Минимальная ширина кнопок */
+    /* height: 30px; */ /* Фиксированная высота */
+}
+.week-controls-group button.btn.btn-secondary svg {
+    width: 18px;
+    height: 18px;
 }
 .week-controls-group .week-label {
-    font-size: 0.9em; /* Уменьшаем шрифт "Неделя" */
-    font-weight: 600;
-    color: var(--color-text-primary);
-    padding: 0 3px;
+    font-size: 13px; /* Уменьшаем шрифт "Неделя" */
+    font-weight: 500;
+    padding-bottom: 4px;
 }
 
 /* Кнопка "Добавить препарат" */
 .supplements-page .btn-primary {
-    padding: 8px 12px; /* Стандартный padding для основной кнопки */
-    font-size: 0.95em;
-    min-width: 150px;
+    /* padding: 8px 12px; */ /* Стандартный padding для основной кнопки */
+    /* font-size: 0.95em; */
+    /* min-width: 150px; */
 }
 
 /* Стиль для заголовка, разделяющего группы таблиц */
@@ -3789,3 +3882,7 @@ button.action-btn.action-delete svg {
     width: 61% !important;
     height: 61% !important;
 }
+
+
+
+
