@@ -4,13 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="theme-color" content="#000000">
-
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="orientation" content="portrait">
-
-    
     <title>Дневник тренировок</title>
     <link rel="manifest" href="./manifest.json">
     <link rel="stylesheet" href="./styles.css">
@@ -35,18 +28,134 @@
         <h3>Выберите режим работы</h3>
         <div class="mode-options">
             <button id="select-own-mode" class="mode-btn">
-                <span class="mode-icon">🏋️</span>
+                <span class="mode-icon">
+
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" preserveAspectRatio="xMidYMid meet" style="width:100%;height:100%;">
+                    <defs>
+                        <clipPath id="__lottie_element_74442"><rect width="48" height="48" x="0" y="0"></rect></clipPath>
+                    </defs>
+
+                    <style>
+                        /* === КАДРЫ АНИМАЦИЙ (одноразовые) === */
+                        @keyframes swayOnce {
+                          0% { transform: rotate(0deg); }
+                          25% { transform: rotate(4deg); }
+                          75% { transform: rotate(-4deg); }
+                          100% { transform: rotate(0deg); }
+                        }
+                        @keyframes dotUpOnce {
+                          0% { transform: translateY(0); opacity: 1; }
+                          50% { transform: translateY(-2px); opacity: .95; }
+                          100% { transform: translateY(0); opacity: 1; }
+                        }
+                        @keyframes dotDownOnce {
+                          0% { transform: translateY(0); opacity: 1; }
+                          50% { transform: translateY(2px); opacity: .95; }
+                          100% { transform: translateY(0); opacity: 1; }
+                        }
+
+                        /* триггер анимаций (вешаем на #icon) */
+                        #icon.play #bell {
+                          transform-origin: 24px 24px;
+                          animation: swayOnce 2s ease-in-out 1 both;
+                        }
+                        #icon.play .dot-top    { animation: dotUpOnce   2s ease-in-out 1 both; }
+                        #icon.play .dot-bottom { animation: dotDownOnce 2s ease-in-out 1 both; }
+
+                        /* статика по умолчанию */
+                        .dot, #bell { transform: none; opacity: 1; }
+                    </style>
+
+                        <!-- Обёртка для синхронного триггера -->
+                    <g id="icon" class="">
+                        <!-- (1) покачивающаяся часть -->
+                        <g id="bell" clip-path="url(#__lottie_element_74442)">
+                            <!-- Центральная часть гантели -->
+                            <g transform="matrix(0.8833087683,0,0,0.8833087683,2.80059,2.80059)" opacity="1">
+                                <g opacity="1" transform="matrix(1,0,0,1,24,24.076)">
+                                    <path fill="#fff" d="M6.091,3c0,0-12.182,0-12.182,0c0,0,0-6,0-6c0,0,12.182,0,12.182,0c0,0,0,6,0,6z"></path>
+                                    <path stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="#000" stroke-width="1" d="M6.091,3c0,0-12.182,0-12.182,0c0,0,0-6,0-6c0,0,12.182,0,12.182,0c0,0,0,6,0,6z"></path>
+                                </g>
+                                <g opacity="1" transform="matrix(1,0,0,1,8.716,24.076)">
+                                    <path fill="#fff" d="M0.345,5.935c0,0-0.690,0-0.690,0c-0.744,0-1.348-0.604-1.348-1.348c0,0,0-9.174,0-9.174c0-0.745,0.604-1.349,1.348-1.349c0,0,0.690,0,0.690,0c0.745,0,1.349,0.603,1.349,1.348c0,0,0,9.174,0,9.174C1.694,5.331,1.090,5.935,0.345,5.935z"></path>
+                                    <path stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="#000" stroke-width="1" d="M0.345,5.935c0,0-0.690,0-0.690,0c-0.744,0-1.348-0.604-1.348-1.348c0,0,0-9.174,0-9.174c0-0.745,0.604-1.349,1.348-1.349c0,0,0.690,0,0.690,0c0.745,0,1.349,0.603,1.349,1.348c0,0,0,9.174,0,9.174C1.694,5.331,1.090,5.935,0.345,5.935z"></path>
+                                </g>
+                                <g opacity="1" transform="matrix(1,0,0,1,39.284,24.076)">
+                                    <path fill="#fff" d="M-0.345,-5.935c0,0,0.690,0,0.690,0c0.744,0,1.349,0.604,1.349,1.349c0,0,0,9.174,0,9.174c0,0.745-0.604,1.349-1.349,1.349c0,0-0.690,0-0.690,0c-0.745,0-1.349-0.604-1.349-1.349c0,0,0-9.174,0-9.174C-1.694,-5.331-1.090,-5.935-0.345,-5.935z"></path>
+                                    <path stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="#000" stroke-width="1" d="M-0.345,-5.935c0,0,0.690,0,0.690,0c0.744,0,1.349,0.604,1.349,1.349c0,0,0,9.174,0,9.174c0,0.745-0.604,1.349-1.349,1.349c0,0-0.690,0-0.690,0c-0.745,0-1.349-0.604-1.349-1.349c0,0,0-9.174,0-9.174C-1.694,-5.331-1.090,-5.935-0.345,-5.935z"></path>
+                                </g>
+                            </g>
+                            <!-- Внешние пластины -->
+                            <g transform="matrix(0.8833087683,0,0,0.8833087683,2.80059,2.80059)" opacity="1">
+                                <g opacity="1" transform="matrix(1,0,0,1,14.159,24.076)">
+                                    <path fill="#fff" d="M1.273,9.046c0,0-2.546,0-2.546,0C-2.641,9.046-3.75,7.936-3.75,6.568c0,0,0-13.136,0-13.136c0-1.368,1.109-2.478,2.477-2.478c0,0,2.546,0,2.546,0c1.368,0,2.477,1.110,2.477,2.478c0,0,0,13.136,0,13.136C3.75,7.936,2.641,9.046,1.273,9.046z"></path>
+                                    <path stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="rgb(0,122,255)" stroke-width="1" d="M1.273,9.046c0,0-2.546,0-2.546,0C-2.641,9.046-3.75,7.936-3.75,6.568c0,0,0-13.136,0-13.136c0-1.368,1.109-2.478,2.477-2.478c0,0,2.546,0,2.546,0c1.368,0,2.477,1.110,2.477,2.478c0,0,0,13.136,0,13.136C3.75,7.936,2.641,9.046,1.273,9.046z"></path>
+                                </g>
+                                <g opacity="1" transform="matrix(1,0,0,1,33.841,24.076)">
+                                    <path fill="#fff" d="M-1.273,-9.046c0,0,2.546,0,2.546,0c1.368,0,2.477,1.110,2.477,2.478c0,0,0,13.136,0,13.136c0,1.368-1.109,2.478-2.477,2.478c0,0-2.546,0-2.546,0c-1.368,0-2.477-1.110-2.477-2.478c0,0,0-13.136,0-13.136C-3.75,-7.936-2.641,-9.046-1.273,-9.046z"></path>
+                                    <path stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="rgb(0,122,255)" stroke-width="1" d="M-1.273,-9.046c0,0,2.546,0,2.546,0c1.368,0,2.477,1.110,2.477,2.478c0,0,0,13.136,0,13.136c0,1.368-1.109,2.478-2.477,2.478c0,0-2.546,0-2.546,0c-1.368,0-2.477-1.110-2.477-2.478c0,0,0-13.136,0-13.136C-3.75,-7.936-2.641,-9.046-1.273,-9.046z"></path>
+                                </g>
+                            </g>
+                        </g>
+
+                        <!-- (2) «точечки» (верх/низ) — анимируются вместе с колебанием -->
+                        <g id="dots">
+                            <!-- верхние -->
+                            <g opacity="1" transform="matrix(1,0,0,1,32.909,10.359)">
+                                <path class="dot dot-top" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="rgb(0,122,255)" stroke-width="1" d="M-0.512,0.505 C-0.512,0.505 -0.417,0.411 -0.285,0.281"></path>
+                            </g>
+                            <g opacity="1" transform="matrix(1,0,0,1,14.909,10.359)">
+                                <path class="dot dot-top" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="rgb(0,122,255)" stroke-width="1" d="M0.512,0.505 C0.512,0.505 0.417,0.411 0.285,0.281"></path>
+                            </g>
+                            <g opacity="1" transform="matrix(1,0,0,1,23.771,7.703)">
+                                <path class="dot dot-top" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="rgb(0,122,255)" stroke-width="1" d="M-0.005,0.719 C-0.005,0.719 -0.004,0.585 -0.003,0.4"></path>
+                            </g>
+                            <!-- нижние -->
+                            <g opacity="1" transform="matrix(1,0,0,1,14.909,37.641)">
+                                <path class="dot dot-bottom" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="rgb(0,122,255)" stroke-width="1" d="M0.512,-0.505 C0.512,-0.505 0.417,-0.411 0.285,-0.281"></path>
+                            </g>
+                            <g opacity="1" transform="matrix(1,0,0,1,32.909,37.641)">
+                                <path class="dot dot-bottom" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="rgb(0,122,255)" stroke-width="1" d="M-0.512,-0.505 C-0.512,-0.505 -0.417,-0.411 -0.285,-0.281"></path>
+                            </g>
+                            <g opacity="1" transform="matrix(1,0,0,1,24.047,40.298)">
+                                <path class="dot dot-bottom" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="rgb(0,122,255)" stroke-width="1" d="M0.005,-0.719 C0.005,-0.719 0.004,-0.585 0.003,-0.4"></path>
+                            </g>
+                        </g>
+                    </g>
+                </svg>
+                </span>
                 <h4>Личные тренировки</h4>
-                <p>Ваши циклы и программы</p>
+
             </button>
 
             <button id="select-personal-mode" class="mode-btn">
-                <span class="mode-icon">👥</span>
+                <span class="mode-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" x="0px" y="0px" viewBox="12.25 21 39.5 22" enable-background="new 0 0 64 64">
+<g>
+	<g>
+	</g>
+
+		<path fill="#FFFFFF" stroke="#027BFFFF" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" d="   M51.25,40.22L51.25,40.22c0,1.259-1.047,2.28-2.339,2.28H38.779c-1.292,0-2.339-1.021-2.339-2.28v0   c0-3.296,2.742-5.969,6.124-5.969h2.563C48.508,34.251,51.25,36.923,51.25,40.22z"/>
+
+		<circle fill="#FFFFFF" stroke="#027BFFFF" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" cx="43.845" cy="27.105" r="4.124"/>
+
+		<path fill="#FFFFFF" stroke="#027BFFFF" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" d="   M27.561,40.22L27.561,40.22c0,1.259-1.047,2.28-2.339,2.28H15.089c-1.292,0-2.339-1.021-2.339-2.28v0   c0-3.296,2.742-5.969,6.124-5.969h2.563C24.819,34.251,27.561,36.923,27.561,40.22z"/>
+
+		<circle fill="#FFFFFF" stroke="#027BFFFF" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" cx="20.155" cy="27.105" r="4.124"/>
+</g>
+<g>
+
+		<path fill="#FFFFFF" stroke="#000000" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" d="   M39.975,40.044L39.975,40.044c0,1.356-1.128,2.456-2.519,2.456H26.544c-1.391,0-2.519-1.099-2.519-2.456v0   c0-3.55,2.953-6.428,6.595-6.428h2.76C37.022,33.617,39.975,36.494,39.975,40.044z"/>
+
+		<circle fill="#FFFFFF" stroke="#000000" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" cx="32" cy="25.942" r="4.442"/>
+</g>
+</svg>
+                </span>
                 <h4>Персональный тренинг</h4>
-                <p>Работа с клиентами</p>
+
             </button>
         </div>
-        <button id="mode-logout-btn" class="btn back-btn logout-btn">Выход</button>
+        <button id="mode-logout-btn" class="btn back-btn logout-btn">выход</button>
     </div>
 </div>
 <div id="top-bar"></div>
@@ -296,49 +405,49 @@
     </div>
 </div>
 <script>
-(async function lockOrientationWithFallback() {
-  // 1) Нативный лок там, где он есть (Android/Chrome и часть десктопов)
-  try {
-    if (screen.orientation && screen.orientation.lock) {
-      await screen.orientation.lock('portrait');
-    }
-  } catch (e) {
-    // тихо игнорируем — iOS сюда обычно попадает
-  }
+    (async function lockOrientationWithFallback() {
+      // 1) Нативный лок там, где он есть (Android/Chrome и часть десктопов)
+      try {
+        if (screen.orientation && screen.orientation.lock) {
+          await screen.orientation.lock('portrait');
+        }
+      } catch (e) {
+        // тихо игнорируем — iOS сюда обычно попадает
+      }
 
-  // 2) Фолбэк для iOS: показываем оверлей в альбомной ориентации
-  const overlayId = 'rotate-overlay';
-  let overlay = document.getElementById(overlayId);
-  if (!overlay) {
-    overlay = document.createElement('div');
-    overlay.id = overlayId;
-    overlay.innerHTML = `
-      <div class="rotate-box">
-        <div class="rotate-icon">📱↩️</div>
-        <div class="rotate-text">Пожалуйста, поверните устройство вертикально</div>
-      </div>
-    `;
-    document.body.appendChild(overlay);
-  }
+      // 2) Фолбэк для iOS: показываем оверлей в альбомной ориентации
+      const overlayId = 'rotate-overlay';
+      let overlay = document.getElementById(overlayId);
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = overlayId;
+        overlay.innerHTML = `
+          <div class="rotate-box">
+            <div class="rotate-icon">📱↩️</div>
+            <div class="rotate-text">Пожалуйста, поверните устройство вертикально</div>
+          </div>
+        `;
+        document.body.appendChild(overlay);
+      }
 
-  function setScrollLocked(locked) {
-    // Блокируем «протягивание» и скрол под оверлеем
-    document.documentElement.style.overflow = locked ? 'hidden' : '';
-    document.body.style.overscrollBehavior = locked ? 'none' : '';
-    document.body.style.touchAction = locked ? 'none' : '';
-  }
+      function setScrollLocked(locked) {
+        // Блокируем «протягивание» и скрол под оверлеем
+        document.documentElement.style.overflow = locked ? 'hidden' : '';
+        document.body.style.overscrollBehavior = locked ? 'none' : '';
+        document.body.style.touchAction = locked ? 'none' : '';
+      }
 
-  function updateOverlay() {
-    const isLandscape = window.matchMedia('(orientation: landscape)').matches;
-    overlay.style.display = isLandscape ? 'flex' : 'none';
-    setScrollLocked(isLandscape);
-  }
+      function updateOverlay() {
+        const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+        overlay.style.display = isLandscape ? 'flex' : 'none';
+        setScrollLocked(isLandscape);
+      }
 
-  // Первичная установка и слушатели
-  updateOverlay();
-  window.addEventListener('orientationchange', updateOverlay);
-  window.addEventListener('resize', updateOverlay);
-})();
+      // Первичная установка и слушатели
+      updateOverlay();
+      window.addEventListener('orientationchange', updateOverlay);
+      window.addEventListener('resize', updateOverlay);
+    })();
 </script>
 
 <script type="module" src="./script.js"></script>
