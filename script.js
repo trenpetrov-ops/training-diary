@@ -5783,7 +5783,7 @@ function openMenuModal() {
 // 📦 Регистрация Service Worker и уведомления
 // ============================================================
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js')
+  navigator.serviceWorker.register('/training-diary/sw.js')
     .then(reg => {
       console.log('✅ Service Worker зарегистрирован', reg);
 
