@@ -5783,10 +5783,10 @@ function openMenuModal() {
 // 📦 Регистрация Service Worker и уведомления
 // ============================================================
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/training-diary/sw.js')
+  navigator.serviceWorker
+    .register('/training-diary/sw.js') // 🔥 правильный путь для GitHub Pages
     .then(reg => {
       console.log('✅ Service Worker зарегистрирован', reg);
-
       return navigator.serviceWorker.ready;
     })
     .then(registration => {
@@ -5797,7 +5797,7 @@ if ('serviceWorker' in navigator) {
             console.log('✅ Разрешение получено');
             registration.showNotification('💊 Training Diary', {
               body: 'Тестовое уведомление! Уведомления работают ✅',
-              icon: '/icons/icon-192.png'
+              icon: '/training-diary/icons/icon-192.png' // ⚠️ путь тоже укажи с /training-diary/
             });
           } else {
             console.log('❌ Разрешение не дано');
@@ -5807,7 +5807,6 @@ if ('serviceWorker' in navigator) {
     })
     .catch(err => console.error('Ошибка регистрации SW', err));
 }
-
 
 
 
