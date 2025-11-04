@@ -460,8 +460,9 @@ function renderClientsPage() {
     // -----------------------------------------------------------
     // Кнопка "Добавить клиента"
     // -----------------------------------------------------------
-    const addClientBtn = createElement('button', 'btn btn-primary add-client-btn', '+');
-    addClientBtn.style.margin = '12px';
+    const addClientBtn = createElement('button', 'btn btn-primary add-client-btn');
+    addClientBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><title>Plus SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2" d="M12 20v-8m0 0V4m0 8h8m-8 0H4"/></svg>';
+
     addClientBtn.addEventListener('click', () => {
         openAddClientModal(async (name) => {
             const newClient = {
@@ -694,7 +695,9 @@ function renderCyclesPage() {
     // -----------------------------------------------------------
     // Кнопка "Добавить цикл"
     // -----------------------------------------------------------
-    const addCycleBtn = createElement('button', 'btn btn-primary add-cycle-btn', '+');
+    const addCycleBtn = createElement('button', 'btn btn-primary add-cycle-btn');
+    addCycleBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><title>Plus SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2" d="M12 20v-8m0 0V4m0 8h8m-8 0H4"/></svg>';
+
     addCycleBtn.addEventListener('click', () => {
         openAddCycleModal(async (name) => {
             const newCycle = {
@@ -937,7 +940,8 @@ function renderProgramsInCyclePage() {
     // -----------------------------------------------------------
     // Кнопка "Добавить программу"
     // -----------------------------------------------------------
-    const addProgramBtn = createElement('button', 'btn btn-primary add-program-btn', '+');
+    const addProgramBtn = createElement('button', 'btn btn-primary add-program-btn');
+    addProgramBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><title>Plus SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2" d="M12 20v-8m0 0V4m0 8h8m-8 0H4"/></svg>';
     addProgramBtn.addEventListener('click', () => {
         openAddProgramModal(async (name) => {
             const newProgram = {
@@ -1815,7 +1819,9 @@ const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-
             }
 
             // Кнопки под подходами (добавить подход, комментарий к упражнению + индикаторы медиа)
-            const addSetBtn = createElement('button', 'add-set-btn', '+');
+            const addSetBtn = createElement('button', 'add-set-btn');
+            addSetBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 16 16"><title>Plus SVG Icon</title><path fill="currentColor" d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"></path></svg>';
+
             addSetBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const currentExercise = selectedProgram.exercises.find(ex => ex.id === exercise.id);
@@ -2962,6 +2968,73 @@ function smartPositionDropdown(dropdown, anchorElement) {
     dropdown.style.left = left + 'px';
     dropdown.style.opacity = 1;   // для плавного появления
 }
+
+// =================================================================
+//  модалка редактирования даты завершенной тренировки
+// =================================================================
+function openDateModal(currentDate, onSave) {
+  // Парсим дату в формат YYYY-MM-DD
+  let [d, m, y] = currentDate.split('.');
+  const formatted = `${y}-${m}-${d}`;
+
+  // затемняющий фон
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+
+  // модальное окно
+  const modal = document.createElement('div');
+  modal.className = 'modal-window';
+
+  const title = document.createElement('h3');
+  title.textContent = 'Выбери дату';
+
+  const input = document.createElement('input');
+  input.type = 'date';
+  input.value = formatted;
+  input.className = 'modal-date-input';
+
+  const btnRow = document.createElement('div');
+  btnRow.className = 'modal-btn-row';
+
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = 'Сохранить';
+  saveBtn.className = 'btn modal-save-btn';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Отмена';
+  cancelBtn.className = 'btn modal-cancel-btn';
+
+  btnRow.append(cancelBtn, saveBtn);
+  modal.append(title, input, btnRow);
+  overlay.append(modal);
+  document.body.append(overlay);
+
+  // плавное появление
+  requestAnimationFrame(() => overlay.classList.add('visible'));
+
+  // обработчики
+  cancelBtn.onclick = () => {
+    overlay.classList.remove('visible');
+    setTimeout(() => overlay.remove(), 200);
+    onSave(null);
+  };
+
+  saveBtn.onclick = () => {
+    const val = input.value;
+    overlay.classList.remove('visible');
+    setTimeout(() => overlay.remove(), 200);
+    onSave(val);
+  };
+
+  overlay.onclick = (e) => {
+    if (e.target === overlay) cancelBtn.click();
+  };
+}
+
+
+
+
+
 // =================================================================
 // 🔥 новая страница с завершенными тренировками
 // =================================================================
@@ -2975,19 +3048,8 @@ function renderJournalRecordDetails(container) {
         return;
     }
 
-    const backBtn = createElement('button', 'btn back-btn', '← Назад');
-    backBtn.addEventListener('click', () => {
-        state.selectedJournalRecord = null;
-        render();
-    });
+const menuRecord = createElement('div', 'menu-record');
 
-    container.append(backBtn);
-
-    // Заголовок
-// 🔹 Заголовок с редактированием даты
-const titleWrapper = createElement('div', 'record-header');
-const titleDel = createElement('div', 'title-del');
-const dateEdit = createElement('div', 'date-edit');
 
 // 🔥 Кнопка удаления тренировки
 const deleteBtn = createElement('button', 'btn delete-record-btn');
@@ -2996,15 +3058,36 @@ deleteBtn.addEventListener('click', () => {
     openConfirmModal('Удалить эту тренировку?', async () => {
         try {
             await deleteDoc(doc(getUserJournalCollection(), record.id));
-            showToast('✅ Тренировка удалена');
+            showToast('Тренировка удалена');
             state.selectedJournalRecord = null;
             render();
         } catch (error) {
             console.error(error);
-            showToast('❌ Ошибка удаления');
+            showToast('Ошибка удаления');
         }
     });
 });
+
+
+
+
+
+    const backBtn = createElement('button', 'btn back-btn');
+    backBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><title>Ios-arrow-ltr-24-filled SVG Icon</title><path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"></path></svg>';
+    backBtn.addEventListener('click', () => {
+        state.selectedJournalRecord = null;
+        render();
+    });
+    menuRecord.append(backBtn,deleteBtn);
+    container.append(menuRecord);
+
+    // Заголовок
+// 🔹 Заголовок с редактированием даты
+const titleWrapper = createElement('div', 'record-header');
+const titleDel = createElement('div', 'title-del');
+const dateEdit = createElement('div', 'date-edit');
+
+
 
 
 let nameElement = createElement('span', 'record-name', `${record.programName}`);
@@ -3013,44 +3096,28 @@ const editBtn = createElement('button', 'edit-date-btn');
 editBtn.innerHTML ='<svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24"><title>Edit SVG Icon</title><path fill="currentColor" d="M3.548 20.938h16.9a.5.5 0 0 0 0-1h-16.9a.5.5 0 0 0 0 1M9.71 17.18a2.587 2.587 0 0 0 1.12-.65l9.54-9.54a1.75 1.75 0 0 0 0-2.47l-.94-.93a1.788 1.788 0 0 0-2.47 0l-9.54 9.53a2.473 2.473 0 0 0-.64 1.12L6.04 17a.737.737 0 0 0 .19.72a.767.767 0 0 0 .53.22Zm.41-1.36a1.468 1.468 0 0 1-.67.39l-.97.26l-1-1l.26-.97a1.521 1.521 0 0 1 .39-.67l.38-.37l1.99 1.99Zm1.09-1.08l-1.99-1.99l6.73-6.73l1.99 1.99Zm8.45-8.45L18.65 7.3l-1.99-1.99l1.01-1.02a.748.748 0 0 1 1.06 0l.93.94a.754.754 0 0 1 0 1.06"></path></svg>';
 
 titleWrapper.append(titleDel, dateEdit);
-titleDel.append(nameElement, deleteBtn);
-dateEdit.append(dateElement, editBtn);
+titleDel.append(nameElement,dateElement, editBtn);
+
 container.append(titleWrapper);
 
 // 📌 Редактирование даты
 editBtn.addEventListener('click', () => {
-    // Преобразуем дату в формат YYYY-MM-DD для input type="date"
-    const [d, m, y] = record.date.split('.');
-    const input = createElement('input', 'date-input');
-    input.type = 'date';
-    input.value = `${y}-${m}-${d}`;
+  openDateModal(record.date, async (newDate) => {
+    if (!newDate) return;
+    const [year, month, day] = newDate.split('-');
+    const formatted = `${day}.${month}.${year}`;
 
-    const saveBtn = createElement('button', 'btn save-date-btn', '✅');
-    const cancelBtn = createElement('button', 'btn cancel-btn', '❌');
-
-    titleWrapper.innerHTML = '';
-    titleWrapper.append(input, saveBtn, cancelBtn);
-
-    cancelBtn.addEventListener('click', () => {
-        titleWrapper.innerHTML = '';
-        titleWrapper.append(dateElement, editBtn);
-    });
-
-    saveBtn.addEventListener('click', async () => {
-        const newDate = input.value; // формата YYYY-MM-DD
-        const [year, month, day] = newDate.split('-');
-        const formatted = `${day}.${month}.${year}`;
-
-        try {
-            await updateDoc(doc(getUserJournalCollection(), record.id), { date: formatted });
-            showToast('✅ Дата обновлена!');
-            render(); // обновляем экран
-        } catch (e) {
-            console.error(e);
-            showToast('❌ Ошибка обновления даты');
-        }
-    });
+    try {
+      await updateDoc(doc(getUserJournalCollection(), record.id), { date: formatted });
+      showToast('Дата обновлена!');
+      render();
+    } catch (e) {
+      console.error(e);
+      showToast('Ошибка обновления даты');
+    }
+  });
 });
+
 
 
 
@@ -3090,14 +3157,28 @@ editBtn.addEventListener('click', () => {
         const exTitle = createElement('h4', null, `${index + 1}. ${exercise.name}`);
         block.append(exTitle);
 
-        const sets = createElement('div', 'sets-line');
-        (exercise.sets || []).forEach(s => {
-            if (s.weight || s.reps) {
-                const span = createElement('span', null, `${s.weight || 0}x${s.reps || 0}`);
-                sets.append(span);
-            }
-        });
-        block.append(sets);
+const sets = createElement('div', 'sets-line');
+
+// Берём только заполненные подходы
+const arr = (exercise.sets || []).filter(s => s.weight || s.reps);
+
+// индекс первого main-set
+const firstMainIdx = arr.findIndex(s => s.isMain);
+
+arr.forEach((s, i) => {
+  // перед первым main-set вставляем перенос строки
+  if (i === firstMainIdx && firstMainIdx !== -1) {
+    sets.append(createElement('span', 'line-break')); // <-- перенос
+  }
+
+  const span = createElement('span', `set-item${s.isMain ? ' main-set' : ''}`);
+  span.textContent = `${s.weight || 0}x${s.reps || 0}`;
+  sets.append(span);
+});
+
+block.append(sets);
+
+
 
         if (exercise.note) {
             const note = createElement('p', 'exercise-note', exercise.note);
@@ -4188,14 +4269,12 @@ async function renderSupplementsPage() {
     }
 
     // --- Заголовок ---
-    contentContainer.append(createElement('h3', null, `План добавок: ${currentCycle.name}`));
+    const title = createElement('h3');
+    title.innerHTML = `План добавок: <span>${currentCycle.name}</span>`;
+    contentContainer.append(title);
 
-const selectCyclPdfWrapp = createElement('div', 'selectCycl-Pdf-Wrapp');
 
-    // --- Кнопка выбора цикла ---
-    const selectCycleBtn = createElement('button', 'btn btn-secondary', 'Выбор цикла');
-    selectCycleBtn.addEventListener('click', openCycleSelectModal);
-    contentContainer.append(selectCycleBtn);
+
 
     // --- Проверяем план добавок ---
     if (!state.supplementPlan || !state.supplementPlan.data) {
@@ -4212,26 +4291,12 @@ const selectCyclPdfWrapp = createElement('div', 'selectCycl-Pdf-Wrapp');
 
     // TODO: здесь у тебя дальше идёт рендер таблицы / карточек добавок
 
-  // 📄 Кнопка "Сводный PDF" + модалка выбора дат
-    const pdfButton = createElement('button', 'btn btn-primaryPdf');
-    pdfButton.innerHTML = `
-   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><title>Filetype-pdf SVG Icon</title><path fill="currentColor" fill-rule="evenodd" d="M14 4.5V14a2 2 0 0 1-2 2h-1v-1h1a1 1 0 0 0 1-1V4.5h-2A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v9H2V2a2 2 0 0 1 2-2h5.5zM1.6 11.85H0v3.999h.791v-1.342h.803q.43 0 .732-.173q.305-.175.463-.474a1.4 1.4 0 0 0 .161-.677q0-.375-.158-.677a1.2 1.2 0 0 0-.46-.477q-.3-.18-.732-.179m.545 1.333a.8.8 0 0 1-.085.38a.57.57 0 0 1-.238.241a.8.8 0 0 1-.375.082H.788V12.48h.66q.327 0 .512.181q.185.183.185.522m1.217-1.333v3.999h1.46q.602 0 .998-.237a1.45 1.45 0 0 0 .595-.689q.196-.45.196-1.084q0-.63-.196-1.075a1.43 1.43 0 0 0-.589-.68q-.396-.234-1.005-.234zm.791.645h.563q.371 0 .609.152a.9.9 0 0 1 .354.454q.118.302.118.753a2.3 2.3 0 0 1-.068.592a1.1 1.1 0 0 1-.196.422a.8.8 0 0 1-.334.252a1.3 1.3 0 0 1-.483.082h-.563zm3.743 1.763v1.591h-.79V11.85h2.548v.653H7.896v1.117h1.606v.638z"/></svg>
-
-    `;
-
-    pdfButton.addEventListener('click', () => {
-        openPdfDateModal(currentCycle);
-    });
-
-    contentContainer.append(selectCyclPdfWrapp);
-
-selectCyclPdfWrapp.append(selectCycleBtn,pdfButton);
 
     const controlsWrapper = createElement('div', 'supplements-controls-wrapper');
 
     // Группа кнопок +/- Неделя
     const weekControlsGroup = createElement('div', 'week-controls-group');
-
+    const addSupplementBtnWrap = createElement('div', 'add-supplement-btn-wrap');
 
 
    // Удаляем кнопку, если уже есть
@@ -4241,8 +4306,13 @@ selectCyclPdfWrapp.append(selectCycleBtn,pdfButton);
    // Проверяем количество добавок
    const currentSupplements = getSupplementNames(state.supplementPlan);
    if (currentSupplements.length >= 5) {
-       const addSupplementBtn = createElement('button', 'btn btn-primary add-supplement-btn', '➕ Препарат');
-       weekControlsGroup.append(addSupplementBtn);
+       const addSupplementBtn = createElement('button', 'btn btn-primary add-supplement-btn');
+       const addSupplementBtnTitle = createElement('span', 'title-add-btn','препарат');
+         addSupplementBtn.innerHTML = `
+               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><title>Add-plus SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 12h6m0 0h6m-6 0v6m0-6V6"></path></svg>
+           `;
+       addSupplementBtnWrap.append(addSupplementBtnTitle,addSupplementBtn);
+
 
        addSupplementBtn.addEventListener('click', () => {
            // 🔹 Открываем ту же модалку, что при клике на supplement-col
@@ -4252,12 +4322,18 @@ selectCyclPdfWrapp.append(selectCycleBtn,pdfButton);
 
 
     // Кнопки +/- Неделя
-    const removeWeekBtn = createElement('button', 'btn btn-secondary', '–');
+    const removeWeekBtn = createElement('button', 'btn btn-secondary');
+                 removeWeekBtn.innerHTML = `
+<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 20 20"><title>Minus-sm SVG Icon</title><path fill="currentColor" fill-rule="evenodd" d="M5 10a1 1 0 0 1 1-1h8a1 1 0 1 1 0 2H6a1 1 0 0 1-1-1" clip-rule="evenodd"/></svg>
+                   `;
     removeWeekBtn.addEventListener('click', removeLastWeek);
 
-    const weekLabel = createElement('span', 'week-label', 'Неделя');
+    const weekLabel = createElement('span', 'week-label', 'неделя');
 
-    const addWeekBtn = createElement('button', 'btn btn-secondary', '+');
+    const addWeekBtn = createElement('button', 'btn btn-secondary');
+             addWeekBtn.innerHTML = `
+                   <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"><title>Add-plus SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 12h6m0 0h6m-6 0v6m0-6V6"></path></svg>
+               `;
     addWeekBtn.addEventListener('click', addWeek);
 
     weekControlsGroup.append(removeWeekBtn, weekLabel, addWeekBtn);
@@ -4267,7 +4343,7 @@ selectCyclPdfWrapp.append(selectCycleBtn,pdfButton);
 
 
     // Добавляем обе группы управления
-    controlsWrapper.append(weekControlsGroup);
+    controlsWrapper.append(addSupplementBtnWrap,weekControlsGroup);
     contentContainer.append(controlsWrapper);
 
 
@@ -5570,6 +5646,36 @@ function renderTopBar() {
     const topBar = document.createElement('div');
     topBar.className = 'top-bar';
 
+
+ if (state.currentPage === 'supplements') {
+        const cycleBtnsWrap = document.createElement('div');
+        cycleBtnsWrap.className = 'topbar-cycle-btns';
+
+        // кнопка "Выбор цикла"
+        const selectCycleBtn = document.createElement('button');
+        selectCycleBtn.className = 'btn btn-secondary';
+        selectCycleBtn.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><title>Arrow-collapse-all-20-regular SVG Icon</title><path fill="currentColor" d="M2 4.5a.5.5 0 0 1 .5-.5h15a.5.5 0 0 1 0 1h-15a.5.5 0 0 1-.5-.5m3.146 2.646a.5.5 0 0 1 .708 0l2.5 2.5a.5.5 0 0 1-.708.708L6 8.707V15.5a.5.5 0 0 1-1 0V8.707l-1.646 1.647a.5.5 0 0 1-.708-.708zM17.5 8h-7a.5.5 0 0 1 0-1h7a.5.5 0 0 1 0 1"></path></svg>
+                `;
+        selectCycleBtn.onclick = openCycleSelectModal;
+
+        // кнопка PDF
+        const pdfButton = document.createElement('button');
+        pdfButton.className = 'btn btn-primaryPdf';
+        pdfButton.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 32 32"><title>Pdf SVG Icon</title><path fill="currentColor" d="M30 11V9h-8v14h2v-6h5v-2h-5v-4zM8 9H2v14h2v-5h4a2 2 0 0 0 2-2v-5a2 2 0 0 0-2-2m0 7H4v-5h4zm8 7h-4V9h4a4 4 0 0 1 4 4v6a4 4 0 0 1-4 4m-2-2h2a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-2z"></path></svg>
+        `;
+        pdfButton.onclick = () => openPdfDateModal(state.cycles?.find(c => c.id === state.selectedCycleId));
+
+        cycleBtnsWrap.append(selectCycleBtn,pdfButton);
+        topBar.appendChild(cycleBtnsWrap);
+    }
+
+
+
+
+
+
     // ------- СТРЕЛКА НАЗАД (с текстом) -------
     let showBack = false;
     const backBtn = document.createElement('button');
@@ -5577,7 +5683,7 @@ function renderTopBar() {
 
     // ✅ 1. Если мы в циклах клиента — показать стрелку "к клиентам"
         if (state.currentMode === 'personal' && state.currentPage === 'programs' && state.selectedClientId) {
-            backBtn.innerHTML = '← к клиентам';
+            backBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><title>Ios-arrow-ltr-24-filled SVG Icon</title><path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"></path></svg>';
             backBtn.onclick = () => {
                 state.selectedClientId = null;
                 state.currentPage = 'programs'; // вернёмся в список клиентов
@@ -5587,13 +5693,13 @@ function renderTopBar() {
         }
 
     if (state.currentPage === 'programsInCycle') {
-        backBtn.innerHTML = '← к циклам';
+        backBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><title>Ios-arrow-ltr-24-filled SVG Icon</title><path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"></path></svg>';
         backBtn.onclick = () => { state.currentPage = 'programs'; render(); };
         showBack = true;
     }
 
     if (state.currentPage === 'programDetails') {
-        backBtn.innerHTML = '← к программам';
+        backBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><title>Ios-arrow-ltr-24-filled SVG Icon</title><path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"></path></svg>';
         backBtn.onclick = () => { state.currentPage = 'programsInCycle'; render(); };
         showBack = true;
     }
@@ -5604,11 +5710,17 @@ function renderTopBar() {
     // ------- ГАМБУРГЕР (ВСЕГДА СПРАВА) -------
     const burger = document.createElement('button');
     burger.className = 'top-menu-btn';
-    burger.innerHTML = '☰';
+    burger.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 15 15"><title>Hamburger-menu SVG Icon</title><path fill="currentColor" fill-rule="evenodd" d="M1.5 3a.5.5 0 0 0 0 1h12a.5.5 0 0 0 0-1zM1 7.5a.5.5 0 0 1 .5-.5h12a.5.5 0 0 1 0 1h-12a.5.5 0 0 1-.5-.5m0 4a.5.5 0 0 1 .5-.5h12a.5.5 0 0 1 0 1h-12a.5.5 0 0 1-.5-.5" clip-rule="evenodd"></path></svg>';
     burger.onclick = openMenuModal;
     topBar.appendChild(burger);
 
     root.prepend(topBar);
+
+
+
+
+
+
 }
 
 
@@ -5631,9 +5743,7 @@ function openMenuModal() {
     const modeBtn = document.createElement('button');
     modeBtn.className = 'menu-icon-btn';
     modeBtn.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24">
-            <path fill="currentColor" d="M12 21q-1.65 0-3.075-.637t-2.5-1.713l1.4-1.425q.825.8 1.875 1.288T12 19q2.5 0 4.25-1.75T18 13q0-2.5-1.75-4.25T12 7q-1.05 0-2.1.488T8.025 8.775L9.4 10.2l-6.4.2l.2-6.4l1.4 1.375Q6 4.275 7.625 3.638T11 3q3.35 0 5.675 2.325T19 11q0 3.35-2.325 5.675T12 19"/>
-        </svg>
+        <svg xmlns="http://www.w3.org/2000/svg" width="37" height="37" viewBox="0 0 56 56"><title>Arrow-2-squarepath SVG Icon</title><path fill="currentColor" d="M40.131 7.904h-18.27c-1.28 0-2.02.65-1.997 1.795c.022 1.145.718 1.818 1.997 1.818h18.203c2.245 0 3.501 1.19 3.501 3.524v24.375l-3.366-3.59l-2.133-2.11c-.763-.741-1.84-.831-2.603-.068c-.763.763-.718 1.863.045 2.626l7.564 7.519c1.459 1.459 3.097 1.459 4.556 0l7.564-7.519c.785-.763.808-1.863.045-2.626c-.763-.763-1.818-.696-2.582.067l-2.154 2.11l-3.322 3.569V14.862c0-4.646-2.379-6.958-7.048-6.958m-24.24 41.32h18.27c1.28 0 2.02-.65 1.998-1.795c-.023-1.167-.719-1.818-1.998-1.818H15.936c-2.245 0-3.48-1.19-3.48-3.524V17.712l3.345 3.569l2.155 2.132c.763.74 1.818.83 2.604.045c.763-.74.718-1.84-.045-2.604l-7.564-7.541c-1.482-1.437-3.098-1.437-4.58 0L.809 20.854C.9 21.618 0 22.717.763 23.458c.763.786 1.84.696 2.604-.045l2.154-2.132l3.322-3.546v24.532c0 4.646 2.357 6.958 7.048 6.958"></path></svg>
     `;
     modeBtn.title = 'Сменить режим';
     modeBtn.onclick = () => {
@@ -5647,9 +5757,7 @@ function openMenuModal() {
     const logoutBtn = document.createElement('button');
     logoutBtn.className = 'menu-icon-btn';
     logoutBtn.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="26" height="26" viewBox="0 0 24 24">
-            <path fill="currentColor" d="M10 17v1.5q0 .625.438 1.062T11.5 20h7q.625 0 1.063-.438T20 18.5v-13q0-.625-.438-1.062T18.5 4h-7q-.625 0-1.062.438T10 5.5V7H8V5.5q0-1.25.875-2.125T11.5 2h7q1.25 0 2.125.875T21.5 5.5v13q0 1.25-.875 2.125T18.5 21h-7q-1.25 0-2.125-.875T8.5 18.5V17zm1-3l-4-4l4-4l1.4 1.425L10.825 9H17v2H10.825l1.575 1.575z"/>
-        </svg>
+        <svg xmlns="http://www.w3.org/2000/svg" width="37" height="37" viewBox="0 0 16 16"><title>Box-arrow-left SVG Icon</title><g fill="currentColor" fill-rule="evenodd"><path d="M6 12.5a.5.5 0 0 0 .5.5h8a.5.5 0 0 0 .5-.5v-9a.5.5 0 0 0-.5-.5h-8a.5.5 0 0 0-.5.5v2a.5.5 0 0 1-1 0v-2A1.5 1.5 0 0 1 6.5 2h8A1.5 1.5 0 0 1 16 3.5v9a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 5 12.5v-2a.5.5 0 0 1 1 0z"></path><path d="M.146 8.354a.5.5 0 0 1 0-.708l3-3a.5.5 0 1 1 .708.708L1.707 7.5H10.5a.5.5 0 0 1 0 1H1.707l2.147 2.146a.5.5 0 0 1-.708.708z"></path></g></svg>
     `;
     logoutBtn.title = 'Выйти из аккаунта';
     logoutBtn.onclick = async () => {
@@ -5671,6 +5779,34 @@ function openMenuModal() {
 }
 
 
+// ============================================================
+// 📦 Регистрация Service Worker и уведомления
+// ============================================================
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js')
+    .then(reg => {
+      console.log('✅ Service Worker зарегистрирован', reg);
+
+      return navigator.serviceWorker.ready;
+    })
+    .then(registration => {
+      console.log('🔔 SW готов, запрашиваем разрешение на уведомления...');
+      if ('Notification' in window) {
+        Notification.requestPermission().then(permission => {
+          if (permission === 'granted') {
+            console.log('✅ Разрешение получено');
+            registration.showNotification('💊 Training Diary', {
+              body: 'Тестовое уведомление! Уведомления работают ✅',
+              icon: '/icons/icon-192.png'
+            });
+          } else {
+            console.log('❌ Разрешение не дано');
+          }
+        });
+      }
+    })
+    .catch(err => console.error('Ошибка регистрации SW', err));
+}
 
 
 
