@@ -4707,6 +4707,34 @@ root.append(contentContainer);
 }
 
 
+// ====================================================================
+// 🔔 Проверка на добавки сегодня и показ уведомления
+// ====================================================================
+async function checkTodaySupplementsNotification() {
+  if (Notification.permission !== 'granted') return;
+
+  const plan = state.supplementPlan?.data || [];
+  const today = getTodayDateString();
+  const todayData = plan.find(d => d.date === today);
+  if (!todayData) return;
+
+  const doses = todayData.doses || {};
+  const supplements = Object.entries(doses)
+    .filter(([_, dose]) => dose && dose.trim() !== '')
+    .map(([name, dose]) => `${name} — ${dose}`);
+
+  if (supplements.length === 0) return;
+
+  const body = 'Сегодня по плану: ' + supplements.join(', ');
+  const reg = await navigator.serviceWorker.ready;
+  reg.showNotification('💊 Напоминание о приёме добавок', {
+    body,
+    icon: '/training-diary/icons/icon-192.png',
+    data: { action: 'open_supplements' },
+  });
+}
+
+
 // ===========================================================
 // 🔁 Цикл уведомлений
 // ===========================================================
@@ -4715,28 +4743,18 @@ function startSupplementReminders(intervalMinutes) {
 
   const intervalMs = intervalMinutes * 60 * 1000;
 
-  // Останавливаем старый таймер, если был
   if (window._supplementReminderInterval) {
     clearInterval(window._supplementReminderInterval);
   }
 
   console.log(`🔔 Проверка добавок каждые ${intervalMinutes} минут`);
 
-  // 🔁 Каждые X минут проверяем, есть ли добавки на сегодня
   window._supplementReminderInterval = setInterval(() => {
-    checkTodaySupplementsNotification();
+    checkTodaySupplementsNotification(); // ✅ теперь есть!
   }, intervalMs);
 
-  // 🟢 Проверяем сразу при включении, не ждём первый интервал
+  // сразу проверить при запуске
   checkTodaySupplementsNotification();
-}
-
-function stopSupplementReminders() {
-  if (window._supplementReminderInterval) {
-    clearInterval(window._supplementReminderInterval);
-    window._supplementReminderInterval = null;
-    console.log('⏸ Уведомления остановлены');
-  }
 }
 
 
