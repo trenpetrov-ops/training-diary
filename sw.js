@@ -1,46 +1,50 @@
-// ================================================================
-// 🔥 Service Worker для Firebase Messaging + локальные уведомления
-// ================================================================
-
-// Импорт Firebase (для Android, Chrome, ПК)
-importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging-compat.js');
-
-// Инициализация Firebase
-firebase.initializeApp({
-  apiKey: "AIzaSyBRh4hOexYttvkts5AcOxi4bg3Yp7-2d90",
-  authDomain: "training-diary-51f0f.firebaseapp.com",
-  projectId: "training-diary-51f0f",
-  storageBucket: "training-diary-51f0f.firebasestorage.app",
-  messagingSenderId: "332026731208",
-  appId: "1:332026731208:web:3fa953b94700d00349e3fd"
+// ============================================================
+// 🟢 Service Worker: установка и активация
+// ============================================================
+self.addEventListener('install', event => {
+  console.log('🟢 Service Worker установлен');
+  self.skipWaiting();
 });
 
-const messaging = firebase.messaging();
-
-// ================================================================
-// 📦 PUSH из Firebase (для Android / ПК)
-// ================================================================
-messaging.onBackgroundMessage(payload => {
-  console.log('📩 Получено фоновое сообщение:', payload);
-  const title = payload.notification?.title || '💊 Напоминание';
-  const options = {
-    body: payload.notification?.body || 'Пора принять добавки!',
-    icon: '/training-diary/icons/icon-192.png'
-  };
-  self.registration.showNotification(title, options);
+self.addEventListener('activate', event => {
+  console.log('✅ Service Worker активирован');
 });
 
-// ================================================================
-// 🔔 ЛОКАЛЬНОЕ уведомление (для iPhone PWA)
-// ================================================================
-self.addEventListener('message', event => {
-  if (event.data && event.data.type === 'LOCAL_NOTIFICATION') {
-    const title = '💊 Напоминание';
-    const options = {
-      body: event.data.body || 'Пора принять добавки!',
-      icon: '/training-diary/icons/icon-192.png'
-    };
-    self.registration.showNotification(title, options);
-  }
+
+// ============================================================
+// 🔔 Обработка push (на будущее, если появится серверная отправка)
+// ============================================================
+self.addEventListener('push', event => {
+  const data = event.data?.json() || { title: "Напоминание 💊", body: "Время принять добавки" };
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: '/training-diary/icons/icon-192.png' // ✅ путь исправлен
+    })
+  );
+});
+
+
+// ============================================================
+// 👆 Обработка клика по уведомлению (важно для перехода в приложение)
+// ============================================================
+self.addEventListener('notificationclick', event => {
+  event.notification.close();
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientsArr => {
+      const client = clientsArr.find(c =>
+        c.url.includes('training-diary') && 'focus' in c
+      );
+
+      if (client) {
+        // 🔹 Отправляем сообщение в клиент (PWA)
+        client.postMessage({ type: 'OPEN_SUPPLEMENTS_MODAL' });
+        return client.focus();
+      }
+
+      // 🔹 Если приложение не открыто — открыть его
+      return clients.openWindow('/training-diary/?open=supplements'); // ✅ путь исправлен
+    })
+  );
 });
