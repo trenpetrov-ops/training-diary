@@ -1,50 +1,39 @@
 // ============================================================
-// 🟢 Service Worker: установка и активация
+// 🌐 Чистый Service Worker для PWA без уведомлений
 // ============================================================
+
+const CACHE_NAME = 'training-diary-v1';
+const CACHE_URLS = [
+  '/training-diary/',
+  '/training-diary/index.html',
+  '/training-diary/manifest.json',
+  '/training-diary/styles.css',
+  '/training-diary/script.js',
+  '/training-diary/icons/icon-192.png',
+  '/training-diary/icons/icon-512.png'
+];
+
+// Установка и кэширование файлов
 self.addEventListener('install', event => {
-  console.log('🟢 Service Worker установлен');
-  self.skipWaiting();
-});
-
-self.addEventListener('activate', event => {
-  console.log('✅ Service Worker активирован');
-});
-
-
-// ============================================================
-// 🔔 Обработка push (на будущее, если появится серверная отправка)
-// ============================================================
-self.addEventListener('push', event => {
-  const data = event.data?.json() || { title: "Напоминание 💊", body: "Время принять добавки" };
   event.waitUntil(
-    self.registration.showNotification(data.title, {
-      body: data.body,
-      icon: '/training-diary/icons/icon-192.png' // ✅ путь исправлен
-    })
+    caches.open(CACHE_NAME).then(cache => cache.addAll(CACHE_URLS))
   );
+  console.log('✅ Service Worker установлен и ресурсы закэшированы');
 });
 
-
-// ============================================================
-// 👆 Обработка клика по уведомлению (важно для перехода в приложение)
-// ============================================================
-self.addEventListener('notificationclick', event => {
-  event.notification.close();
-
+// Активация и очистка старого кеша
+self.addEventListener('activate', event => {
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientsArr => {
-      const client = clientsArr.find(c =>
-        c.url.includes('training-diary') && 'focus' in c
-      );
+    caches.keys().then(keys =>
+      Promise.all(keys.map(key => key !== CACHE_NAME && caches.delete(key)))
+    )
+  );
+  console.log('🧹 Старые кеши удалены');
+});
 
-      if (client) {
-        // 🔹 Отправляем сообщение в клиент (PWA)
-        client.postMessage({ type: 'OPEN_SUPPLEMENTS_MODAL' });
-        return client.focus();
-      }
-
-      // 🔹 Если приложение не открыто — открыть его
-      return clients.openWindow('/training-diary/?open=supplements'); // ✅ путь исправлен
-    })
+// Обработка запросов: сначала сеть, потом кеш
+self.addEventListener('fetch', event => {
+  event.respondWith(
+    fetch(event.request).catch(() => caches.match(event.request))
   );
 });
