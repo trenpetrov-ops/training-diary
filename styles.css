@@ -219,7 +219,7 @@ html, body {
     display: flex;
     height: 58px;
     background-color: #ffffff;
-    border-bottom: 1.5px solid #e7e7e7;
+    border-bottom: 1px solid #e7e7e7;
     border-top: 0.5px solid #e7e7e7;
     z-index: 1000;
     width: 84%;
@@ -228,7 +228,7 @@ html, body {
     justify-content: space-around;
     align-items: center;
     overflow: hidden;
-    box-shadow: 0px 2px 4px -2.5px #c7c7cc;
+    box-shadow: 0px 1px 0px 0px #c7c7cc;
 }
 
 
@@ -1013,30 +1013,7 @@ small.unit-label {
     margin: 2px 0 0 0;
 }
 
-/* ========================================================== */
-/* ИЗМЕНЕНИЯ СТАРЫХ СТИЛЕЙ */
-/* ========================================================== */
 
-/* 🔥 УДАЛИТЕ ВСЕ СТИЛИ, СВЯЗАННЫЕ С #main-nav-switcher и .top-nav-btn
-   Избавьтесь от этого блока полностью: */
-
-/*
-#main-nav-switcher {
-    ...
-}
-.nav-switch-btn {
-    ...
-}
-#nav-personal {
-    ...
-}
-#nav-own {
-    ...
-}
-.top-nav-btn.active {
-    ...
-}
-*/
 
 /* 🔥 В СТРАНИЦЕ КЛИЕНТОВ/ЦИКЛОВ: Добавляем кнопку "Сменить режим" */
 .logout-wrapper {
@@ -1122,6 +1099,185 @@ div#auth-screen {
     background-color: #f4f4f4;
     z-index: 100;
 }
+
+
+
+/* ========================================================== */
+/* iPhone-style таймер с пресетами */
+/* ========================================================== */
+button.btn.btn-timer {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 0;
+    top: 4px;
+}
+button.btn.btn-timer svg {
+    color: #000000;
+    width: 20px;
+    height: 20px;
+}
+
+.timer-modal {
+    width: 340px;
+    text-align: center;
+    background: #fff;
+    border-radius: 16px;
+    padding: 20px;
+    position: relative;
+}
+
+.timer-display {
+    font-size: 2.6em;
+    font-weight: 600;
+    margin: 10px 0 20px;
+    color: #111;
+}
+
+.timer-body {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.timer-presets {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.timer-presets button {
+    background: #f2f2f2;
+    border: none;
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 0.9em;
+    color: #007AFF;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.timer-presets button:hover {
+    background: #e1e1e1;
+    transform: scale(1.05);
+}
+
+.timer-center {
+    flex: 1;
+}
+
+.timer-timepicker input[type="time"] {
+    font-size: 1.3em;
+    width: 140px;
+    border: none;
+    background: transparent;
+    outline: none;
+    -webkit-appearance: none;
+    text-align: center;
+    color: #007AFF;
+}
+
+/* скрываем стрелочки */
+input[type="time"]::-webkit-inner-spin-button,
+input[type="time"]::-webkit-calendar-picker-indicator {
+    display: none;
+}
+
+/* эффект мигания */
+.timer-modal.flash {
+    animation: flash-bg 0.2s ease-in-out;
+}
+
+@keyframes flash-bg {
+    0%   { background-color: #fff; }
+    50%  { background-color: #ff3b30; }
+    100% { background-color: #fff; }
+}
+
+
+/* --- плавающая кнопка таймера --- */
+body .btn-timer.floating {
+    position: fixed !important;
+    top: 74%;
+    left: 87%;
+    z-index: 999;
+    background: white;
+    color: white;
+    border-radius: 10px;
+    width: 50px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.2s, opacity 0.2s;
+    touch-action: none;
+    box-shadow: 0px 0.5px 0px 0px #c7c7cc !important;
+    border: 1px solid #e7e7e7;
+}
+
+/* при перетаскивании */
+.btn-timer.dragging {
+    opacity: 0.9;
+    transform: scale(1.1);
+    cursor: grab;
+    touch-action: none;
+}
+
+/* стандартное состояние в top-bar */
+.top-bar .btn-timer {
+    position: static;
+    background: none;
+    color: inherit;
+    box-shadow: none;
+}
+
+=
+/* визуал при перетаскивании (опц.) */
+.btn-timer.dragging{
+  opacity: .9;
+}
+
+
+/* чекбокс модалки время  */
+.timer-toggle-row {
+  margin-bottom: 8px;
+}
+
+.timer-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+}
+
+.timer-toggle-checkbox {
+  /* прячем нативный чекбокс, но оставляем доступность */
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.timer-toggle-box {
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid #c7c7cc;
+  border-radius: 4px; /* квадрат с лёгким скруглением */
+  position: relative;
+  display: inline-block;
+}
+
+.timer-toggle-checkbox:checked + .timer-toggle-box::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 0px;
+  width: 6px;
+  height: 12px;
+  border: solid #007aff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
 
 /* ========================================================== */
 /* МОДАЛЬНОЕ ОКНО ДЛЯ КОММЕНТАРИЕВ К УПРАЖНЕНИЯМ */
@@ -1400,9 +1556,50 @@ button.btn.comment-toggle-btn svg {
 }
 
 
-.upload-progress-bar {
-    transition: width 0.2s ease;
+
+.upload-progress-wrap {
+  width: 100%;
+  height: 4px;
+  background: #e0e0e0;
+  border-radius: 4px;
+  margin-top: 6px;
+  overflow: hidden;
+  position: relative;
 }
+
+.upload-progress-bar {
+  display: block;
+  width: 0%;
+  height: 100%;
+  background: #4caf50;
+  border-radius: 4px;
+  transition: width 0.2s ease;
+}
+
+
+
+.upload-progress-wrap {
+  width: 100%;
+  background: #f1f1f1;
+  border-radius: 4px;
+  overflow: hidden;
+  height: 6px;
+  margin-top: 6px;
+  position: relative;
+}
+
+.upload-progress-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #007aff, #00c6ff);
+  transition: width 0.2s linear;
+}
+
+
+
+
+
+
 
 
 
@@ -3678,6 +3875,7 @@ button.btn.btn-primary.add-supplement-btn {
 .week-controls-group button.btn.btn-secondary svg {
     width: 18px;
     height: 18px;
+    color: #000000;
 }
 .week-controls-group .week-label {
     font-size: 13px; /* Уменьшаем шрифт "Неделя" */
@@ -3911,3 +4109,17 @@ button.action-btn.action-delete svg {
 .delete-plan-btn:hover {
     color: #ff3333;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
