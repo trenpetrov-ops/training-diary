@@ -148,6 +148,18 @@ document.addEventListener('gesturestart', function (e) {
 
 
 
+
+// === Таймер: ключ и хелперы хранения ===
+    const TIMER_FLOAT_KEY = 'restTimerFloatingEnabled';
+
+    function isFloatingEnabled() {
+      return localStorage.getItem(TIMER_FLOAT_KEY) === '1';
+    }
+    function setFloatingEnabled(v) {
+      localStorage.setItem(TIMER_FLOAT_KEY, v ? '1' : '0');
+    }
+
+
 // =================================================================
 // 🌟 НОВАЯ ФУНКЦИЯ: DEBOUNCE (Устранение потери фокуса при вводе)
 // =================================================================
@@ -1258,35 +1270,37 @@ function openCommentModal(exerciseId, currentNote, titleText, onSave) {
 
 
     // Обработка выбора файла
-    fileInput.addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
+fileInput.addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
 
-        // Прогресс-бар
-        const progressBar = createElement('div', 'upload-progress-bar');
-        progressBar.style.width = '0%';
-        progressBar.style.height = '4px';
-        progressBar.style.background = '#4caf50';
-        progressBar.style.marginTop = '5px';
-        progressBar.style.borderRadius = '4px';
-        mediaContainer.append(progressBar);
+  const progressWrap = document.createElement('div');
+  progressWrap.className = 'upload-progress-wrap';
+  const progressBar = document.createElement('div');
+  progressBar.className = 'upload-progress-bar';
+  progressWrap.append(progressBar);
+  mediaContainer.append(progressWrap);
 
-        try {
-            // Загрузка в Cloudinary с прогрессом
-            const url = await uploadFileToCloudinaryWithProgress(file, (percent) => {
-                progressBar.style.width = percent + '%';
-            });
-
-            const type = file.type.startsWith('video') ? 'video' : 'photo';
-            media.push({ url, type });
-
-            renderMediaPreview(mediaContainer, media);
-            showToast('Медиа загружено!', 'success');
-        } catch (err) {
-            console.error(err);
-            showToast('❌ Ошибка загрузки!', 'error');
-        }
+  try {
+    const url = await uploadFileToCloudinaryWithProgress(file, (percent) => {
+      progressBar.style.width = percent + '%';
+      progressBar.textContent = percent + '%';
+      console.log('🟢 Прогресс:', percent);
     });
+
+    const type = file.type.startsWith('video') ? 'video' : 'photo';
+    media.push({ url, type });
+    renderMediaPreview(mediaContainer, media);
+
+    setTimeout(() => progressWrap.remove(), 1000);
+  } catch (err) {
+    console.error(err);
+  }
+});
+
+
+
+
 
 // ✅ Только кнопка "Сохранить"
 const controls = createElement('div', 'modal-controls');
@@ -1310,6 +1324,49 @@ saveBtn.addEventListener('click', () => {
     overlay.append(modal);
     document.body.append(overlay);
 }
+
+
+// -----------------------------------------------------------
+// Дополнительно: нужна функция загрузки с прогрессом
+// -----------------------------------------------------------
+async function uploadFileToCloudinaryWithProgress(file, onProgress) {
+  const url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/upload`;
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+
+  let fakeProgress = 0;
+  const fakeInterval = setInterval(() => {
+    fakeProgress += Math.random() * 8; // ускорение
+    if (fakeProgress < 90 && typeof onProgress === 'function') {
+      onProgress(Math.round(fakeProgress));
+    }
+  }, 200);
+
+  try {
+    const res = await axios.post(url, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: (event) => {
+        if (event.total > 0 && event.loaded > 0 && typeof onProgress === 'function') {
+          const realPercent = Math.round((event.loaded * 100) / event.total);
+          fakeProgress = realPercent;
+          onProgress(realPercent);
+        }
+      },
+    });
+
+    clearInterval(fakeInterval);
+    onProgress(100); // финальный рывок до конца
+    return res.data.secure_url;
+  } catch (err) {
+    clearInterval(fakeInterval);
+    console.error('❌ Ошибка при загрузке:', err);
+    throw err;
+  }
+}
+
+
+
 // =================================================================
 // МОДАЛКА ДОБАВЛЕНИЯ ПОДХОДА
 // =================================================================
@@ -2431,6 +2488,285 @@ function openExerciseMenuModal(program, exercise) {
   }
 
 
+
+
+// -----------------------------------------------------------
+// ⏱ Модальное окно таймера отдыха с чекбоксом активации плавающего режима
+// -----------------------------------------------------------
+function openTimerModal() {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-window timer-modal';
+
+    modal.innerHTML = `
+        <div class="timer-toggle-row">
+            <label class="timer-toggle-label">
+                <input type="checkbox" id="timer-float-toggle" class="timer-toggle-checkbox" />
+                <span class="timer-toggle-box"></span>
+                <span>Показывать кнопку при прокрутке</span>
+            </label>
+        </div>
+
+        <h3>⏱ Таймер отдыха</h3>
+        <div class="timer-display">00:00</div>
+
+        <div class="timer-body">
+            <div class="timer-presets left">
+                <button data-min="0" data-sec="30">30с</button>
+                <button data-min="1" data-sec="0">1м</button>
+                <button data-min="1" data-sec="30">1.5м</button>
+            </div>
+
+            <div class="timer-center">
+                <div class="timer-timepicker">
+                    <input type="time" id="timer-time" step="1" value="00:01:00">
+                </div>
+
+                <div class="timer-buttons">
+                    <button id="timer-start" class="btn btn-primary">Старт</button>
+                    <button id="timer-stop" class="btn btn-secondary">Стоп</button>
+                    <button id="timer-reset" class="btn btn-danger">Сброс</button>
+                </div>
+            </div>
+
+            <div class="timer-presets right">
+                <button data-min="2" data-sec="0">2м</button>
+                <button data-min="2" data-sec="30">2.5м</button>
+                <button data-min="3" data-sec="0">3м</button>
+            </div>
+        </div>
+    `;
+
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    requestAnimationFrame(() => overlay.classList.add('visible'));
+
+    // чекбокс: читаем сохранённое и навешиваем обработчик
+    const floatToggle = modal.querySelector('#timer-float-toggle');
+    floatToggle.checked = isFloatingEnabled();
+    floatToggle.addEventListener('change', () => {
+        setFloatingEnabled(floatToggle.checked);
+        // мгновенно применяем поведение
+        const topBar = document.querySelector('.top-bar');
+        applyFloatingSetting(topBar);
+    });
+
+    const display = modal.querySelector('.timer-display');
+    const timeInput = modal.querySelector('#timer-time');
+    const startBtn = modal.querySelector('#timer-start');
+    const stopBtn = modal.querySelector('#timer-stop');
+    const resetBtn = modal.querySelector('#timer-reset');
+    const presetButtons = modal.querySelectorAll('.timer-presets button');
+
+    let timerInterval;
+    let remainingSeconds = 0;
+    let isRunning = false;
+
+    const flashScreen = (duration = 200) => {
+        modal.classList.add('flash');
+        navigator.vibrate?.(100);
+        setTimeout(() => modal.classList.remove('flash'), duration);
+    };
+
+    const updateDisplay = () => {
+        const m = Math.floor(remainingSeconds / 60);
+        const s = remainingSeconds % 60;
+        display.textContent = `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    };
+
+    startBtn.onclick = () => {
+        if (isRunning) return;
+
+        const [hours, minutes, seconds] = timeInput.value.split(':').map(Number);
+        remainingSeconds = (hours * 3600) + (minutes * 60) + (seconds || 0);
+        if (remainingSeconds <= 0) return;
+
+        isRunning = true;
+        updateDisplay();
+
+        timerInterval = setInterval(() => {
+            remainingSeconds--;
+            updateDisplay();
+
+            if ([15, 13, 11].includes(remainingSeconds)) flashScreen(250);
+            if ([10, 9, 8, 7, 5, 4].includes(remainingSeconds)) flashScreen(200);
+            if ([3, 2, 1].includes(remainingSeconds)) flashScreen(150);
+            if (remainingSeconds <= 3 && remainingSeconds > 0) {
+                setTimeout(() => flashScreen(100), 500);
+            }
+
+            if (remainingSeconds <= 0) {
+                clearInterval(timerInterval);
+                isRunning = false;
+                flashScreen(400);
+                showToast('⏰ Отдых закончен!');
+                navigator.vibrate?.([200, 100, 200]);
+            }
+        }, 1000);
+    };
+
+    stopBtn.onclick = () => {
+        clearInterval(timerInterval);
+        isRunning = false;
+    };
+
+    resetBtn.onclick = () => {
+        clearInterval(timerInterval);
+        isRunning = false;
+        display.textContent = '00:00';
+        timeInput.value = "00:01:00";
+    };
+
+    presetButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const m = (btn.dataset.min || '0').padStart(2, '0');
+            const s = (btn.dataset.sec || '0').padStart(2, '0');
+            timeInput.value = `00:${m}:${s}`;
+            display.textContent = `${m}:${s}`;
+        });
+    });
+
+    overlay.onclick = (e) => {
+        if (e.target === overlay) {
+            clearInterval(timerInterval);
+            overlay.classList.remove('visible');
+            setTimeout(() => overlay.remove(), 200);
+        }
+    };
+}
+// -----------------------------------------------------------
+// 🌟 применения настройки и очистки:
+// -----------------------------------------------------------
+function applyFloatingSetting(topBar) {
+    const btn = document.querySelector('.btn-timer');
+    if (!btn || !topBar) return;
+
+    // если включено — создаём/обновляем наблюдение
+    if (isFloatingEnabled()) {
+        setupFloatingTimer(topBar);
+    } else {
+        // выключено: убрать плавающий режим и вернуть на панель
+        cleanupFloatingTimer();
+        btn.classList.remove('floating', 'dragging');
+        btn.style.left = '';
+        btn.style.top = '';
+        if (btn.parentElement === document.body) {
+            topBar.appendChild(btn);
+        }
+    }
+}
+
+let timerObserver = null;
+let dragging = false;
+let longPressTimer = null;
+let dragDX = 0;
+let dragDY = 0;
+
+function cleanupFloatingTimer() {
+    if (timerObserver) {
+        try { timerObserver.disconnect(); } catch(_) {}
+        timerObserver = null;
+    }
+}
+
+// -----------------------------------------------------------
+// 🌟 Плавающий таймер: появляется при скролле вниз + перетаскивание, возвращается обратно
+// -----------------------------------------------------------
+function setupFloatingTimer(topBar) {
+    const btn = document.querySelector('.btn-timer');
+    if (!btn || !topBar) return;
+
+    // если настройка выключена — просто очищаем и выходим
+    if (!isFloatingEnabled()) {
+        cleanupFloatingTimer();
+        return;
+    }
+
+    // убираем прежний observer, если был
+    cleanupFloatingTimer();
+
+    // сохраним исходного родителя, чтобы возвращать кнопку на место
+    const originalParent = topBar;
+    const originalNext = btn.nextSibling;
+
+    timerObserver = new IntersectionObserver(([entry]) => {
+        if (entry.isIntersecting) {
+            // top-bar виден — вернуть кнопку
+            btn.classList.remove('floating', 'dragging');
+            btn.style.left = '';
+            btn.style.top = '';
+            if (btn.parentElement === document.body) {
+                if (originalNext) originalParent.insertBefore(btn, originalNext);
+                else originalParent.appendChild(btn);
+            }
+        } else {
+            // top-bar ушёл — сделать кнопку плавающей
+            document.body.appendChild(btn);
+            btn.classList.add('floating');
+        }
+    }, { threshold: 0 });
+
+    timerObserver.observe(topBar);
+
+    // перетаскивание (долгое нажатие)
+    const startLongPress = (clientX, clientY) => {
+        longPressTimer = setTimeout(() => {
+            dragging = true;
+            btn.classList.add('dragging');
+            const r = btn.getBoundingClientRect();
+            dragDX = clientX - r.left;
+            dragDY = clientY - r.top;
+        }, 400);
+    };
+    const stopLongPress = () => {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+    };
+
+    // touch
+    btn.addEventListener('touchstart', (e) => {
+        if (!btn.classList.contains('floating')) return;
+        const t = e.touches[0];
+        startLongPress(t.clientX, t.clientY);
+    });
+
+    btn.addEventListener('touchmove', (e) => {
+        if (!dragging) return;
+        e.preventDefault();
+        const t = e.touches[0];
+        btn.style.left = `${t.clientX - dragDX}px`;
+        btn.style.top  = `${t.clientY - dragDY}px`;
+    }, { passive: false });
+
+    btn.addEventListener('touchend', () => {
+        stopLongPress();
+        if (dragging) {
+            dragging = false;
+            btn.classList.remove('dragging');
+        }
+    });
+
+    // mouse (для отладки на ПК)
+    btn.addEventListener('mousedown', (e) => {
+        if (!btn.classList.contains('floating')) return;
+        startLongPress(e.clientX, e.clientY);
+    });
+    document.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        e.preventDefault();
+        btn.style.left = `${e.clientX - dragDX}px`;
+        btn.style.top  = `${e.clientY - dragDY}px`;
+    });
+    document.addEventListener('mouseup', () => {
+        stopLongPress();
+        if (dragging) {
+            dragging = false;
+            btn.classList.remove('dragging');
+        }
+    });
+}
 
 
 // ===============================================================
@@ -5270,60 +5606,6 @@ function collectCurrentMetrics(metricsListDiv) {
 // -------------------------------------------------------------------
 
 
-// 🔥 НОВАЯ ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ CLOUDINARY
-async function uploadFileToCloudinary(file) {
-    const url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
-
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-
-    const response = await fetch(url, { method: 'POST', body: formData });
-    const data = await response.json();
-
-    if (!data.secure_url) {
-        console.error("Cloudinary ответ:", data);
-        throw new Error("Нет secure_url в ответе Cloudinary");
-    }
-
-    return data.secure_url;  // ✅ строка
-}
-
-// -----------------------------------------------------------
-// Дополнительно: нужна функция загрузки с прогрессом
-// -----------------------------------------------------------
-async function uploadFileToCloudinaryWithProgress(file, onProgress) {
-    return new Promise((resolve, reject) => {
-        const url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/upload`;
-
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', url);
-
-        // 📊 Следим за прогрессом
-        xhr.upload.onprogress = (e) => {
-            if (e.lengthComputable && typeof onProgress === 'function') {
-                const percent = Math.round((e.loaded / e.total) * 100);
-                onProgress(percent);
-            }
-        };
-
-        xhr.onload = () => {
-            if (xhr.status === 200) {
-                const data = JSON.parse(xhr.responseText);
-                resolve(data.secure_url);
-            } else {
-                reject(`Ошибка Cloudinary: ${xhr.status}`);
-            }
-        };
-
-        xhr.onerror = () => reject("Ошибка сети при загрузке");
-        xhr.send(formData);
-    });
-}
 
 
 // -----------------------------------------------------------
@@ -6185,6 +6467,16 @@ function renderTopBar() {
     const root = document.getElementById('root');
     if (oldBar) oldBar.remove();
 
+
+        // 🧹 ОЧИСТКА старого плавающего таймера при переходе между страницами
+        if (timerObserver) {
+            try { timerObserver.disconnect(); } catch (_) {}
+            timerObserver = null;
+        }
+        const oldFloating = document.querySelector('.btn-timer.floating');
+        if (oldFloating) oldFloating.remove();
+        // 🧹 конец очистки
+
     const topBar = document.createElement('div');
     topBar.className = 'top-bar';
 
@@ -6244,6 +6536,18 @@ function renderTopBar() {
         backBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><title>Ios-arrow-ltr-24-filled SVG Icon</title><path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"></path></svg>';
         backBtn.onclick = () => { state.currentPage = 'programsInCycle'; render(); };
         showBack = true;
+
+        // 🔥 Кнопка таймера для страницы деталей программы
+        if (state.currentPage === 'programDetails') {
+            const timerBtn = document.createElement('button');
+            timerBtn.className = 'btn btn-timer';
+            timerBtn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 12 12"><title>Timer-12-regular SVG Icon</title><path fill="currentColor" d="M3 .5a.5.5 0 0 1 .5-.5h4a.5.5 0 0 1 0 1h-4A.5.5 0 0 1 3 .5m2 7a.5.5 0 0 0 1 0v-3a.5.5 0 0 0-1 0zM5.5 2a4.5 4.5 0 1 0 0 9a4.5 4.5 0 0 0 0-9M2 6.5a3.5 3.5 0 1 1 7 0a3.5 3.5 0 0 1-7 0m8.148-2.647a.5.5 0 1 0 .706-.708l-1.002-.998a.5.5 0 1 0-.706.708z"></path></svg>
+            `;
+            timerBtn.onclick = openTimerModal;
+            topBar.appendChild(timerBtn);
+        }
+
     }
 
 
@@ -6257,10 +6561,7 @@ function renderTopBar() {
     topBar.appendChild(burger);
 
     root.prepend(topBar);
-
-
-
-
+    setupFloatingTimer(topBar);
 
 
 }
