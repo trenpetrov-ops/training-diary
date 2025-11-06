@@ -15,7 +15,9 @@ import {
     deleteDoc,
     onSnapshot,
     collection,
-    getDocs
+    getDocs,
+    query,       // 👈 добавь
+    where
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 // 🔥 ДОБАВЛЯЕМ ИМПОРТЫ ДЛЯ FIREBASE STORAGE
@@ -27,13 +29,6 @@ import {
     deleteObject // опционально
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
-// 🔥  Firebase Cloud Messaging (FCM)
-import {
-    getMessaging,
-    getToken,
-    onMessage,
-    isSupported
-} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-messaging.js";
 
 // =================================================================
 // ✅ ВАША РЕАЛЬНАЯ КОНФИГУРАЦИЯ FIREBASE
@@ -70,18 +65,6 @@ if (!firebaseConfig || Object.keys(firebaseConfig).length === 0) {
     const app = initializeApp(firebaseConfig);
 
 // ==========================================================
-// 🔔 FCM (Firebase Cloud Messaging)
-// ==========================================================
-    let messaging = null;
-    isSupported().then(supported => {
-        if (supported) {
-            messaging = getMessaging(app);
-            console.log('✅ FCM поддерживается');
-        } else {
-            console.log('⚠️ FCM не поддерживается в этом браузере');
-        }
-    });
-// ==========================================================
 // 🔥 Остальные сервисы
 // ==========================================================
     const db = getFirestore(app);
@@ -102,47 +85,6 @@ let cyclesUnsubscribe = () => {};
 // 🔥 ДОБАВЛЕНО: Слушатели для БАДОВ и ОТЧЕТОВ
 let supplementsUnsubscribe = () => {};
 let reportsUnsubscribe = () => {};
-
-
-// ==========================================================
-// 🔔 Функция для запроса разрешения и получения FCM токена
-// ==========================================================
-    async function requestPermissionAndGetToken() {
-      if (!messaging) {
-        console.warn('⚠️ FCM не готов');
-        return;
-      }
-
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') {
-        alert('❌ Разрешение не получено');
-        return;
-      }
-
-      const swReg = await navigator.serviceWorker.ready;
-
-      const vapidKey = 'BBaQY46G6FiksGao5Q_nwtmICLciZdckKAUsMzFy5tcYuU6Y95qWxyD8qwrc7h1mBamXk8At9iRDHMX8eqsdoA0';
-      const token = await getToken(messaging, { vapidKey, serviceWorkerRegistration: swReg });
-
-      if (token) {
-        console.log('🔑 FCM токен:', token);
-        alert('✅ Получен токен: ' + token);
-
-        // 💾 сохраняем токен в Firestore, если пользователь авторизован
-        const user = auth.currentUser;
-        if (user) {
-          await setDoc(
-            doc(db, 'fcmTokens', user.uid),
-            { token, updatedAt: Date.now() },
-            { merge: true }
-          );
-          console.log('💾 Токен сохранён для пользователя:', user.uid);
-        }
-      } else {
-        console.error('❌ Не удалось получить токен');
-      }
-    }
-
 
 
 
@@ -366,6 +308,13 @@ function getDayOfWeek(dateString) {
     return days[date.getDay()];
 }
 
+// 🔧 Преобразование "ДД.ММ.ГГГГ" → Date
+function parseDate(dateStr) {
+  const [d, m, y] = dateStr.split('.').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+
 // Функция для генерации массива дат (например, на 7 или 14 дней)
 function generateDates(startDateString, numberOfDays) {
     const [startDay, startMonth, startYear] = startDateString.split('.');
@@ -396,6 +345,7 @@ function formatDayAndMonth(dateString) {
     return `${day}.${month}`;
 }
 
+
 // Функция для получения сегодняшней даты в формате ДД.ММ.ГГГГ
 function getTodayDateString() {
     const today = new Date();
@@ -404,6 +354,7 @@ function getTodayDateString() {
     const year = today.getFullYear();
     return `${day}.${month}.${year}`;
 }
+
 
 // 🔥 НОВАЯ ФУНКЦИЯ: Преобразование ДД.ММ.ГГГГ в ГГГГ-ММ-ДД (для input type="date")
 function dateToInputFormat(dateString) {
@@ -2142,51 +2093,70 @@ if (hasTrainingNote) {
 // --- добавляем в контент ---
 contentContainer.append(commentWrapper);
 
-    // -----------------------------
-    // Кнопка "Завершить тренировку"
-    // -----------------------------
-    const completeTrainingBtn = createElement('button', 'btn complete-training-btn', 'Завершить тренировку');
-    completeTrainingBtn.addEventListener('click', () => {
-        openConfirmModal('Завершить и сохранить тренировку в дневник?', async () => {
-            const exercisesToSave = (selectedProgram.exercises || [])
-                .filter(ex => ex.note || (ex.sets && ex.sets.some(set => set.weight || set.reps)))
-                .map(ex => ({ ...ex }));
+  // -----------------------------
+  // Кнопка "Завершить тренировку"
+  // -----------------------------
+  const completeTrainingBtn = createElement('button', 'btn complete-training-btn', 'Завершить тренировку');
+  completeTrainingBtn.addEventListener('click', () => {
+    openConfirmModal('Завершить и сохранить тренировку в дневник?', async () => {
+      const exercisesToSave = (selectedProgram.exercises || [])
+        .filter(ex => ex.note || (ex.sets && ex.sets.some(set => set.weight || set.reps)))
+        .map(ex => ({ ...ex }));
 
-            if (exercisesToSave.length === 0 && !selectedProgram.trainingNote) {
-                showToast('Нечего сохранять!');
-                return;
-            }
+      if (exercisesToSave.length === 0 && !selectedProgram.trainingNote) {
+        showToast('Нечего сохранять!');
+        return;
+      }
 
-            const currentCycle = state.cycles.find(c => c.id === state.selectedCycleId);
-            const trainingRecord = {
-                date: new Date().toLocaleDateString('ru-RU'),
-                time: new Date().toLocaleTimeString('ru-RU'),
-                programName: selectedProgram.name,
-                category: currentCycle ? currentCycle.name : selectedProgram.name,
-                cycleName: currentCycle ? currentCycle.name : 'Без цикла',
-                comment: selectedProgram.trainingNote || '',
-                exercises: exercisesToSave
-            };
+      const currentCycle = state.cycles.find(c => c.id === state.selectedCycleId);
+      const trainingRecord = {
+        date: new Date().toLocaleDateString('ru-RU'),
+        time: new Date().toLocaleTimeString('ru-RU'),
+        programName: selectedProgram.name,
+        category: currentCycle ? currentCycle.name : selectedProgram.name,
+        cycleName: currentCycle ? currentCycle.name : 'Без цикла',
+        comment: selectedProgram.trainingNote || '',
+        exercises: exercisesToSave
+      };
 
-            try {
-                const journalCollection = (state.currentMode === 'personal' && state.selectedClientId)
-                    ? getClientJournalCollection()
-                    : getUserJournalCollection();
+      try {
+        const journalCollection = getUserJournalCollection();
+        const todayStr = new Date().toLocaleDateString('ru-RU');
 
-                await addDoc(journalCollection, trainingRecord);
+        // 🧹 Проверяем, есть ли на сегодня запланированная тренировка — если есть, удаляем
+        const q = query(
+          journalCollection,
+          where("date", "==", todayStr),
+          where("isPlanned", "==", true)
+        );
+        const qSnap = await getDocs(q);
 
-                showToast('Тренировка сохранена в дневнике!');
-                state.currentPage = 'programsInCycle';
-                state.selectedProgramIdForDetails = null;
-                state.expandedExerciseId = null;
-                render();
-            } catch (error) {
-                console.error("Ошибка при сохранении тренировки:", error);
-                showToast('Ошибка сохранения записи дневника.');
-            }
+        for (const docSnap of qSnap.docs) {
+          console.log("🗑 Удаляю запланированную тренировку на сегодня:", docSnap.id);
+          await deleteDoc(docSnap.ref);
+        }
+
+        // 💾 Теперь сохраняем завершённую тренировку
+        await addDoc(journalCollection, {
+          ...trainingRecord,
+          isPlanned: false, // помечаем как завершённую
         });
+
+        showToast('Тренировка сохранена в дневнике!');
+        state.currentPage = 'programsInCycle';
+        state.selectedProgramIdForDetails = null;
+        state.expandedExerciseId = null;
+        render();
+
+      } catch (error) {
+        console.error("❌ Ошибка при сохранении тренировки:", error);
+        showToast('Ошибка сохранения записи дневника.');
+      }
     });
-    contentContainer.append(completeTrainingBtn);
+  });
+
+  contentContainer.append(completeTrainingBtn);
+
 
    // Итог
     root.append(contentContainer);
@@ -2460,27 +2430,360 @@ function openExerciseMenuModal(program, exercise) {
       document.body.appendChild(overlay);
   }
 
+
+
+
+// ===============================================================
+// 📦 ЗАГРУЗКА ЦИКЛОВ личные
+// ===============================================================
+
+
+
+async function loadUserCycles() {
+  try {
+    console.log("📥 Загружаю личные циклы...");
+
+    const userId = auth.currentUser?.uid;
+    if (!userId) return [];
+
+    const appId = db._databaseId?.projectId || "training-diary-51bcb";
+
+    const cyclesRef = collection(
+      db,
+      "artifacts",
+      appId,
+      "users",
+      userId,
+      "cycles"
+    );
+
+    const snapshot = await getDocs(cyclesRef);
+    const cycles = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    console.log("📦 Найдено личных циклов:", cycles.length, cycles);
+
+    // 🔹 Загружаем журнал пользователя
+    const journalRef = collection(
+      db,
+      "artifacts",
+      appId,
+      "users",
+      userId,
+      "journal"
+    );
+    const jSnap = await getDocs(journalRef);
+    const records = jSnap.docs.map(d => d.data());
+
+    if (records.length > 0) {
+      const today = new Date();
+        today.setHours(0, 0, 0, 0);
+      const withDates = records.map(r => ({
+        ...r,
+        jsDate: (() => {
+          const [d, m, y] = r.date.split('.').map(Number);
+          return new Date(y, m - 1, d);
+        })()
+      }));
+
+      const future = withDates
+        .filter(r => r.jsDate >= today)
+        .sort((a, b) => a.jsDate - b.jsDate)[0];
+
+      const past = withDates
+        .filter(r => r.jsDate < today)
+        .sort((a, b) => b.jsDate - a.jsDate)[0];
+
+      const best = future || past;
+
+      if (best) {
+        const foundCycle = cycles.find(c => c.name === best.cycleName);
+        if (foundCycle) {
+          state.selectedCycleId = foundCycle.id;
+          state.selectedJournalCategory = foundCycle.name;
+          console.log("📘 Автовыбран личный цикл по ближайшей дате:", foundCycle.name, best.date);
+        }
+      }
+    } else if (cycles.length > 0) {
+      const lastCycle = cycles[cycles.length - 1];
+      state.selectedCycleId = lastCycle.id;
+      state.selectedJournalCategory = lastCycle.name;
+      console.log("📘 Установлен личный цикл по умолчанию:", lastCycle.name);
+    } else {
+      state.selectedCycleId = null;
+      state.selectedJournalCategory = "Выберите цикл";
+      console.log("ℹ️ Нет личных циклов");
+    }
+
+    return cycles;
+  } catch (error) {
+    console.error("❌ Ошибка при загрузке личных циклов:", error);
+    return [];
+  }
+}
+
+
+
+
+// ===============================================================
+// 📦 ЗАГРУЗКА ЦИКЛОВ КЛИЕНТА
+// ===============================================================
+
+async function loadClientCycles(clientId) {
+  try {
+    console.log("📥 Загружаю циклы для клиента:", clientId);
+
+    const userId = auth.currentUser?.uid;
+    if (!userId) return [];
+
+    const appId = db._databaseId?.projectId || "training-diary-51bcb";
+
+    const cyclesRef = collection(
+      db,
+      "artifacts",
+      appId,
+      "users",
+      userId,
+      "clients",
+      clientId,
+      "cycles"
+    );
+
+    const snapshot = await getDocs(cyclesRef);
+    const cycles = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    console.log("📦 Найдено циклов для клиента:", cycles.length, cycles);
+
+    // 🔹 Загружаем журнал клиента
+    const journalRef = collection(
+      db,
+      "artifacts",
+      appId,
+      "users",
+      userId,
+      "clients",
+      clientId,
+      "journal"
+    );
+    const jSnap = await getDocs(journalRef);
+    const records = jSnap.docs.map(d => d.data());
+
+    if (records.length > 0) {
+      const today = new Date();
+        today.setHours(0, 0, 0, 0);
+      // Преобразуем даты
+      const withDates = records.map(r => ({
+        ...r,
+        jsDate: (() => {
+          const [d, m, y] = r.date.split('.').map(Number);
+          return new Date(y, m - 1, d);
+        })()
+      }));
+
+      // Ближайшая будущая (или сегодняшняя)
+      const future = withDates
+        .filter(r => r.jsDate >= today)
+        .sort((a, b) => a.jsDate - b.jsDate)[0];
+
+      // Последняя прошедшая
+      const past = withDates
+        .filter(r => r.jsDate < today)
+        .sort((a, b) => b.jsDate - a.jsDate)[0];
+
+      const best = future || past;
+
+      if (best) {
+        const foundCycle = cycles.find(c => c.name === best.cycleName);
+        if (foundCycle) {
+          state.selectedCycleId = foundCycle.id;
+          state.selectedJournalCategory = foundCycle.name;
+          console.log("📘 Автовыбран цикл по ближайшей дате:", foundCycle.name, best.date);
+        }
+      }
+    } else if (cycles.length > 0) {
+      const lastCycle = cycles[cycles.length - 1];
+      state.selectedCycleId = lastCycle.id;
+      state.selectedJournalCategory = lastCycle.name;
+      console.log("📘 Установлен цикл по умолчанию:", lastCycle.name);
+    } else {
+      state.selectedCycleId = null;
+      state.selectedJournalCategory = "Выберите цикл";
+      console.log("ℹ️ Нет циклов у клиента");
+    }
+
+    return cycles;
+  } catch (error) {
+    console.error("❌ Ошибка при загрузке циклов клиента:", error);
+    return [];
+  }
+}
+
+
 // =================================================================
 // 🌟 ЛОГИКА СТРАНИЦЫ ДНЕВНИКА
 // =================================================================
 function renderJournalPage() {
     const contentContainer = document.createElement('div');
 
-    if (state.currentMode === 'personal' && !state.selectedClientId) {
-        const msg = createElement('div', 'muted', 'Выберите клиента, чтобы просмотреть календарь.');
-        root.append(msg);
-        return;
+    console.log("📋 Текущий режим:", state.currentMode, "Клиент:", state.selectedClientId);
+    console.log("📦 Циклы в state:", state.cycles);
+
+
+
+// 🔧 Вспомогательная функция для разбора даты
+function parseDate(dateStr) {
+  if (!dateStr) return new Date(0);
+  const [d, m, y] = dateStr.split('.').map(Number);
+  return new Date(y, m - 1, d);
 }
 
-    // ✅ Автовыбор последнего цикла, если ничего не выбрано
-    if (!state.selectedJournalCategory && state.journal.length > 0) {
-        const lastRecord = [...state.journal].sort((a, b) => {
-            const [dA, mA, yA] = a.date.split('.').map(Number);
-            const [dB, mB, yB] = b.date.split('.').map(Number);
-            return new Date(yB, mB - 1, dB) - new Date(yA, mA - 1, dA);
-        })[0];
-        state.selectedJournalCategory = lastRecord.cycleName || 'Без цикла';
+// 🔧 Функция поиска ближайшей (или последней) тренировки
+function getNearestRecord(records) {
+  const today = new Date();
+
+  const futureRecords = records
+    .filter(r => parseDate(r.date) >= today)
+    .sort((a, b) => parseDate(a.date) - parseDate(b.date));
+
+  if (futureRecords.length > 0) return futureRecords[0]; // ближайшая будущая
+
+  const pastRecords = records
+    .filter(r => parseDate(r.date) < today)
+    .sort((a, b) => parseDate(b.date) - parseDate(a.date));
+
+  return pastRecords[0] || null; // последняя прошедшая
+}
+
+// 🔄 Проверяем и загружаем циклы для личного режима (own)
+if (state.currentMode === 'own' && !state.cyclesLoaded) {
+  console.log("🔄 Загружаю личные циклы...");
+  state.cyclesLoaded = true;
+
+  loadUserCycles()
+    .then(async (cycles) => {
+      state.cycles = cycles;
+      console.log("✅ Личные циклы подгружены:", cycles);
+
+      if (!state.selectedCycleId && cycles.length > 0) {
+        const userId = auth.currentUser?.uid;
+        const appId = db._databaseId?.projectId || "training-diary-51bcb";
+        const journalRef = collection(db, "artifacts", appId, "users", userId, "journal");
+
+        const jSnap = await getDocs(journalRef);
+        const records = jSnap.docs.map(d => d.data());
+        console.log("📒 Найдено записей в журнале:", records.length);
+
+        const nearestRecord = getNearestRecord(records);
+
+        if (nearestRecord) {
+          const foundCycle = cycles.find(c => c.name === nearestRecord.cycleName);
+          if (foundCycle) {
+            state.selectedCycleId = foundCycle.id;
+            state.selectedJournalCategory = foundCycle.name;
+            console.log("🧭 Ближайшая тренировка:", nearestRecord.date, "→ Цикл:", foundCycle.name);
+          } else {
+            console.warn("⚠️ Цикл из ближайшей тренировки не найден:", nearestRecord.cycleName);
+          }
+        } else {
+          const lastCycle = cycles[cycles.length - 1];
+          state.selectedCycleId = lastCycle.id;
+          state.selectedJournalCategory = lastCycle.name;
+          console.log("📘 Установлен личный цикл по умолчанию:", lastCycle.name);
+        }
+      }
+
+      // ✅ вызываем рендер только один раз — после всех обновлений
+      render();
+    })
+    .catch(err => console.error("❌ Ошибка при загрузке личных циклов:", err));
+}
+
+
+
+// 🔄 Проверяем и загружаем циклы для клиента, если это персональный режим
+if (state.currentMode === 'personal' && state.selectedClientId) {
+  const hasClientCycles = state.cycles.some(c => c.clientId === state.selectedClientId);
+  if (!hasClientCycles && state.loadedClientIdForCycles !== state.selectedClientId) {
+    console.log("🔄 Загружаю циклы для клиента:", state.selectedClientId);
+    state.loadedClientIdForCycles = state.selectedClientId; // ✅ ставим флаг
+    loadClientCycles(state.selectedClientId)
+      .then(cycles => {
+        state.cycles = cycles;
+        console.log("✅ Циклы клиента подгружены:", cycles);
+
+        // 🛠 Не перезаписываем, если уже выбран цикл
+        if (!state.selectedCycleId && cycles.length > 0) {
+          const lastCycle = cycles[cycles.length - 1];
+          state.selectedCycleId = lastCycle.id;
+          state.selectedJournalCategory = lastCycle.name;
+          console.log('📘 Установлен цикл по умолчанию:', lastCycle.name);
+        }
+
+        render(); // перерисовываем только один раз
+      })
+      .catch(err => {
+        console.error("❌ Ошибка при загрузке циклов клиента:", err);
+      });
+    return;
+  }
+}
+
+
+
+
+
+
+if (state.currentMode === 'personal' && !state.selectedClientId) {
+  // Если в персональном режиме клиент не выбран
+  const msg = createElement('div', 'muted', 'Сначала выберите клиента для отображения календаря.');
+  root.append(msg);
+  return;
+}
+
+if (!state.selectedJournalCategory && state.journal.length > 0) {
+  // Фильтруем только релевантные записи
+  const relevantRecords = state.journal.filter(r => {
+    if (state.currentMode === 'own') return true;
+    if (state.currentMode === 'personal') {
+      // Убедимся, что цикл и тренировка принадлежат выбранному клиенту
+      return state.cycles.some(c => c.name === r.cycleName && c.clientId === state.selectedClientId);
     }
+    return false;
+  });
+
+  if (relevantRecords.length > 0) {
+    // Сортируем по дате (новые сверху)
+    const sorted = [...relevantRecords].sort((a, b) => {
+      const [dA, mA, yA] = a.date.split('.').map(Number);
+      const [dB, mB, yB] = b.date.split('.').map(Number);
+      return new Date(yB, mB - 1, dB) - new Date(yA, mA - 1, dA);
+    });
+
+    // Находим последнюю завершённую
+    const lastCompleted = sorted.find(r => !r.isPlanned);
+    // Если нет — последнюю запланированную
+    const lastPlanned = sorted.find(r => r.isPlanned);
+
+    // Выбираем приоритетно завершённую, если она новее
+    let lastRelevant = lastPlanned;
+    if (lastCompleted) {
+      const [dC, mC, yC] = lastCompleted.date.split('.').map(Number);
+      const [dP, mP, yP] = lastPlanned ? lastPlanned.date.split('.').map(Number) : [0, 0, 0];
+      const dateCompleted = new Date(yC, mC - 1, dC);
+      const datePlanned = new Date(yP, mP - 1, dP);
+      lastRelevant = (!lastPlanned || dateCompleted > datePlanned) ? lastCompleted : lastPlanned;
+    }
+
+    if (lastRelevant) {
+      // Находим соответствующий цикл
+      const foundCycle = state.cycles.find(c => c.name === lastRelevant.cycleName);
+      if (foundCycle) {
+        state.selectedJournalCategory = foundCycle.name;
+        state.selectedCycleId = foundCycle.id;
+        console.log('✅ Автовыбран цикл:', foundCycle.name);
+      } else {
+        console.warn('⚠️ Цикл из последней тренировки не найден:', lastRelevant.cycleName);
+      }
+    }
+  }
+}
 
     // ✅ Если выбран цикл в селекте — сразу делаем его активным
     if (state.selectedJournalCategory) {
@@ -2552,7 +2855,7 @@ const allCategories = [
         state.cycles
             .filter(c => {
                 if (state.currentMode === 'own') return true;            // Личные циклы
-                if (state.currentMode === 'personal') return c.clientId === state.selectedClientId; // Только циклы клиента
+                if (state.currentMode === 'personal') return true; // ✅ убрали фильтр по clientId
             })
             .map(c => c.name)
     )
@@ -2784,21 +3087,95 @@ function renderCalendar(container, journalRecords) {
             const label = createElement('div', 'training-label', dayRecords.map(r => r.programName).join(', '));
             cell.append(label);
 
-            cell.addEventListener('click', (e) => {
+            // Обработчик для обычного клика (переход на тренировку)
+            cell.addEventListener('click', async (e) => {
                 e.stopPropagation();
-                const old = document.querySelector('.training-dropdown');
-                if (old) old.remove();
 
-                if (dayRecords.length === 1 && !dayRecords[0].isPlanned) {
-                    state.selectedJournalRecord = dayRecords[0].id;
+                const record = dayRecords[0];
+                if (!record.isPlanned) {
+                    // Если тренировка завершена, открываем детали
+                    state.selectedJournalRecord = record.id;
+                    state.currentPage = 'journal';
                     render();
-                    return;
-                }
+                } else {
+                    // Если запланированная, переходим к программе
+                    const cycle = state.cycles.find(c => c.name === record.cycleName);
+                    if (cycle) {
+                        state.selectedCycleId = cycle.id;
+                        state.selectedJournalCategory = cycle.name;
+                        setupDynamicListeners?.();
+                    }
 
-                openTrainingDropdown(cell, dayRecords);
+                    const program = state.programs.find(p => p.id === record.programId);
+                    if (program) {
+                        state.selectedProgramIdForDetails = program.id;
+                        state.currentPage = 'programDetails';
+                        render();
+                    } else {
+                        showToast('Программа не найдена');
+                    }
+                }
             });
+
+            // Обработчик для долгого нажатия (удаление тренировки)
+
+              let longPressTimer;
+              let isLongPress = false;
+
+              cell.addEventListener('touchstart', (e) => {
+                  e.stopPropagation();
+                  isLongPress = false;
+
+                  longPressTimer = setTimeout(() => {
+                      isLongPress = true; // помечаем, что был долгий тап
+                      openConfirmModal(
+                          `Удалить запланированную тренировку "${dayRecords[0].programName}"?`,
+                          async () => {
+                              await deleteDoc(doc(getUserJournalCollection(), dayRecords[0].id));
+                              showToast('Тренировка удалена!');
+                              render(); // Обновляем страницу после удаления
+                          }
+                      );
+                  }, 800); // 800мс = долгое удержание
+              });
+
+              cell.addEventListener('touchend', async (e) => {
+                  clearTimeout(longPressTimer);
+
+                  // Если пользователь отпустил быстро (не долгий тап) → обычный переход
+                  if (!isLongPress) {
+                      e.stopPropagation();
+
+                      const record = dayRecords[0];
+                      if (!record.isPlanned) {
+                          // Открываем завершённую тренировку
+                          state.selectedJournalRecord = record.id;
+                          state.currentPage = 'journal';
+                          render();
+                      } else {
+                          // Открываем запланированную
+                          const cycle = state.cycles.find(c => c.name === record.cycleName);
+                          if (cycle) {
+                              state.selectedCycleId = cycle.id;
+                              state.selectedJournalCategory = cycle.name;
+                              setupDynamicListeners?.();
+                          }
+
+                          await openPlannedTraining(record);
+
+                      }
+                  }
+              });
+
+
+
+            // Очистка таймера при отпускании
+            cell.addEventListener('touchend', () => {
+                clearTimeout(longPressTimer); // отмена долгого нажатия
+            });
+
         } else {
-            // ✅ Пустая ячейка — планирование
+            // Пустая ячейка — планирование
             cell.addEventListener('click', () => {
                 openPlanTrainingDropdown(cell, dateStr);
             });
@@ -2809,12 +3186,15 @@ function renderCalendar(container, journalRecords) {
 
     container.append(grid);
 
-    // ✅ Закрываем меню по клику вне
+    // ✅ Закрытие меню по клику вне
     document.addEventListener('click', () => {
         const menu = document.querySelector('.training-dropdown');
         if (menu) menu.remove();
     }, { once: true });
 }
+
+
+
 
 // ------------------------------------------------
 // 📌 Меню планирования тренировки в пустой ячейке
@@ -2864,6 +3244,7 @@ function openPlanTrainingDropdown(cell, dateStr) {
                     date: dateStr,
                     cycleName: currentCycleName,
                     programName: program.name,
+                    programId: program.id,
                     isPlanned: true,
                     exercises: []
                 });
@@ -2911,8 +3292,11 @@ function openPlanTrainingDropdown(cell, dateStr) {
     });
 }
 
+
+
+
 // ------------------------------------------------
-// // 📌 Меню выбора тренировки в занятой ячейке (запланированные или завершённые)
+// 📌 Меню выбора тренировки в занятой ячейке (запланированные или завершённые)
 // ------------------------------------------------
 
 function openTrainingDropdown(cell, dayRecords) {
@@ -2936,7 +3320,7 @@ function openTrainingDropdown(cell, dayRecords) {
                 render();
             });
         } else {
-            // ✅ ЗАПЛАНИРОВАННАЯ — ОТКРЫВАЕМ ПРОГРАММУ
+            // ✅ ЗАПЛАНИРОВАННАЯ — ОТКРЫВАЕМ ПРОГРАММУ ИЛИ УДАЛЯЕМ
             li.addEventListener('click', () => {
                 const cycle = state.cycles.find(c => c.name === record.cycleName);
                 if (!cycle) {
@@ -2968,10 +3352,11 @@ function openTrainingDropdown(cell, dayRecords) {
         deleteLi.addEventListener('click', async () => {
             if (confirm('Удалить запланированную тренировку?')) {
                 for (const rec of dayRecords.filter(r => r.isPlanned)) {
-                    await deleteDoc(doc(getUserJournalCollection(), rec.id));
+                    await deleteDoc(doc(getUserJournalCollection(), rec.id));  // Удаление записи из дневника
                 }
                 showToast('План удалён');
                 dropdown.remove();
+                render(); // Обновляем страницу после удаления
             }
         });
         dropdown.append(deleteLi);
@@ -2999,16 +3384,6 @@ function openTrainingDropdown(cell, dayRecords) {
             dropdown.style.top = Math.max(5, rect.top - menuRect.height) + 'px';
         }
     });
-
-    // Закрытие при клике вне
-    setTimeout(() => {
-        document.addEventListener('click', function handler(e) {
-            if (!dropdown.contains(e.target)) {
-                dropdown.remove();
-                document.removeEventListener('click', handler);
-            }
-        });
-    }, 10);
 }
 
 // =================================================================
@@ -3040,6 +3415,39 @@ function smartPositionDropdown(dropdown, anchorElement) {
     dropdown.style.left = left + 'px';
     dropdown.style.opacity = 1;   // для плавного появления
 }
+
+
+
+// =================================================================
+// 🆕 Открытие запланированной тренировки с умным ожиданием
+// =================================================================
+const openPlannedTraining = async (record) => {
+    const cycle = state.cycles.find(c => c.name === record.cycleName);
+    if (cycle) {
+        state.selectedCycleId = cycle.id;
+        state.selectedJournalCategory = cycle.name;
+        setupDynamicListeners?.();
+    }
+
+    await new Promise(r => setTimeout(r, 300));
+
+    let program = state.programs.find(p => p.id === record.programId);
+
+    if (!program) {
+        const snap = await getDocs(getUserProgramsCollection());
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        program = list.find(p => p.id === record.programId);
+    }
+
+    if (program) {
+        state.selectedProgramIdForDetails = program.id;
+        state.currentPage = 'programDetails';
+        render();
+    } else {
+        showToast(`⚠️ Программа "${record.programName}" не найдена`);
+    }
+};
+
 
 // =================================================================
 //  модалка редактирования даты завершенной тренировки
@@ -4582,180 +4990,14 @@ if (todayRowElement) {
 }
 
 
-// 🔥 модалка настройки уведомлений
-
-const notifSettingsBtn = createElement('button', 'btn btn-secondary notif-settings-btn', '⚙️ Настройки уведомлений');
-notifSettingsBtn.onclick = openNotificationSettingsModal;
-contentContainer.append(notifSettingsBtn);
-
-function openNotificationSettingsModal() {
-  // 💾 Загружаем сохранённые настройки (если есть)
-  const savedSettings = JSON.parse(localStorage.getItem('notificationSettings') || '{}');
-  state.notificationSettings = {
-    enabled: savedSettings.enabled ?? true,
-    interval: savedSettings.interval ?? 15
-  };
-
-  // Удаляем старую модалку, если она осталась
-  const oldModal = document.querySelector('.notif-settings-modal');
-  if (oldModal) oldModal.remove();
-
-  // Создаём модалку
-  const modal = document.createElement('div');
-  modal.className = 'modal notif-settings-modal';
-  modal.innerHTML = `
-    <div class="modal-content">
-      <h3>⚙️ Настройки уведомлений</h3>
-
-      <label class="checkbox-container">
-        <input type="checkbox" id="enableNotifs" ${state.notificationSettings.enabled ? 'checked' : ''}>
-        <span class="checkmark"></span>
-        Включить уведомления
-      </label>
-
-      <div class="notif-interval">
-        <label>
-          Интервал (мин):
-          <input type="number" id="notifInterval" min="5" max="120"
-                 value="${state.notificationSettings.interval}">
-        </label>
-      </div>
-
-      <hr>
-
-      <div class="notif-test">
-        <button class="btn btn-info" id="testNotifBtn">🔔 Проверить уведомления</button>
-        <p id="notifStatus" class="notif-status muted"></p>
-      </div>
-
-      <div class="notif-buttons">
-        <button class="btn btn-primary" id="saveNotifSettings">💾 Сохранить</button>
-        <button class="btn btn-secondary" id="closeNotifSettings">❌ Закрыть</button>
-      </div>
-    </div>
-  `;
-  document.body.append(modal);
-
-  // 🔗 Элементы
-  const enableInput = modal.querySelector('#enableNotifs');
-  const intervalInput = modal.querySelector('#notifInterval');
-  const statusEl = modal.querySelector('#notifStatus');
-  const testBtn = modal.querySelector('#testNotifBtn');
-
-  // 💾 Сохранение настроек
-modal.querySelector('#saveNotifSettings').onclick = () => {
-  const newSettings = {
-    enabled: enableInput.checked,
-    interval: parseInt(intervalInput.value, 10)
-  };
-
-  state.notificationSettings = newSettings;
-  localStorage.setItem('notificationSettings', JSON.stringify(newSettings));
-  console.log('✅ Настройки уведомлений сохранены:', newSettings);
-
-  // Показываем, что сохранено
-  statusEl.textContent = '✅ Настройки сохранены';
-  setTimeout(() => modal.remove(), 800);
-
-  // 🕐 Запускаем или останавливаем уведомления
-  if (newSettings.enabled) {
-    startSupplementReminders(newSettings.interval);
-  } else {
-    stopSupplementReminders();
-  }
-};
-
-
-  // ❌ Закрыть
-  modal.querySelector('#closeNotifSettings').onclick = () => modal.remove();
-
-  // 🔔 Кнопка проверки уведомлений
-  testBtn.onclick = async () => {
-    statusEl.textContent = '⏳ Проверяем уведомления...';
-
-    if (!('Notification' in window)) {
-      statusEl.textContent = '❌ Notification API не поддерживается';
-      return;
-    }
-
-    const permission = await Notification.requestPermission();
-    if (permission !== 'granted') {
-      statusEl.textContent = '⚠️ Разрешение не дано';
-      return;
-    }
-
-    // Показ тестового уведомления
-    const reg = await navigator.serviceWorker.ready;
-    await reg.showNotification('💊 Training Diary', {
-      body: 'Тестовое уведомление работает ✅',
-      icon: '/training-diary/icons/icon-192.png'
-    });
-
-    statusEl.textContent = '✅ Уведомление отправлено';
-  };
-
-  // Закрытие кликом вне окна
-  modal.addEventListener('click', e => {
-    if (e.target === modal) modal.remove();
-  });
-}
-
-
-
-
 root.append(contentContainer);
 }
 
 
-// ====================================================================
-// 🔔 Проверка на добавки сегодня и показ уведомления
-// ====================================================================
-async function checkTodaySupplementsNotification() {
-  if (Notification.permission !== 'granted') return;
-
-  const plan = state.supplementPlan?.data || [];
-  const today = getTodayDateString();
-  const todayData = plan.find(d => d.date === today);
-  if (!todayData) return;
-
-  const doses = todayData.doses || {};
-  const supplements = Object.entries(doses)
-    .filter(([_, dose]) => dose && dose.trim() !== '')
-    .map(([name, dose]) => `${name} — ${dose}`);
-
-  if (supplements.length === 0) return;
-
-  const body = 'Сегодня по плану: ' + supplements.join(', ');
-  const reg = await navigator.serviceWorker.ready;
-  reg.showNotification('💊 Напоминание о приёме добавок', {
-    body,
-    icon: '/training-diary/icons/icon-192.png',
-    data: { action: 'open_supplements' },
-  });
-}
 
 
-// ===========================================================
-// 🔁 Цикл уведомлений
-// ===========================================================
-function startSupplementReminders(intervalMinutes) {
-  if (!('serviceWorker' in navigator)) return;
 
-  const intervalMs = intervalMinutes * 60 * 1000;
 
-  if (window._supplementReminderInterval) {
-    clearInterval(window._supplementReminderInterval);
-  }
-
-  console.log(`🔔 Проверка добавок каждые ${intervalMinutes} минут`);
-
-  window._supplementReminderInterval = setInterval(() => {
-    checkTodaySupplementsNotification(); // ✅ теперь есть!
-  }, intervalMs);
-
-  // сразу проверить при запуске
-  checkTodaySupplementsNotification();
-}
 
 
 
@@ -5822,13 +6064,43 @@ function setupDynamicListeners() {
     }
 
     // 4. Журнал
+
     const journalRef = getUserJournalCollection();
     if (journalRef) {
         journalUnsubscribe = onSnapshot(journalRef, snapshot => {
             state.journal = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+            // ✅ Определяем последний использованный цикл по записям журнала
+            if (state.currentMode === 'personal' && state.selectedClientId && state.journal.length > 0) {
+                // Фильтруем записи по текущему клиенту
+                const clientRecords = state.journal.filter(r => r.clientId === state.selectedClientId);
+
+                if (clientRecords.length > 0) {
+                    // Сортируем по дате (новейшая запись)
+                    const latestRecord = clientRecords.sort((a, b) => {
+                        // пробуем учитывать timestamp если есть
+                        const aTime = a.updatedAt?.seconds || a.createdAt?.seconds || 0;
+                        const bTime = b.updatedAt?.seconds || b.createdAt?.seconds || 0;
+                        return bTime - aTime;
+                    })[0];
+
+                    // ищем цикл по имени
+                    const usedCycle =
+                        state.cycles.find(c => c.id === latestRecord.cycleId) ||
+                        state.cycles.find(c => c.name === latestRecord.cycleName);
+
+                    if (usedCycle) {
+                        state.selectedCycleId = usedCycle.id;
+                        state.selectedJournalCategory = usedCycle.name;
+                        console.log(`📘 Установлен цикл по умолчанию (журнал): ${usedCycle.name}`);
+                    }
+                }
+            }
+
             if (state.currentPage === 'journal') render();
         });
     }
+
 
 // 5. БАДы — только если выбран цикл
 if (state.selectedCycleId) {
@@ -6054,39 +6326,11 @@ function openMenuModal() {
 // ============================================================
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker
-    .register('/training-diary/sw.js') // 🔥 правильный путь для GitHub Pages
-    .then(reg => {
-      console.log('✅ Service Worker зарегистрирован', reg);
-      return navigator.serviceWorker.ready;
-    })
-    .then(registration => {
-      console.log('🔔 SW готов, запрашиваем разрешение на уведомления...');
-      if ('Notification' in window) {
-        Notification.requestPermission().then(permission => {
-          if (permission === 'granted') {
-            console.log('✅ Разрешение получено');
-            registration.showNotification('💊 Training Diary', {
-              body: 'Тестовое уведомление! Уведомления работают ✅',
-              icon: '/training-diary/icons/icon-192.png' // ⚠️ путь тоже укажи с /training-diary/
-            });
-          } else {
-            console.log('❌ Разрешение не дано');
-          }
-        });
-      }
-    })
+    .register('/training-diary/sw.js')
+    .then(() => console.log('✅ Service Worker зарегистрирован'))
     .catch(err => console.error('Ошибка регистрации SW', err));
 }
 
-// ============================================================
-// 💬 Слушаем сообщения от Service Worker
-// ============================================================
-navigator.serviceWorker.addEventListener('message', e => {
-  if (e.data.type === 'OPEN_SUPPLEMENTS_MODAL') {
-    console.log('📩 Получено сообщение от SW — открываем окно добавок');
-    openSupplementReminderModal();
-  }
-});
 
 
 
@@ -6315,8 +6559,6 @@ onAuthStateChanged(auth, (user) => {
         userId = user.uid;
             console.log('🔑 Пользователь вошёл:', userId);
 
-            // 🔔 Получаем токен и разрешение на пуш
-            requestPermissionAndGetToken();
 
         // Если пользователь только что вошел, режим еще не выбран
         if (state.currentMode === null) {
