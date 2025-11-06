@@ -1274,6 +1274,7 @@ fileInput.addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (!file) return;
 
+  // === Создаём прогресс-бар ===
   const progressWrap = document.createElement('div');
   progressWrap.className = 'upload-progress-wrap';
   const progressBar = document.createElement('div');
@@ -1282,21 +1283,29 @@ fileInput.addEventListener('change', async (e) => {
   mediaContainer.append(progressWrap);
 
   try {
+    // === Реальная загрузка с Cloudinary ===
     const url = await uploadFileToCloudinaryWithProgress(file, (percent) => {
       progressBar.style.width = percent + '%';
-      progressBar.textContent = percent + '%';
-      console.log('🟢 Прогресс:', percent);
+      progressBar.textContent = percent + '%'; // можно убрать, если не хочешь текст
+      console.log('🟢 Реальный прогресс:', percent);
     });
 
+    // === Добавляем медиа ===
     const type = file.type.startsWith('video') ? 'video' : 'photo';
     media.push({ url, type });
     renderMediaPreview(mediaContainer, media);
 
+    // === Показываем уведомление ===
+    showToast('Медиа загружено');
+
+    // === Удаляем прогресс после короткой паузы ===
     setTimeout(() => progressWrap.remove(), 1000);
   } catch (err) {
-    console.error(err);
+    console.error('❌ Ошибка загрузки:', err);
+    showToast('❌ Ошибка загрузки', 'error');
   }
 });
+
 
 
 
@@ -1335,34 +1344,18 @@ async function uploadFileToCloudinaryWithProgress(file, onProgress) {
   formData.append('file', file);
   formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
 
-  let fakeProgress = 0;
-  const fakeInterval = setInterval(() => {
-    fakeProgress += Math.random() * 8; // ускорение
-    if (fakeProgress < 90 && typeof onProgress === 'function') {
-      onProgress(Math.round(fakeProgress));
-    }
-  }, 200);
+  const res = await axios.post(url, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: (event) => {
+      if (event.total && typeof onProgress === 'function') {
+        const percent = Math.round((event.loaded * 100) / event.total);
+        onProgress(percent);
+      }
+    },
+  });
 
-  try {
-    const res = await axios.post(url, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      onUploadProgress: (event) => {
-        if (event.total > 0 && event.loaded > 0 && typeof onProgress === 'function') {
-          const realPercent = Math.round((event.loaded * 100) / event.total);
-          fakeProgress = realPercent;
-          onProgress(realPercent);
-        }
-      },
-    });
-
-    clearInterval(fakeInterval);
-    onProgress(100); // финальный рывок до конца
-    return res.data.secure_url;
-  } catch (err) {
-    clearInterval(fakeInterval);
-    console.error('❌ Ошибка при загрузке:', err);
-    throw err;
-  }
+  onProgress(100);
+  return res.data.secure_url;
 }
 
 
