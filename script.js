@@ -3119,11 +3119,14 @@ function renderCalendar(container, journalRecords) {
 
             // Обработчик для долгого нажатия (удаление тренировки)
 
+
               let longPressTimer;
               let isLongPress = false;
 
               cell.addEventListener('touchstart', (e) => {
                   e.stopPropagation();
+                  e.preventDefault(); // Предотвращаем выделение текста
+
                   isLongPress = false;
 
                   longPressTimer = setTimeout(() => {
@@ -3162,17 +3165,14 @@ function renderCalendar(container, journalRecords) {
                           }
 
                           await openPlannedTraining(record);
-
                       }
                   }
               });
 
-
-
-            // Очистка таймера при отпускании
-            cell.addEventListener('touchend', () => {
-                clearTimeout(longPressTimer); // отмена долгого нажатия
-            });
+              // Очистка таймера при отпускании
+              cell.addEventListener('touchend', () => {
+                  clearTimeout(longPressTimer); // отмена долгого нажатия
+              });
 
         } else {
             // Пустая ячейка — планирование
