@@ -385,6 +385,7 @@ function dateToInputFormat(dateString) {
 // =================================================================
 // 🌟 нав панель
 // =================================================================
+const navWrap = document.querySelector('.navigation-wrap');
 const nav = document.querySelector('.navigation');
 const buttons = document.querySelectorAll('.nav-btn');
 
@@ -1442,7 +1443,12 @@ function renderMediaPreview(container, media) {
         }
 
         // ❌ Кнопка удаления
-        const delBtn = createElement('button', 'btn delete-media-btn', '✖');
+        const delBtn = createElement('button', 'btn delete-media-btn');
+           delBtn.innerHTML = `
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24">
+                          <path fill="currentColor" d="M18.3 5.71a1 1 0 0 0-1.41 0L12 10.59L7.11 5.7A1 1 0 1 0 5.7 7.11L10.59 12L5.7 16.89a1 1 0 1 0 1.41 1.41L12 13.41l4.89 4.89a1 1 0 0 0 1.41-1.41L13.41 12l4.89-4.89a1 1 0 0 0 0-1.4z"></path>
+                        </svg>
+           `;
 
 
         delBtn.addEventListener('click', () => {
@@ -2501,17 +2507,27 @@ function openTimerModal() {
                 <span>Показывать кнопку при прокрутке</span>
             </label>
         </div>
+        <div class="timer-heder">
+                <div class="timer-presets left">
+                    <button data-min="0" data-sec="30">30с</button>
+                    <button data-min="1" data-sec="0">1м</button>
+                    <button data-min="1" data-sec="30">1.5м</button>
+                </div>
 
-        <h3>⏱ Таймер отдыха</h3>
-        <div class="timer-display">00:00</div>
+                        <div class="timer-heder-center">
+                            <h3>Таймер отдыха</h3>
+                            <div class="timer-display">00:00</div>
+                        </div>
+                <div class="timer-presets right">
+                    <button data-min="2" data-sec="0">2м</button>
+                    <button data-min="2" data-sec="30">2.5м</button>
+                    <button data-min="3" data-sec="0">3м</button>
+                </div>
+
+        </div>
+
 
         <div class="timer-body">
-            <div class="timer-presets left">
-                <button data-min="0" data-sec="30">30с</button>
-                <button data-min="1" data-sec="0">1м</button>
-                <button data-min="1" data-sec="30">1.5м</button>
-            </div>
-
             <div class="timer-center">
                 <div class="timer-timepicker">
                     <input type="time" id="timer-time" step="1" value="00:01:00">
@@ -2524,11 +2540,7 @@ function openTimerModal() {
                 </div>
             </div>
 
-            <div class="timer-presets right">
-                <button data-min="2" data-sec="0">2м</button>
-                <button data-min="2" data-sec="30">2.5м</button>
-                <button data-min="3" data-sec="0">3м</button>
-            </div>
+
         </div>
     `;
 
@@ -3988,10 +4000,11 @@ arr.forEach((s, i) => {
 block.append(sets);
 
 
-
+            const noteMediaWrap = createElement('div', 'note-media-wrap');
         if (exercise.note) {
             const note = createElement('p', 'exercise-note', exercise.note);
-            block.append(note);
+
+            noteMediaWrap.append(note);
         }
 
         if (exercise.media && exercise.media.length > 0) {
@@ -4009,9 +4022,9 @@ block.append(sets);
                     mediaWrap.append(video);
                 }
             });
-            block.append(mediaWrap);
+            noteMediaWrap.append(mediaWrap);
         }
-
+            block.append(noteMediaWrap);
         container.append(block);
     });
 
@@ -4944,9 +4957,7 @@ function openCycleSelectModal() {
     modal.className = 'modal-overlay';
 
     const box = document.createElement('div');
-    box.className = 'modal-box';
-    box.style.maxWidth = '400px';
-    box.style.textAlign = 'center';
+    box.className = 'modal-box-cycle-list-supplements';
 
     const title = createElement('h3', null, 'Выберите цикл');
     box.append(title);
