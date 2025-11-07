@@ -193,7 +193,7 @@ html, body {
 
 .menu-icon-btn:hover {
     transform: scale(1.1);
-    color: #007bff;
+    background: #d9d9d9;
 }
 
 
@@ -211,6 +211,17 @@ html, body {
 /* ========================================================== */
 /* НАВИГАЦИОННАЯ ПАНЕЛЬ (TAB BAR) */
 /* ========================================================== */
+.navigation-wrap {
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+    height: 10%;
+    border-radius: 90px 90px 0px 0px;
+    backdrop-filter: blur(3.5px);
+    -webkit-backdrop-filter: blur(15px);
+    z-index: 1000;
+}
+
 .navigation {
     position: fixed;
     bottom: 0;
@@ -223,7 +234,7 @@ html, body {
     border-top: 0.5px solid #e7e7e7;
     z-index: 1000;
     width: 84%;
-    margin: 0 auto 40px auto;
+    margin: 0 auto 35px auto;
     border-radius: 50px;
     justify-content: space-around;
     align-items: center;
@@ -357,9 +368,7 @@ h3 {
     white-space: nowrap;
 }
 
-.btn:active {
-    opacity: 0.7;
-}
+
 
 /* Основная синяя кнопка (для 'Создать', 'Добавить') */
 .btn-primary {
@@ -442,7 +451,7 @@ input:focus {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
 }
-button.btn.btn-primary.add-client-btn, .list-item.client-item, button.btn.btn-primary.add-program-btn, .list-item.program-item, .add-cycle-btn {
+.add-client-btn, .list-item.client-item, .add-program-btn, .list-item.program-item, .add-cycle-btn {
     min-height: 84px;
     background-color: #ffffff;
     border-radius: 10px;
@@ -458,6 +467,16 @@ button.btn.btn-primary.add-client-btn, .list-item.client-item, button.btn.btn-pr
     display: flex;
     flex-direction: column;
 }
+
+.add-client-btn:hover,
+ .list-item.client-item:hover ,
+.add-program-btn:hover ,
+ .list-item.program-item:hover ,
+.add-cycle-btn:hover {
+    transform: scale(1.1);
+    background: #d9d9d9;
+}
+
 .list-item.client-item,
 .programs-list-page .list-item.program-item{
     font-size: 14px;
@@ -669,9 +688,7 @@ small.unit-label {
     padding: 0;
 }
 
-.set-row .delete-set-row-btn:active {
-    opacity: 0.5;
-}
+
 
 .add-set-btn {
     display: block;
@@ -684,9 +701,7 @@ small.unit-label {
     margin: 13px auto;
 
 }
-.add-set-btn:active {
-    background-color: #e5e5ea;
-}
+
 
 
 
@@ -1126,9 +1141,14 @@ button.btn.btn-timer svg {
     padding: 20px;
     position: relative;
 }
+.modal-window.timer-modal .timer-heder {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+}
 
 .timer-display {
-    font-size: 2.6em;
+    font-size: 41px;
     font-weight: 600;
     margin: 10px 0 20px;
     color: #111;
@@ -1143,18 +1163,17 @@ button.btn.btn-timer svg {
 .timer-presets {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 11px;
 }
-
 .timer-presets button {
-    background: #f2f2f2;
-    border: none;
-    border-radius: 8px;
-    padding: 6px 10px;
-    font-size: 0.9em;
-    color: #007AFF;
+    background: #fbfbfb;
+    border-radius: 5px;
+    padding: 7px 10px;
+    font-size: 12px;
+    color: #282828;
     cursor: pointer;
     transition: all 0.2s;
+    border: 1px solid #a3a3a3;
 }
 
 .timer-presets button:hover {
@@ -1174,7 +1193,23 @@ button.btn.btn-timer svg {
     outline: none;
     -webkit-appearance: none;
     text-align: center;
-    color: #007AFF;
+    color: #3d3d3d;
+    margin-bottom: 19px;
+}
+.timer-center .timer-buttons {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-evenly;
+}
+.timer-buttons button#timer-stop {
+    color: #cd3931;
+    border: 1.5px solid #cd3931;
+    padding: 9px 14px;
+}
+.timer-buttons button#timer-reset {
+    color: #000000;
+    border: 1.5px solid #000000;
+    padding: 9px 14px;
 }
 
 /* скрываем стрелочки */
@@ -1248,6 +1283,7 @@ body .btn-timer.floating {
   align-items: center;
   gap: 8px;
   user-select: none;
+  font-size: 12px;
 }
 
 .timer-toggle-checkbox {
@@ -1258,24 +1294,23 @@ body .btn-timer.floating {
 }
 
 .timer-toggle-box {
-  width: 18px;
-  height: 18px;
-  border: 1.5px solid #c7c7cc;
-  border-radius: 4px; /* квадрат с лёгким скруглением */
-  position: relative;
-  display: inline-block;
+    width: 18px;
+    height: 18px;
+    border: 1px solid #c7c7cc;
+    border-radius: 4px;
+    position: relative;
 }
 
 .timer-toggle-checkbox:checked + .timer-toggle-box::after {
-  content: "";
-  position: absolute;
-  left: 4px;
-  top: 0px;
-  width: 6px;
-  height: 12px;
-  border: solid #007aff;
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
+    content: "";
+    position: absolute;
+    width: 15px;
+    height: 5px;
+    border-left: 4px solid #009832;
+    border-bottom: 3px solid #009832;
+    top: 3px;
+    left: 3px;
+    transform: rotate(-45deg);
 }
 
 
@@ -1406,19 +1441,24 @@ textarea.comment-input:focus {
 .media-item {
     position: relative;
 }
-button.btn.delete-media-btn{
+
+button.btn.delete-media-btn {
     position: absolute;
-    top: -7px;
-    right: -7px;
-    height: 20px;
-    width: 20px;
+    top: -5px;
+    right: -12px;
+    height: 23px;
+    width: 23px;
     line-height: 1;
     background-color: #ffffff;
     color: #b41414;
     border-radius: 50%;
-    font-size: 14px;
+    font-size: 15px;
     border: none;
     padding: 0;
+}
+button.btn.delete-media-btn svg {
+    width: 19px;
+    height: 19px;
 }
 button.btn.btn-secondary span {
     padding-left: 10px;
@@ -1439,11 +1479,13 @@ button.btn.btn-secondary span {
     cursor: pointer;
     margin-top: 14px;
     width: 185px;
-    display: flex
-;
+    display: flex;
     align-items: center;
 }
-
+.comExer button.btn.btn-secondary svg {
+    width: 24px;
+    height: 24px;
+}
 .comExer .modal-controls {
     margin: 0;
 }
@@ -1577,7 +1619,7 @@ button.btn.comment-toggle-btn svg {
 }
 
 
-
+/* полоса загрузки медиа в коментах */
 .upload-progress-wrap {
   width: 100%;
   background: #f1f1f1;
@@ -1591,7 +1633,6 @@ button.btn.comment-toggle-btn svg {
 .upload-progress-bar {
   height: 100%;
   width: 0%;
-  background: linear-gradient(90deg, #007aff, #00c6ff);
   transition: width 0.2s linear;
 }
 
@@ -1892,9 +1933,6 @@ body {
     /*white-space: nowrap;*/
 }
 
-.btn:active {
-    opacity: 0.7;
-}
 
 
 
@@ -1990,7 +2028,9 @@ div#program-details-content h3 {
     margin-bottom: 1px;
     font-weight: 500;
 }
-
+.exercise-header:hover {
+    background: #d9d9d9;
+}
 .control-buttons {
     display: flex;
     gap: 8px;
@@ -2134,7 +2174,10 @@ div#program-details-content h3 {
     padding: 9px 16px;
 }
 
-
+.modal-set button.btn.btn-primary:hover {
+    transform: scale(1.1);
+    background: #eff6ff;
+}
 
 
 
@@ -2202,9 +2245,7 @@ small.unit-label {
     padding: 0;
 }
 
-.set-row .delete-set-row-btn:active {
-    opacity: 0.5;
-}
+
 
 .add-set-btn {
     color: #078bef;
@@ -2219,9 +2260,10 @@ small.unit-label {
     align-items: center;
 }
 
-.add-set-btn:active {
-    background-color: #e5e5ea;
+.add-set-btn:hover svg {
+    transform: scale(1.3);
 }
+
 /* МОДАЛКА ДОБАВЛЕНИЯ ПОДХОДА  */
 
 .modal-content.duplicate-modal {
@@ -2399,6 +2441,10 @@ button.btn.btn-primary.add-exercise-btn {
     padding: 13px 15px;
     border: none;
 }
+button.btn.btn-primary.add-exercise-btn:hover {
+
+    background: #d9d9d9;
+}
 
 .modal-overlay.program-details .modal-content {
     display: flex;
@@ -2412,6 +2458,10 @@ button.btn.btn-primary.add-exercise-btn {
     border: 1.5px solid #268eff;
     background: none;
     color: #268eff;
+}
+.modal-overlay.program-details .modal-content .modal-buttons button:hover {
+    transform: scale(1.1);
+    background: #eff6ff;
 }
 
 
@@ -3120,24 +3170,30 @@ div#journal-content .record-header .record-date {
     padding: 0px 13px 6px 30px;
 }
 
+
 .sets-line .set-item {
-    padding: 0px 16px 6px 0;
+    padding: 0px 9px 6px 0;
     font-size: 13px;
     display: inline-flex;
     align-items: center;
-    width: 35px;
+    width: 62px;
 }
 
 /* Комментарий к упражнению */
+.note-media-wrap {
+    display: flex;
+    justify-content: space-between;
+    background: #f7f7f7;
+    border-top: 1px solid #f0f0f0;
+}
+
 .exercise-note {
     color: #555;
     margin: 0px;
-    background-color: #f7f7f7;
-    padding: 11px 15px 11px 15px;
+    padding: 11px 8px 11px 20px;
     font-size: 13px;
     font-style: italic;
     line-height: 1.4;
-    border-top: 1px solid #f0f0f0;
 }
 
 /* Медиа (фото / видео) */
@@ -3145,7 +3201,6 @@ div#journal-content .record-header .record-date {
     display: flex;
     gap: 5px;
     flex-wrap: wrap;
-    background-color: #f7f7f7;
     padding: 13px 15px 13px 15px;
 }
 
