@@ -474,7 +474,8 @@ input:focus {
  .list-item.program-item:active ,
 .add-cycle-btn:active {
     transform: scale(1.1);
-    background: #d9d9d9;
+    transition: transform 0.2s ease;
+    
 }
 
 .list-item.client-item,
