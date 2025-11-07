@@ -147,6 +147,10 @@ html, body {
     color: #000000;
     display: flex;
 }
+.top-back-btn:active svg{
+    transform: scale(1.1);
+    transition: transform 0.2s ease;
+}
 
 .top-menu-btn {
     font-size: 20px;
@@ -157,7 +161,10 @@ html, body {
     display: flex;
     color: #000000;
 }
-
+.top-menu-btn:active svg{
+    transform: scale(1.1);
+    transition: transform 0.2s ease;
+}
 
 /* модалка гамбургера  */
 .menu-overlay {
@@ -191,10 +198,11 @@ html, body {
     color: #090909;
 }
 
-.menu-icon-btn:hover {
-    transform: scale(1.1);
-    background: #d9d9d9;
+.menu-modal button.menu-icon-btn:active {
+  transform: scale(1.05);
+  transition: transform 0.2s ease;
 }
+
 
 
 /* Страница циклов */
@@ -473,9 +481,9 @@ input:focus {
 .add-program-btn:active ,
  .list-item.program-item:active ,
 .add-cycle-btn:active {
-    transform: scale(1.1);
+    transform: scale(1.05);
     transition: transform 0.2s ease;
-    
+
 }
 
 .list-item.client-item,
@@ -537,7 +545,10 @@ button.btn.btn-primary.add-cycle-btn {
     transition: transform 0.3s ease;
 }
 
-
+.modal-cicle .modal-buttons button.btn.btn-primary:active {
+    transform: scale(1.1);
+    transition: transform 0.2s ease;
+}
 
 button.btn.btn-primary {
     margin-left: 10px;
@@ -1006,9 +1017,10 @@ small.unit-label {
     /* transition: background-color 0.2s, box-shadow 0.2s; */
 }
 
+
 .mode-btn:active {
-    background-color: #f0f0f5;
-    box-shadow: 0 0 0 2px #007aff;
+    transform: scale(1.03);
+    transition: transform 0.2s ease;
 }
 
 .mode-icon {
@@ -1128,6 +1140,12 @@ button.btn.btn-timer {
     padding: 0;
     top: 4px;
 }
+button.btn.btn-timer:active svg{
+    transform: scale(1.1);
+    transition: transform 0.2s ease;
+}
+
+
 button.btn.btn-timer svg {
     color: #000000;
     width: 20px;
@@ -1177,10 +1195,11 @@ button.btn.btn-timer svg {
     border: 1px solid #a3a3a3;
 }
 
-.timer-presets button:hover {
-    background: #e1e1e1;
-    transform: scale(1.05);
+.timer-presets button:active {
+    transform: scale(1.1);
+    transition: transform 0.2s ease;
 }
+
 
 .timer-center {
     flex: 1;
@@ -1202,6 +1221,12 @@ button.btn.btn-timer svg {
     flex-direction: row;
     justify-content: space-evenly;
 }
+
+.timer-center button:active {
+    transform: scale(1.1);
+    transition: transform 0.2s ease;
+}
+
 .timer-buttons button#timer-stop {
     color: #cd3931;
     border: 1.5px solid #cd3931;
@@ -1366,7 +1391,10 @@ button.btn.edit-note-btn svg {
     height: 19px;
     color: #585858;
 }
-
+button.btn.edit-note-btn:active svg{
+  transform: scale(1.3);
+  transition: transform 0.2s ease;
+}
 
 /* Контейнер для отображения комментария к упражнению */
 .exercise-note-display {
@@ -1483,12 +1511,24 @@ button.btn.btn-secondary span {
     display: flex;
     align-items: center;
 }
+.comExer button.btn.btn-secondary:active {
+    transform: scale(1.05);
+    transition: transform 0.2s ease;
+}
+
+
+
 .comExer button.btn.btn-secondary svg {
     width: 24px;
     height: 24px;
 }
 .comExer .modal-controls {
     margin: 0;
+}
+
+.comExer .modal-controls button.btn.btn-primary:active {
+    transform: scale(1.1);
+    transition: transform 0.2s ease;
 }
 /* Отображение комментария при закр упр */
 .exercise-note-collapsed {
@@ -1582,6 +1622,12 @@ button.btn.btn-secondary span {
     font-size: 13px;
     align-items: flex-start;
 }
+
+
+.comment-btn-group:active {
+    transform: scale(1.05);
+    transition: transform 0.2s ease;
+}
 span.comment-label {
     padding-top: 7px;
 }
@@ -1638,16 +1684,6 @@ button.btn.comment-toggle-btn svg {
 }
 
 
-
-
-
-
-
-
-
-
-
-
 /* Кнопка "Завершить тренировку" - Floats */
 .complete-training-btn {
     display: block;
@@ -1660,6 +1696,10 @@ button.btn.comment-toggle-btn svg {
     border: 1.5px solid #268eff;
 }
 
+.complete-training-btn:active {
+    transform: scale(1.05);
+    transition: transform 0.2s ease;
+}
 
 
 
@@ -2029,9 +2069,9 @@ div#program-details-content h3 {
     margin-bottom: 1px;
     font-weight: 500;
 }
-.exercise-header:hover {
-    background: #d9d9d9;
-}
+
+
+
 .control-buttons {
     display: flex;
     gap: 8px;
@@ -2044,6 +2084,10 @@ div#program-details-content h3 {
     color: #000000;
 }
 
+.exercise-title:active {
+    transform: scale(1.04);
+    transition: transform 0.2s ease;
+}
 .exercise-number {
     margin-right: 8px;
 }
@@ -2146,7 +2190,7 @@ div#program-details-content h3 {
     transition: transform 0.3s ease;
 }
 .modal-set {
-    width: 75%;
+    width: 283px;
 }
 .modal-set h3 {
     font-size: 17px;
@@ -2175,9 +2219,9 @@ div#program-details-content h3 {
     padding: 9px 16px;
 }
 
-.modal-set button.btn.btn-primary:hover {
-    transform: scale(1.1);
-    background: #eff6ff;
+.modal-set button.btn.btn-primary:active {
+ transform: scale(1.1);
+ transition: transform 0.2s ease;
 }
 
 
@@ -2195,7 +2239,9 @@ button.btn.delete-set-btn {
 button.btn.delete-set-btn svg{
     display:block;
 }
-
+button.btn.delete-set-btn:active svg {
+    transform: scale(1.3);
+}
 span.set-label {
     font-size: 13px;
 }
@@ -2261,7 +2307,7 @@ small.unit-label {
     align-items: center;
 }
 
-.add-set-btn:hover svg {
+.add-set-btn:active svg {
     transform: scale(1.3);
 }
 
@@ -2293,6 +2339,10 @@ small.unit-label {
     padding: 7px 16px!important;
     border: 1.5px solid #535353;
 }
+.duplicate-controls .btn:active {
+    transform: scale(1.06);
+    transition: transform 0.2s ease;
+}
 
 
 
@@ -2315,6 +2365,14 @@ small.unit-label {
     height: 75px;
 }
 
+
+
+.modal-remove-edit button.btn.btn-primary:active,
+.modal-remove-edit button.btn.cancel-btn:active {
+    transform: scale(1.05);
+    transition: transform 0.2s ease;
+}
+
 .modal-remove-edit button.btn.cancel-btn svg {
     color: #cd3931;
     height: 35px;
@@ -2330,8 +2388,7 @@ small.unit-label {
 
 /* редактировать окно  */
 .modal-edit {
-    display: flex
-;
+    display: flex;
     background-color: white;
     padding: 20px;
     border-radius: 12px;
@@ -2341,6 +2398,10 @@ small.unit-label {
     transition: transform 0.3s ease;
 }
 
+.modal-edit .modal-buttons button.btn.btn-primary:active {
+    transform: scale(1.1);
+    transition: transform 0.2s ease;
+}
 
 
 
@@ -2444,7 +2505,7 @@ button.btn.btn-primary.add-exercise-btn {
     height:43px;
 }
 
-button.btn.btn-primary.add-exercise-btn:hover {
+button.btn.btn-primary.add-exercise-btn:active {
     transition: transform 0.2s ease, font-size 0.2s ease;
     font-size: 15px;
 }
@@ -2749,10 +2810,13 @@ select.program-select {
     font-weight: bold;
     border: 1px solid #96bfa0;
 }
+
 .calendar-cell.planned {
     background: #e9e9e9;
     border: 1px solid #c4c4c4;
 }
+
+
 .calendar-cell.header-cell {
     font-weight: bold;
     background-color: #fcc8aea8;
@@ -2779,6 +2843,10 @@ select.program-select {
     background: white;
     display: flex;
     flex-direction: column;
+}
+.calendar-cell:active {
+    transform: scale(1.1);
+    transition: transform 0.2s ease;
 }
 
 /* 📆 Число дня */
@@ -3575,6 +3643,7 @@ button#select-personal-mode span.mode-icon svg {
     max-width: 300px; /* Делаем модалку узкой, т.к. нужно только имя */
 
 }
+
 button.btn.btn-danger.confirm-btn {
     color: #d64242;
     border: 1.5px solid #d64242;
@@ -3582,6 +3651,14 @@ button.btn.btn-danger.confirm-btn {
 .modal-content.modal-compact .modal-title {
     font-size: 1.1em;
 }
+
+
+.modal-content.modal-compact .modal-controls button.btn.btn-secondary.cancel-btn:active,
+ .modal-content.modal-compact .modal-controls button.btn.btn-danger.confirm-btn:active{
+    transform: scale(1.1);
+    transition: transform 0.2s ease;
+}
+
 
 /* 2. Стиль для поля ввода (поскольку в openCommentModal используется textarea) */
 .modal-content.modal-compact textarea.comment-edit-input {
@@ -4075,10 +4152,15 @@ button.btn.btn-delete-photo {
     height: 27px;
     color: #535252;
 }
+
 button.action-btn.action-delete svg {
     width: 19px;
     height: 19px;
     color: #cd3931;
+}
+button.action-btn.action-delete:active svg{
+    transform: scale(1.1);
+    transition: transform 0.2s ease;
 }
 
 /* === Контент упражнения (то, что двигается) === */
@@ -4101,8 +4183,9 @@ button.action-btn.action-delete svg {
   transition: background 0.2s;
 }
 
-.action-btn:hover {
-  background: #eee;
+.action-btn:active svg{
+    transform: scale(1.1);
+    transition: transform 0.2s ease;
 }
 
 /* === Когда свайп закрыт: клики под ним блокируются === */
