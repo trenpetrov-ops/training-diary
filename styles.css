@@ -468,11 +468,11 @@ input:focus {
     flex-direction: column;
 }
 
-.add-client-btn:hover,
- .list-item.client-item:hover ,
-.add-program-btn:hover ,
- .list-item.program-item:hover ,
-.add-cycle-btn:hover {
+.add-client-btn:active,
+ .list-item.client-item:active ,
+.add-program-btn:active ,
+ .list-item.program-item:active ,
+.add-cycle-btn:active {
     transform: scale(1.1);
     background: #d9d9d9;
 }
@@ -2440,12 +2440,13 @@ button.btn.btn-primary.add-exercise-btn {
     margin: 0;
     padding: 13px 15px;
     border: none;
+    height:43px;
 }
+
 button.btn.btn-primary.add-exercise-btn:hover {
-
-    background: #d9d9d9;
+    transition: transform 0.2s ease, font-size 0.2s ease;
+    font-size: 15px;
 }
-
 .modal-overlay.program-details .modal-content {
     display: flex;
     flex-direction: row;
