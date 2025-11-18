@@ -15,6 +15,43 @@ html, body {
 
 }
 
+
+#loading-screen {
+    position: fixed;
+    inset: 0;
+    background: #f2f2f7;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    opacity: 1;
+    transition: opacity .35s ease;
+}
+
+#loading-screen.hide {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.loader-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 4px solid rgba(0,0,0,0.10);    /* светлая тонкая окантовка */
+    border-top-color: #007aff;            /* фирменный iOS синий */
+    animation: ios-spin 0.85s cubic-bezier(.4,0,.2,1) infinite;
+}
+
+@keyframes ios-spin {
+    to { transform: rotate(360deg); }
+}
+
+
+
+
+
 .container {
     overflow-y: auto;
     overflow-x: hidden;
@@ -219,15 +256,17 @@ html, body {
 /* ========================================================== */
 /* НАВИГАЦИОННАЯ ПАНЕЛЬ (TAB BAR) */
 /* ========================================================== */
-.navigation-wrap {
+.navigation-fon {
     position: fixed;
+    z-index: 898;
     bottom: 0;
+    left: 0;
     width: 100%;
-    height: 10%;
+    height: 76px;
+    pointer-events: none;
     border-radius: 90px 90px 0px 0px;
-    backdrop-filter: blur(3.5px);
-    -webkit-backdrop-filter: blur(15px);
-    z-index: 1000;
+    filter: blur(9px);
+    background: #ffffffb0;
 }
 
 .navigation {
@@ -240,7 +279,7 @@ html, body {
     background-color: #ffffff;
     border-bottom: 1px solid #e7e7e7;
     border-top: 0.5px solid #e7e7e7;
-    z-index: 1000;
+    z-index: 900;
     width: 84%;
     margin: 0 auto 35px auto;
     border-radius: 50px;
@@ -626,7 +665,7 @@ button.btn.menu-btn {
     border-bottom-left-radius: 10px;
     border-bottom-right-radius: 10px;
     transition: all 0.3s ease-in-out;
-    border: 1px solid #c7c7cc;
+    /* border: 1px solid #c7c7cc; */
     border-top: none;
 }
 
@@ -1384,7 +1423,10 @@ body .btn-timer.floating {
     background: none;
     color: #8e8e93; /* Серый карандаш */
     font-size: 16px;
-    padding: 0 5px;
+    padding: 0px 5px;
+    display: flex;
+    align-items: flex-end;
+    padding-top: 3px;
 }
 button.btn.edit-note-btn svg {
     width: 19px;
@@ -1542,8 +1584,7 @@ button.btn.btn-secondary span {
     color: #555;
     display:flex;
     flex-direction: column;
-    =:
-    hidden;
+    display: none;
 }
 .exercise-note-collapsed p {
     margin: 0;
@@ -2057,6 +2098,11 @@ div#program-details-content h3 {
     border: none;
     background-color: #ffffff;
     border-radius: 10px;
+    border-bottom: 1.5px solid #dedede;
+    border-left: 0.5px solid #dedede;
+    border-right: 0.5px solid #dedede;
+    border-top: 0.5px solid #dedede;
+    overflow: hidden;
 }
 
 .exercise-header {
@@ -2070,6 +2116,54 @@ div#program-details-content h3 {
     font-weight: 500;
 }
 
+/* ============== модалка коментариев при нажатии ========== */
+
+div#exerciseNoteModal {
+    z-index: 990 !important;
+    align-items: flex-start;
+    padding-top: 80px;
+}
+
+div#exerciseNoteModalContent {
+    overflow: hidden;
+    background: white;
+    border-radius: 10px;
+    max-width: 90%;
+    width: 420px;
+    animation: 0.25s ease 0s 1 normal none running fadeIn;
+}
+
+div#exerciseNoteModalContent h3 {
+    font-size: 15px;
+    color: #000000;
+    font-weight: 600;
+    margin-bottom: 17px;
+    padding: 23px 0px 0px 16px;
+}
+
+div#exerciseNoteModalContent p {
+    font-style: italic;
+    color: #555;
+    padding: 12px 16px 19px 16px;
+    border-radius: 0 0 10px 10px;
+    background-color: #f7f7f7;
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    font-size: 14px;
+    border-top: 0.5px solid #e7e7e7;
+}
+
+div#exerciseNoteModalContent div {
+    padding: 0px 16px 19px 16px;
+    background-color: #f7f7f7;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+div#exerciseNoteModalContent div img {width: 40px;height: 40px;object-fit: cover;border-radius: 5px;cursor: pointer;}
+/* ============== модалка конец  ========== */
 
 
 .control-buttons {
@@ -2097,7 +2191,7 @@ div#program-details-content h3 {
     border-bottom-left-radius: 10px;
     border-bottom-right-radius: 10px;
     transition: all 0.3s ease-in-out;
-    border: 0.5px solid #dedede;
+    /* border: 0.5px solid #dedede; */
     border-top: none;
 }
 
@@ -2106,7 +2200,7 @@ div#program-details-content h3 {
 }
 
 .summary-sets-container {
-    display: none;
+    /* display: none; */
     font-size: 12px;
     color: #8e8e93;
     padding: 0 16px 11px 35px;
@@ -2129,6 +2223,10 @@ div#program-details-content h3 {
     font-size: 14px;
     display: flex;
     align-items: center;
+}
+.set-row.done {
+    background-color: #d4edda;
+    border-color: #96bfa0;
 }
 .main-set {
     color: #d93c3c;
@@ -2330,7 +2428,7 @@ small.unit-label {
     display: flex;
     justify-content: space-around;
     gap: 10px;
-    flex-direction: row-reverse;
+    flex-direction: row;
 }
 
 .duplicate-controls .btn {
@@ -2338,6 +2436,7 @@ small.unit-label {
     margin-left: 0 !important;
     padding: 7px 16px!important;
     border: 1.5px solid #535353;
+    color: #414141;
 }
 .duplicate-controls .btn:active {
     transform: scale(1.06);
@@ -2501,8 +2600,10 @@ button.btn.btn-primary.add-exercise-btn {
     color: #268eff;
     margin: 0;
     padding: 13px 15px;
-    border: none;
+    border: 0.5px solid #e5e5e5;
+    border-bottom: 1.5px solid #dedede;
     height:43px;
+    margin-top: 5px;
 }
 
 button.btn.btn-primary.add-exercise-btn:active {
@@ -2845,8 +2946,9 @@ select.program-select {
     flex-direction: column;
 }
 .calendar-cell:active {
-    transform: scale(1.1);
+    transform: scale(1.05);
     transition: transform 0.2s ease;
+    z-index:100;
 }
 
 /* 📆 Число дня */
@@ -4125,17 +4227,18 @@ button.btn.btn-delete-photo {
     overflow: hidden;
     background: #f0f0f0;
     touch-action: pan-y;
-    border-radius: 10px 10px 0 0;
-    border-top: 0.5px solid #dedede;
-    border-right: 0.5px solid #dedede;
-    border-left: 0.5px solid #dedede;
+    /* border-radius: 10px 10px 0px 9px; */
+    /* border-top: 0.5px solid #dedede; */
+    /* border-right: 0.5px solid #dedede; */
+    /* border-left: 0.5px solid #dedede; */
+    /* border-bottom: 0.5px solid #dedede; */
 }
 
 /* === Кнопки справа (появляются при свайпе влево) === */
 .exercise-swipe .swipe-actions.right {
     position: absolute;
     top: 0;
-    right: 0;
+    right: 0px;
     bottom: 0;
     display: flex;
     align-items: center;
