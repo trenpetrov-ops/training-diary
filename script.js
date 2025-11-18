@@ -1722,8 +1722,130 @@ function attachSwipeActions(swipeRoot, selectedProgram, exercise) {
 }
 
 
+// ===============================
+// ✅ модалка коментов к упр при нажатии на упр
+// ===============================
+
+function openExerciseNoteModal(exercise, index) {
+
+    // Удаляем старую модалку
+    const old = document.getElementById("exerciseNoteModal");
+    if (old) old.remove();
+
+    // Overlay
+    const overlay = document.createElement("div");
+    overlay.id = "exerciseNoteModal";
+    overlay.className = "modal-overlay";
 
 
+    // Modal
+    const modal = document.createElement("div");
+    modal.id = "exerciseNoteModalContent";
+
+    // --- Заголовок (номер + название упражнения) ---
+    const title = document.createElement("h3");
+
+    const numberSpan = document.createElement("span");
+    numberSpan.className = "exercise-number";
+    numberSpan.innerText = `${index + 1}. `;
+
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "exercise-name";
+    nameSpan.innerText = exercise.name;
+
+    title.append(numberSpan, nameSpan);
+    modal.append(title);
+
+    // --- Комментарий ---
+    const note = document.createElement("p");
+    note.innerText = exercise.note?.trim() || "Комментариев нет";
+
+    modal.append(note);
+
+    // --- МЕДИА ---
+    if (exercise.media?.length > 0) {
+        const mediaWrapper = document.createElement("div");
+
+
+        exercise.media.forEach(file => {
+            if (file.type === "photo") {
+                const img = document.createElement("img");
+                img.src = file.url;
+                img.onclick = () => openPhotoFullScreen(file.url);
+                mediaWrapper.append(img);
+            }
+
+            if (file.type === "video") {
+                const vid = document.createElement("video");
+                vid.src = file.url;
+                vid.controls = true;
+                vid.muted = true;
+                mediaWrapper.append(vid);
+            }
+        });
+
+        modal.append(mediaWrapper);
+    }
+
+
+    overlay.append(modal);
+    document.body.append(overlay);
+
+    // Закрытие по фону
+    overlay.addEventListener("click", e => {
+        if (e.target === overlay) overlay.remove();
+    });
+}
+
+// === done при свапе по подходу
+function enableSwipeDone(setRow) {
+    let startX = 0;
+    let isSwipe = false;
+    let dragged = false;
+
+    // начало касания
+    setRow.addEventListener("touchstart", (e) => {
+        startX = e.touches[0].clientX;
+        isSwipe = true;
+        dragged = false;
+    });
+
+    // движение
+    setRow.addEventListener("touchmove", (e) => {
+        if (!isSwipe) return;
+
+        const diff = e.touches[0].clientX - startX;
+
+        // визуальный лёгкий сдвиг
+        if (Math.abs(diff) > 5) {
+            setRow.style.transform = `translateX(${diff * 0.3}px)`;
+            dragged = true;
+        }
+    });
+
+    // завершение
+    setRow.addEventListener("touchend", (e) => {
+        if (!isSwipe) return;
+        isSwipe = false;
+
+        const diff = e.changedTouches[0].clientX - startX;
+
+        // свайп считается, если > 45px
+        if (Math.abs(diff) > 45) {
+            setRow.classList.toggle("done");
+        }
+
+        // вернуть на место
+        setRow.style.transform = "translateX(0)";
+
+        // ❗ Блокируем открытие модалки редактирования,
+        //    если был реальный свайп, а не просто тап
+        if (dragged) {
+            setRow._preventClick = true;
+            setTimeout(() => setRow._preventClick = false, 100);
+        }
+    });
+}
 
 
 
@@ -1770,14 +1892,25 @@ function renderProgramDetailsPage() {
             // 1. — СОЗДАЁМ HEADER (но НЕ добавляем в DOM напрямую)
             const exerciseHeader = createElement('div', `exercise-header ${isExpanded ? 'expanded' : ''}`);
 
-            exerciseHeader.addEventListener('click', () => {
-            const wasExpanded = state.expandedExerciseId === exercise.id; // 💡 объявляем здесь
-              state.expandedExerciseId =
-                state.expandedExerciseId === exercise.id ? null : exercise.id;
-              render();
+exerciseHeader.addEventListener('click', () => {
+    const wasExpanded = state.expandedExerciseId === exercise.id;
+
+    state.expandedExerciseId = wasExpanded ? null : exercise.id;
+
+    render();
+
+    if (!wasExpanded) {
+        const updatedProgram = state.programs.find(p => p.id === selectedProgram.id);
+        const updatedExercise = updatedProgram.exercises.find((e, idx) => e.id === exercise.id);
+
+        // ПЕРЕДАЁМ и упражнение, и index
+        const exerciseIndex = updatedProgram.exercises.findIndex(e => e.id === exercise.id);
+
+        openExerciseNoteModal(updatedExercise, exerciseIndex);
+    }
+});
 
 
-            });
 
             const exerciseTitle = createElement('div', 'exercise-title');
             exerciseTitle.append(
@@ -1789,8 +1922,7 @@ function renderProgramDetailsPage() {
 const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-note' : ''}`);
             // карандаш — оставляю твой SVG как есть
             editNoteBtn.innerHTML = `
-               <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24"><title>Edit SVG Icon</title><path fill="currentColor" d="M3.548 20.938h16.9a.5.5 0 0 0 0-1h-16.9a.5.5 0 0 0 0 1M9.71 17.18a2.587 2.587 0 0 0 1.12-.65l9.54-9.54a1.75 1.75 0 0 0 0-2.47l-.94-.93a1.788 1.788 0 0 0-2.47 0l-9.54 9.53a2.473 2.473 0 0 0-.64 1.12L6.04 17a.737.737 0 0 0 .19.72a.767.767 0 0 0 .53.22Zm.41-1.36a1.468 1.468 0 0 1-.67.39l-.97.26l-1-1l.26-.97a1.521 1.521 0 0 1 .39-.67l.38-.37l1.99 1.99Zm1.09-1.08l-1.99-1.99l6.73-6.73l1.99 1.99Zm8.45-8.45L18.65 7.3l-1.99-1.99l1.01-1.02a.748.748 0 0 1 1.06 0l.93.94a.754.754 0 0 1 0 1.06"/></svg>
-                `;
+               <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><title>Ios-more-outline SVG Icon</title><path d="M256 238c9.9 0 18 8.1 18 18s-8.1 18-18 18-18-8.1-18-18 8.1-18 18-18m0-14c-17.7 0-32 14.3-32 32s14.3 32 32 32 32-14.3 32-32-14.3-32-32-32z" fill="currentColor"/><path d="M128.4 238c9.9 0 18 8.1 18 18s-8.1 18-18 18-18-8.1-18-18 8.1-18 18-18m0-14c-17.7 0-32 14.3-32 32s14.3 32 32 32 32-14.3 32-32-14.4-32-32-32z" fill="currentColor"/><path d="M384 238c9.9 0 18 8.1 18 18s-8.1 18-18 18-18-8.1-18-18 8.1-18 18-18m0-14c-17.7 0-32 14.3-32 32s14.3 32 32 32 32-14.3 32-32-14.3-32-32-32z" fill="currentColor"/></svg>`;
 
             editNoteBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -1851,6 +1983,9 @@ const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-
                 exercise.sets.forEach((set, setIndex) => {
                     const setRow = createElement('div', `set-row ${set.isMain ? 'main-set' : ''}`);
 
+                            enableSwipeDone(setRow);
+
+
                     const setNumberLabel = createElement('span', 'set-label', `${setIndex + 1}.`);
                     setRow.append(setNumberLabel);
 
@@ -1862,6 +1997,7 @@ const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-
 
                     // Клик для редактирования подхода
                     setRow.addEventListener('click', (e) => {
+                        if (setRow._preventClick) return; // 👈 блокируем открытие после свайпа
                         e.stopPropagation();
                         openEditSetModal(selectedProgram.id, exercise.id, setIndex, set);
                     });
@@ -2155,6 +2291,14 @@ contentContainer.append(commentWrapper);
   const completeTrainingBtn = createElement('button', 'btn complete-training-btn', 'Завершить тренировку');
   completeTrainingBtn.addEventListener('click', () => {
     openConfirmModal('Завершить и сохранить тренировку в дневник?', async () => {
+
+            // 🔥🔥🔥 ДОБАВЛЯЕМ ОЧИСТКУ DONE ПРЯМО ЗДЕСЬ
+            document.querySelectorAll(".set-row.done").forEach(row => {
+                row.classList.remove("done");
+            });
+            // 🔥🔥🔥 END
+
+
       const exercisesToSave = (selectedProgram.exercises || [])
         .filter(ex => ex.note || (ex.sets && ex.sets.some(set => set.weight || set.reps)))
         .map(ex => ({ ...ex }));
@@ -6857,32 +7001,38 @@ document.getElementById('mode-logout-btn')?.addEventListener('click', async () =
 // ... (Код onAuthStateChanged без изменений) ...
 
 onAuthStateChanged(auth, (user) => {
-    // Отписываемся от старых слушателей перед изменением userId
+    const loading = document.getElementById('loading-screen');
+
+    // Пока грузится — показываем лоадер
+    loading.classList.remove('hide');
+
     unsubscribeAll();
 
     if (user) {
         userId = user.uid;
-            console.log('🔑 Пользователь вошёл:', userId);
+        console.log('🔑 Пользователь вошёл:', userId);
 
-
-        // Если пользователь только что вошел, режим еще не выбран
+        // Если режим ещё не выбран — показываем выбор режима
         if (state.currentMode === null) {
             state.currentPage = 'modeSelect';
-            toggleAppVisibility(true); // Показать экран выбора режима
+            toggleAppVisibility(true);
         } else {
-            // Если режим уже был выбран (например, при перезагрузке страницы),
-            // переподключаем слушатели и рендерим
             setupDynamicListeners();
         }
+
     } else {
         userId = null;
         state.currentMode = null;
         state.selectedClientId = null;
         state.currentPage = 'auth';
-        toggleAppVisibility(false); // Показать экран авторизации
+        toggleAppVisibility(false);
     }
 
-
-    // Первоначальный рендер
+    // Первичный рендер
     render();
+
+    // ❗ Даем приложению дорендериться → и скрываем загрузку
+    setTimeout(() => {
+        loading.classList.add('hide');
+    }, 300); // можно увеличить если захочешь плавности
 });
