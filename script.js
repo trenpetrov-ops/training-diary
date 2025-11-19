@@ -1735,37 +1735,25 @@ function openExerciseNoteModal(exercise, index) {
     // Overlay
     const overlay = document.createElement("div");
     overlay.id = "exerciseNoteModal";
-    overlay.className = "modal-overlay";
-
 
     // Modal
     const modal = document.createElement("div");
     modal.id = "exerciseNoteModalContent";
 
-    // --- Заголовок (номер + название упражнения) ---
+    // title
     const title = document.createElement("h3");
-
-    const numberSpan = document.createElement("span");
-    numberSpan.className = "exercise-number";
-    numberSpan.innerText = `${index + 1}. `;
-
-    const nameSpan = document.createElement("span");
-    nameSpan.className = "exercise-name";
-    nameSpan.innerText = exercise.name;
-
-    title.append(numberSpan, nameSpan);
+    title.innerHTML = `<span class="exercise-number">${index + 1}. </span>${exercise.name}`;
     modal.append(title);
 
-    // --- Комментарий ---
+    // text
     const note = document.createElement("p");
     note.innerText = exercise.note?.trim() || "Комментариев нет";
-
     modal.append(note);
 
-    // --- МЕДИА ---
+    // media
     if (exercise.media?.length > 0) {
         const mediaWrapper = document.createElement("div");
-
+        mediaWrapper.className = "media-block";
 
         exercise.media.forEach(file => {
             if (file.type === "photo") {
@@ -1773,29 +1761,39 @@ function openExerciseNoteModal(exercise, index) {
                 img.src = file.url;
                 img.onclick = () => openPhotoFullScreen(file.url);
                 mediaWrapper.append(img);
-            }
-
-            if (file.type === "video") {
-                const vid = document.createElement("video");
-                vid.src = file.url;
-                vid.controls = true;
-                vid.muted = true;
-                mediaWrapper.append(vid);
+            } else if (file.type === "video") {
+                const video = document.createElement("video");
+                video.src = file.url;
+                video.muted = true;
+                video.controls = true;
+                mediaWrapper.append(video);
             }
         });
 
         modal.append(mediaWrapper);
     }
 
-
     overlay.append(modal);
     document.body.append(overlay);
 
-    // Закрытие по фону
+// 🔥 Анимация появления через 1 сек
+setTimeout(() => {
+    overlay.classList.add("show");
+    modal.classList.add("show");
+}, 500);
+
+
+    // 🔥 Закрытие по фону (анимация назад)
     overlay.addEventListener("click", e => {
-        if (e.target === overlay) overlay.remove();
+        if (e.target === overlay) {
+            modal.classList.remove("show");
+            overlay.classList.remove("show");
+
+            setTimeout(() => overlay.remove(), 250);
+        }
     });
 }
+
 
 // === done при свапе по подходу
 function enableSwipeDone(setRow) {
@@ -2076,6 +2074,17 @@ const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-
             // Отображение комментария под подходами (в раскрытом виде)
             if (isExpanded && (exercise.note || (exercise.media && exercise.media.length > 0))) {
                 const exerciseNoteContainer = createElement('div', 'exercise-note-display');
+
+                    // 🔥 Клик по блоку комментария = редактировать комментарий
+                    exerciseNoteContainer.addEventListener("click", (e) => {
+                        e.stopPropagation();
+                        openCommentModal(
+                            exercise.id,
+                            exercise.note,
+                            `Комментарий к <span class="exercise-name-span">- ${exercise.name}</span>`,
+                            (newNote, media) => saveExerciseNote(selectedProgram.id, exercise.id, newNote, media)
+                        );
+                    });
 
                 // 1. Текст комментария
                 if (exercise.note && exercise.note.trim() !== '') {
