@@ -2117,44 +2117,66 @@ div#program-details-content h3 {
 }
 
 /* ============== модалка коментариев при нажатии ========== */
-
-div#exerciseNoteModal {
-    z-index: 990 !important;
+/* ------------------------------
+   Модалка выезжающая справа
+------------------------------ */
+#exerciseNoteModal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.35);
+    display: flex;
+    justify-content: center;
     align-items: flex-start;
-    padding-top: 80px;
+    padding-top: 70%;
+    z-index: 990;
+    opacity: 0;
+    transition: opacity .25s ease;
 }
 
-div#exerciseNoteModalContent {
-    overflow: hidden;
+/* когда показывается */
+#exerciseNoteModal.show {
+    opacity: 1;
+}
+
+/* Контейнер */
+#exerciseNoteModalContent {
     background: white;
-    border-radius: 10px;
+    border-radius: 12px;
     max-width: 90%;
     width: 420px;
-    animation: 0.25s ease 0s 1 normal none running fadeIn;
+    opacity: 7;
+    overflow: hidden;
+    transform: translateX(120%); /* нач позиция справа */
+    transition: transform .30s ease;
 }
 
-div#exerciseNoteModalContent h3 {
+/* когда показывается */
+#exerciseNoteModalContent.show {
+    transform: translateX(0);
+}
+
+/* Заголовок */
+#exerciseNoteModalContent h3 {
     font-size: 15px;
     color: #000000;
     font-weight: 600;
     margin-bottom: 17px;
-    padding: 23px 0px 0px 16px;
+    padding: 23px 0 0 16px;
 }
 
-div#exerciseNoteModalContent p {
+/* Текст */
+#exerciseNoteModalContent p {
     font-style: italic;
     color: #555;
     padding: 12px 16px 19px 16px;
-    border-radius: 0 0 10px 10px;
     background-color: #f7f7f7;
-    display: flex;
-    flex-direction: column;
     margin: 0;
     font-size: 14px;
     border-top: 0.5px solid #e7e7e7;
 }
 
-div#exerciseNoteModalContent div {
+/* Медиа блок */
+#exerciseNoteModalContent div.media-block {
     padding: 0px 16px 19px 16px;
     background-color: #f7f7f7;
     display: flex;
@@ -2162,7 +2184,20 @@ div#exerciseNoteModalContent div {
     gap: 10px;
 }
 
-div#exerciseNoteModalContent div img {width: 40px;height: 40px;object-fit: cover;border-radius: 5px;cursor: pointer;}
+#exerciseNoteModalContent img {
+    width: 40px;
+    height: 40px;
+    object-fit: cover;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+#exerciseNoteModalContent video {
+    width: 40px;
+    height: 40px;
+    border-radius: 5px;
+}
+
 /* ============== модалка конец  ========== */
 
 
