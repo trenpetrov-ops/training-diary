@@ -1723,127 +1723,56 @@ function attachSwipeActions(swipeRoot, selectedProgram, exercise) {
 
 
 // ===============================
-// ✅ модалка коментов к упр при нажатии на упр
+// === done при свапе по подходу
 // ===============================
 
-function openExerciseNoteModal(exercise, index) {
 
-    // Удаляем старую модалку
-    const old = document.getElementById("exerciseNoteModal");
-    if (old) old.remove();
-
-    // Overlay
-    const overlay = document.createElement("div");
-    overlay.id = "exerciseNoteModal";
-
-    // Modal
-    const modal = document.createElement("div");
-    modal.id = "exerciseNoteModalContent";
-
-    // title
-    const title = document.createElement("h3");
-    title.innerHTML = `<span class="exercise-number">${index + 1}. </span>${exercise.name}`;
-    modal.append(title);
-
-    // text
-    const note = document.createElement("p");
-    note.innerText = exercise.note?.trim() || "Комментариев нет";
-    modal.append(note);
-
-    // media
-    if (exercise.media?.length > 0) {
-        const mediaWrapper = document.createElement("div");
-        mediaWrapper.className = "media-block";
-
-        exercise.media.forEach(file => {
-            if (file.type === "photo") {
-                const img = document.createElement("img");
-                img.src = file.url;
-                img.onclick = () => openPhotoFullScreen(file.url);
-                mediaWrapper.append(img);
-            } else if (file.type === "video") {
-                const video = document.createElement("video");
-                video.src = file.url;
-                video.muted = true;
-                video.controls = true;
-                mediaWrapper.append(video);
-            }
-        });
-
-        modal.append(mediaWrapper);
-    }
-
-    overlay.append(modal);
-    document.body.append(overlay);
-
-// 🔥 Анимация появления через 1 сек
-setTimeout(() => {
-    overlay.classList.add("show");
-    modal.classList.add("show");
-}, 500);
-
-
-    // 🔥 Закрытие по фону (анимация назад)
-    overlay.addEventListener("click", e => {
-        if (e.target === overlay) {
-            modal.classList.remove("show");
-            overlay.classList.remove("show");
-
-            setTimeout(() => overlay.remove(), 250);
-        }
-    });
-}
-
-
-// === done при свапе по подходу
-function enableSwipeDone(setRow) {
+function enableSwipeDone(setRow, set) {
     let startX = 0;
     let isSwipe = false;
     let dragged = false;
 
-    // начало касания
     setRow.addEventListener("touchstart", (e) => {
         startX = e.touches[0].clientX;
         isSwipe = true;
         dragged = false;
     });
 
-    // движение
     setRow.addEventListener("touchmove", (e) => {
         if (!isSwipe) return;
 
         const diff = e.touches[0].clientX - startX;
 
-        // визуальный лёгкий сдвиг
         if (Math.abs(diff) > 5) {
             setRow.style.transform = `translateX(${diff * 0.3}px)`;
             dragged = true;
         }
     });
 
-    // завершение
     setRow.addEventListener("touchend", (e) => {
         if (!isSwipe) return;
         isSwipe = false;
 
         const diff = e.changedTouches[0].clientX - startX;
 
-        // свайп считается, если > 45px
         if (Math.abs(diff) > 45) {
-            setRow.classList.toggle("done");
+
+            // 🔥 сохраняем состояние подхода
+            set.done = !set.done;
+
+            // переключаем визуальный класс
+            setRow.classList.toggle("done", set.done);
         }
 
-        // вернуть на место
         setRow.style.transform = "translateX(0)";
 
-        // ❗ Блокируем открытие модалки редактирования,
-        //    если был реальный свайп, а не просто тап
         if (dragged) {
             setRow._preventClick = true;
             setTimeout(() => setRow._preventClick = false, 100);
         }
     });
 }
+
 
 
 
@@ -1886,28 +1815,17 @@ function renderProgramDetailsPage() {
             const hasNote = exercise.note && exercise.note.trim() !== '';
 
             const exerciseItem = createElement('div', 'exercise-item');
+            exerciseItem.dataset.exId = exercise.id;
 
             // 1. — СОЗДАЁМ HEADER (но НЕ добавляем в DOM напрямую)
             const exerciseHeader = createElement('div', `exercise-header ${isExpanded ? 'expanded' : ''}`);
 
 exerciseHeader.addEventListener('click', () => {
-    const wasExpanded = state.expandedExerciseId === exercise.id;
-
-    state.expandedExerciseId = wasExpanded ? null : exercise.id;
+    state.expandedExerciseId =
+        state.expandedExerciseId === exercise.id ? null : exercise.id;
 
     render();
-
-    if (!wasExpanded) {
-        const updatedProgram = state.programs.find(p => p.id === selectedProgram.id);
-        const updatedExercise = updatedProgram.exercises.find((e, idx) => e.id === exercise.id);
-
-        // ПЕРЕДАЁМ и упражнение, и index
-        const exerciseIndex = updatedProgram.exercises.findIndex(e => e.id === exercise.id);
-
-        openExerciseNoteModal(updatedExercise, exerciseIndex);
-    }
 });
-
 
 
             const exerciseTitle = createElement('div', 'exercise-title');
@@ -1980,8 +1898,11 @@ const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-
             if (Array.isArray(exercise.sets)) {
                 exercise.sets.forEach((set, setIndex) => {
                     const setRow = createElement('div', `set-row ${set.isMain ? 'main-set' : ''}`);
+                        if (set.done) {
+                            setRow.classList.add("done");
+                        }
+                            enableSwipeDone(setRow, set);
 
-                            enableSwipeDone(setRow);
 
 
                     const setNumberLabel = createElement('span', 'set-label', `${setIndex + 1}.`);
@@ -2111,6 +2032,7 @@ const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-
                             img.style.marginRight = '7px';
                             img.style.cursor = 'pointer';
                             img.onclick = () => openPhotoFullScreen(file.url);
+                            img.addEventListener("click", (e) => e.stopPropagation());
                             mediaContainer.append(img);
                         }
                         if (file.type === 'video') {
@@ -2126,6 +2048,7 @@ const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-
                             videoThumb.style.marginRight = '7px';
                             videoThumb.style.cursor = 'pointer';
                             videoThumb.onclick = () => openMediaFullScreen(file.url, 'video');
+                            videoThumb.addEventListener("click", (e) => e.stopPropagation());
                             mediaContainer.append(videoThumb);
                         }
                     });
