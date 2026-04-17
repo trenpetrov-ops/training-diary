@@ -21,52 +21,22 @@ import { showToast } from '../script.js';
 import { openConfirmModal } from '../script.js';
 import { ensureCycleSelected } from '../script.js';
 import { renderTopBar } from '../script.js';
+import { render } from '../script.js';
 
-    let unsubscribeSupplements = null;
-
-    function subscribeSupplements() {
-        if (unsubscribeSupplements) return;
-
-        const ref = getCycleDocRef();
-
-        unsubscribeSupplements = onSnapshot(ref, (doc) => {
-            const data = doc.data();
-
-            console.log('🔥 supplementPlan из Firestore:', data?.supplementPlan);
-
-            state.supplementPlan = data?.supplementPlan || null;
-
-            renderSupplementsPage();
-        });
-    }
-    export function resetSupplementsListener() {
-        if (unsubscribeSupplements) {
-            unsubscribeSupplements();
-            unsubscribeSupplements = null;
-        }
-    }
+export function resetSupplementsListener() {
+    // План БАДов синхронизируется через onSnapshot на документе цикла в script.js (setupDynamicListeners).
+}
 // =================================================================
 // 🌟 НОВАЯ ФУНКЦИЯ: РЕНДЕР ПЛАНА БАДОВ/ДОБАВОК (Обновлена)
 // =================================================================
 export async function renderSupplementsPage() {
+    const root = document.getElementById('root');
+    if (!ensureCycleSelected(render)) return;
 
-     const root = document.getElementById('root');
-     if (!ensureCycleSelected(render)) return;
-    subscribeSupplements();
+    const currentCycle = state.cycles?.find(c => c.id === state.selectedCycleId);
+    root.innerHTML = '';
 
-
-
-     const currentCycle = state.cycles?.find(c => c.id === state.selectedCycleId);
-     root.innerHTML = '';
-
-     if (!state._supplementSubscribed) {
-         subscribeSupplements();
-         state._supplementSubscribed = true;
-     }
-     renderTopBar();
-     subscribeSupplements(); // 👈 ВОТ ЭТО ДОБАВЬ
-
-
+    renderTopBar();
 
     const contentContainer = document.createElement('div');
     contentContainer.id = 'supplements-content';

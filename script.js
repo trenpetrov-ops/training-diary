@@ -1,18 +1,31 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { renderMealPage } from './pages/meal.js';
 import { renderReportsPage } from './pages/reports.js';
+import { renderProfilePage } from './pages/profile.js';
 import { renderSupplementsPage } from './pages/supplement.js';
 import { openPdfDateModal } from './pages/supplement.js';
 
 import { openMealsPdfModal } from './pages/meal.js';
 import { generateMealsPdf } from './pages/meal.js';
 import { renderMealsReportPage } from './pages/meal.js';
-import { destroyMealShellState } from './pages/meal.js';
+import { destroyMealShellState, resetMealsState } from './pages/meal.js';
+
+import { resolveSwipePanAxis } from './gestures.js';
+import { attachSwipeRow, closeSwipeRowVisual } from './swipe-engine.js';
 
 import { renderCycleReportPage } from './pages/supplement.js';
 import { resetSupplementsListener } from './pages/supplement.js';
 import {
-    getAuth,
+    initBottomNav,
+    syncBottomNavAfterRender,
+    setBottomNavLayoutFromAppVisibility
+} from './nav/bottom-nav.js';
+// Чтобы отключить нижнее меню: замените импорт выше на './nav/bottom-nav.stub.js'
+import {
+    initializeAuth,
+    browserLocalPersistence,
+    indexedDBLocalPersistence,
+    browserSessionPersistence,
     onAuthStateChanged,
     createUserWithEmailAndPassword,
     signInWithEmailAndPassword,
@@ -28,8 +41,12 @@ import {
     onSnapshot,
     collection,
     getDocs,
-    query,       // 👈 добавь
-    where
+    getDoc,
+    query,
+    where,
+    runTransaction,
+    serverTimestamp,
+    writeBatch
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 // 🔥 ДОБАВЛЯЕМ ИМПОРТЫ ДЛЯ FIREBASE STORAGE
@@ -74,14 +91,18 @@ if (!firebaseConfig || Object.keys(firebaseConfig).length === 0) {
 // 🚀 ИНИЦИАЛИЗАЦИЯ FIREBASE
 // ==========================================================
 
-    const app = initializeApp(firebaseConfig);
+const app = initializeApp(firebaseConfig);
 
-// ==========================================================
-// 🔥 Остальные сервисы
-// ==========================================================
-    const db = getFirestore(app);
-    const auth = getAuth(app);
-    const storage = getStorage(app);
+const db = getFirestore(app);
+const auth = initializeAuth(app, {
+    persistence: [
+        indexedDBLocalPersistence,
+        browserLocalPersistence,
+        browserSessionPersistence
+    ],
+    popupRedirectResolver: undefined
+});
+const storage = getStorage(app);
 
 // ==========================================================
 // 🧩 Глобальные переменные
@@ -94,6 +115,15 @@ let programsUnsubscribe = () => {};
 let journalUnsubscribe = () => {};
 let clientsUnsubscribe = () => {};
 let cyclesUnsubscribe = () => {};
+let cyclesUnsubscribeTrainer = () => {};
+let cyclesUnsubscribeClient = () => {};
+let cyclesTrainerBuffer = [];
+let cyclesClientBuffer = [];
+let cyclesLinkKey = '';
+
+const CODE_LOOKUP_WINDOW_MS = 60_000;
+const CODE_LOOKUP_MAX = 20;
+let codeLookupTimestamps = [];
 // 🔥 ДОБАВЛЕНО: Слушатели для БАДОВ и ОТЧЕТОВ
 let supplementsUnsubscribe = () => {};
 let reportsUnsubscribe = () => {};
@@ -114,6 +144,7 @@ let state = {
     clients: [],
     selectedClientId: null,
     selectedProgramIdForDetails: null,
+    programDetailsOrigin: null,
     expandedExerciseId: null,
     editingSetId: null,
     lastClickedExerciseId: null,
@@ -138,7 +169,14 @@ let state = {
     mealView: 'main',
     currentMealId: null,
     mealSearchTab: 'all',
-
+    /** Вкладка «база»: английская (FatSecret) или заглушка «база пользователей». */
+    mealSearchBaseMode: 'english',
+    mealSearchSortByTab: {
+    all: 'recentlyUsed',
+    products: 'new',
+    recipes: 'new'
+    },
+    mealSearchScrollByTab: { all: 0, products: 0, recipes: 0 },
 
     recipeFoodSearchQuery: '',
     recipeFoodSearchScrollTop: 0,
@@ -157,8 +195,109 @@ let state = {
     },
     mealGoalField: null,
 
+    mealsData: {},
+    selectedDate: null,
+    reportHtmlCache: null,
+    selectedJournalRecord: null,
+    loadedClientIdForCycles: null,
+    cyclesLoaded: false,
+
+    userProfile: null,
+    profileCabinetEditing: false,
+    profileOriginPage: null,
+
+    /** Снимок getBoundingClientRect карточек циклов до render() — для FLIP-анимации */
+    cycleFlipPrevRects: null,
+
 };
 window.state = state;
+
+// =================================================================
+// Контекст: свой / персональный, клиент, цикл (цепочка без смешивания)
+// =================================================================
+function isOwnMode() {
+    return state.currentMode === 'own';
+}
+
+function isPersonalMode() {
+    return state.currentMode === 'personal';
+}
+
+function hasSelectedClient() {
+    return !!state.selectedClientId;
+}
+
+function hasSelectedCycle() {
+    return !!state.selectedCycleId;
+}
+
+function isClientContextReady() {
+    if (!isPersonalMode()) return true;
+    return hasSelectedClient();
+}
+
+function isCycleContextReady() {
+    return hasSelectedCycle() && (isOwnMode() || hasSelectedClient());
+}
+
+function resetCycleScopedState() {
+    resetSupplementsListener();
+    resetMealsState();
+    destroyMealShellState();
+
+    state.selectedCycleId = null;
+
+    state.selectedProgramIdForDetails = null;
+    state.programDetailsOrigin = null;
+    state.expandedExerciseId = null;
+    state.editingSetId = null;
+    state.lastClickedExerciseId = null;
+    state.openSwipedExerciseId = null;
+    state.openSide = null;
+
+    state.supplementPlan = null;
+    state._supplementSubscribed = false;
+
+    state.reports = [];
+    state.selectedReportId = null;
+    state.programs = [];
+    state.openProgramAfterLoad = null;
+    state.reportHtmlCache = null;
+
+    state.selectedFoods = new Set();
+    state.mealView = 'main';
+    state.currentMealId = null;
+    state.mealSearchTab = 'all';
+    state.mealSearchBaseMode = 'english';
+    state.mealSearchSortByTab = { all: 'recentlyUsed', products: 'new', recipes: 'new' };
+    state.mealSearchScrollByTab = { all: 0, products: 0, recipes: 0 };
+    state.recipeFoodSearchQuery = '';
+    state.recipeFoodSearchScrollTop = 0;
+    state.createFoodBackTarget = null;
+    state.recipeSelectedFoodId = null;
+    state.mealGoal = { calories: '', protein: 0, fat: 0, carbs: 0, mode: 'grams' };
+    state.mealGoalField = null;
+    state.mealsData = {};
+    state.selectedDate = null;
+}
+
+function resetClientScopedState() {
+    resetCycleScopedState();
+    state.selectedClientId = null;
+    state.cycles = [];
+    state.loadedClientIdForCycles = null;
+    state.cyclesLoaded = false;
+    state.journal = [];
+    state.selectedJournalCategory = '';
+    state.selectedJournalProgram = '';
+    state.selectedJournalRecord = null;
+}
+
+function resetModeScopedState() {
+    resetClientScopedState();
+    state.previousPage = 'programs';
+    state.lastProgramsPage = 'programs';
+}
 
 
 if (state.calendarYear === undefined) {
@@ -171,9 +310,13 @@ if (state.calendarYear === undefined) {
 let lastTouchEnd = 0;
 document.addEventListener('touchend', function (e) {
     const now = Date.now();
+
     if (now - lastTouchEnd <= 300) {
-        e.preventDefault();
+        if (e.cancelable) {
+            e.preventDefault();
+        }
     }
+
     lastTouchEnd = now;
 }, { passive: false });
 
@@ -215,44 +358,66 @@ export function showToast(message) {
         setTimeout(() => toast.remove(), 500);
     }, 3000);
 }
+window.showToast = showToast;
+
+
 
 // 🔥 Управление видимостью трех основных экранов
 function toggleAppVisibility(isAuthenticated) {
     const authScreen = document.getElementById('auth-screen');
     const modeSelectScreen = document.getElementById('mode-select-screen');
     const container = document.querySelector('.container');
-    const bottomNav = document.querySelector('.navigation');
 
     // Сброс всех экранов
     if (authScreen) authScreen.style.display = 'none';
     if (modeSelectScreen) modeSelectScreen.style.display = 'none';
     if (container) container.style.display = 'none';
-    if (bottomNav) bottomNav.style.display = 'none';
-
     if (!isAuthenticated) {
         // 1. Не авторизован -> Показываем Auth
         if (authScreen) authScreen.style.display = 'flex';
         state.currentPage = 'auth';
+        setBottomNavLayoutFromAppVisibility(false, false);
     } else if (isAuthenticated && state.currentMode === null) {
         // 2. Авторизован, но режим не выбран -> Показываем Mode Select
         if (modeSelectScreen) modeSelectScreen.style.display = 'flex';
         state.currentPage = 'modeSelect';
+        setBottomNavLayoutFromAppVisibility(true, false);
     } else {
         // 3. Авторизован и режим выбран -> Показываем App Container
         if (container) container.style.display = 'block';
-        if (bottomNav) bottomNav.style.display = 'flex';
+        setBottomNavLayoutFromAppVisibility(true, true);
     }
 }
 
 
 // --- ФУНКЦИИ FIREBASE ДЛЯ КОЛЛЕКЦИЙ ---
 
+function getSelectedTrainerClientDoc() {
+    if (state.currentMode !== 'personal' || !state.selectedClientId) return null;
+    return state.clients?.find((c) => c.id === state.selectedClientId) || null;
+}
 
-// ✅ ЦИКЛЫ
+function getActiveLinkedClientUid() {
+    const c = getSelectedTrainerClientDoc();
+    if (c?.linkedUserUid && c.linkStatus === 'active') return c.linkedUserUid;
+    return null;
+}
+
+function selectedCycleUsesClientCanonical() {
+    const cy = state.cycles?.find((x) => x.id === state.selectedCycleId);
+    return !!cy?._firesAtClient;
+}
+
+// ✅ ЦИКЛЫ (при активной связи новые циклы создаются в каноне клиента)
 function getUserCyclesCollection() {
     if (state.currentMode === 'own') {
         return collection(db, `artifacts/${appId}/users/${userId}/cycles`);
-    } else if (state.currentMode === 'personal' && state.selectedClientId) {
+    }
+    if (state.currentMode === 'personal' && state.selectedClientId) {
+        const linked = getActiveLinkedClientUid();
+        if (linked) {
+            return collection(db, `artifacts/${appId}/users/${linked}/cycles`);
+        }
         return collection(db, `artifacts/${appId}/users/${userId}/clients/${state.selectedClientId}/cycles`);
     }
     return null;
@@ -264,7 +429,12 @@ function getUserProgramsCollection() {
 
     if (state.currentMode === 'own') {
         return collection(db, `artifacts/${appId}/users/${userId}/cycles/${state.selectedCycleId}/programs`);
-    } else if (state.currentMode === 'personal' && state.selectedClientId) {
+    }
+    if (state.currentMode === 'personal' && state.selectedClientId) {
+        const linked = getActiveLinkedClientUid();
+        if (linked && selectedCycleUsesClientCanonical()) {
+            return collection(db, `artifacts/${appId}/users/${linked}/cycles/${state.selectedCycleId}/programs`);
+        }
         return collection(db, `artifacts/${appId}/users/${userId}/clients/${state.selectedClientId}/cycles/${state.selectedCycleId}/programs`);
     }
     return null;
@@ -274,7 +444,12 @@ function getUserProgramsCollection() {
 function getUserJournalCollection() {
     if (state.currentMode === 'own') {
         return collection(db, `artifacts/${appId}/users/${userId}/journal`);
-    } else if (state.currentMode === 'personal' && state.selectedClientId) {
+    }
+    if (state.currentMode === 'personal' && state.selectedClientId) {
+        const linked = getActiveLinkedClientUid();
+        if (linked) {
+            return collection(db, `artifacts/${appId}/users/${linked}/journal`);
+        }
         return collection(db, `artifacts/${appId}/users/${userId}/clients/${state.selectedClientId}/journal`);
     }
     return null;
@@ -295,11 +470,59 @@ export function getCycleDocRef() {
     if (state.currentMode === 'own') {
         return doc(db, `artifacts/${appId}/users/${userId}/cycles/${state.selectedCycleId}`);
     }
-    else if (state.currentMode === 'personal' && state.selectedClientId) {
+    if (state.currentMode === 'personal' && state.selectedClientId) {
+        const linked = getActiveLinkedClientUid();
+        if (linked && selectedCycleUsesClientCanonical()) {
+            return doc(db, `artifacts/${appId}/users/${linked}/cycles/${state.selectedCycleId}`);
+        }
         return doc(db, `artifacts/${appId}/users/${userId}/clients/${state.selectedClientId}/cycles/${state.selectedCycleId}`);
     }
 
     return null;
+}
+
+/**
+ * UID владельца библиотеки еды в Firestore.
+ * Только auth.currentUser — путь должен совпадать с request.auth.uid в правилах (без фолбэка на userId).
+ */
+function getMealLibraryOwnerUid() {
+    try {
+        return auth.currentUser?.uid || null;
+    } catch (_) {
+        return null;
+    }
+}
+
+/**
+ * Ключ кэша библиотеки продуктов/рецептов.
+ * Библиотека всегда у вошедшего пользователя (не к циклу и не к карточке клиента).
+ */
+export function getMealLibraryContextKey() {
+    const uid = getMealLibraryOwnerUid();
+    return uid ? `userLib:${uid}` : 'none';
+}
+
+/** Продукты текущего пользователя (вне цикла): artifacts/.../users/{uid}/mealLibraryFoods */
+export function getMealLibraryFoodsCollection() {
+    const uid = getMealLibraryOwnerUid();
+    if (!uid) return null;
+    return collection(doc(db, `artifacts/${appId}/users/${uid}`), 'mealLibraryFoods');
+}
+
+/** Рецепты текущего пользователя: artifacts/.../users/{uid}/mealLibraryRecipes */
+export function getMealLibraryRecipesCollection() {
+    const uid = getMealLibraryOwnerUid();
+    if (!uid) return null;
+    return collection(doc(db, `artifacts/${appId}/users/${uid}`), 'mealLibraryRecipes');
+}
+
+/** Общая база продуктов для всех авторизованных пользователей (копии из библиотек). */
+export function getGlobalFoodCatalogCollection() {
+    return collection(doc(db, `artifacts/${appId}`), 'globalFoodCatalog');
+}
+
+export function getCurrentAuthUid() {
+    return auth.currentUser?.uid || null;
 }
 
 
@@ -310,10 +533,13 @@ export function getReportsCollection() {
 
     if (state.currentMode === 'own') {
         return collection(db, `artifacts/${appId}/users/${userId}/cycles/${state.selectedCycleId}/reports`);
-    } else if (state.currentMode === 'personal' && state.selectedClientId) {
-        return collection(db,
-            `artifacts/${appId}/users/${userId}/clients/${state.selectedClientId}/cycles/${state.selectedCycleId}/reports`
-        );
+    }
+    if (state.currentMode === 'personal' && state.selectedClientId) {
+        const linked = getActiveLinkedClientUid();
+        if (linked && selectedCycleUsesClientCanonical()) {
+            return collection(db, `artifacts/${appId}/users/${linked}/cycles/${state.selectedCycleId}/reports`);
+        }
+        return collection(db, `artifacts/${appId}/users/${userId}/clients/${state.selectedClientId}/cycles/${state.selectedCycleId}/reports`);
     }
     return null;
 }
@@ -324,7 +550,7 @@ export function getReportsCollection() {
 
 
 // --- БАЗОВЫЕ ФУНКЦИИ РЕНДЕРИНГА ---
-function createElement(tag, classes, innerText = '') {
+export function createElement(tag, classes, innerText = '') {
     const el = document.createElement(tag);
     if (classes) {
         el.className = classes;
@@ -333,6 +559,493 @@ function createElement(tag, classes, innerText = '') {
     return el;
 }
 window.createElement = createElement;
+
+// =================================================================
+// 👤 Профиль пользователя (ФИО, дата рождения, публичный номер)
+// =================================================================
+
+function getUserAccountSettingsRef(uid) {
+    return doc(db, 'artifacts', appId, 'users', uid, 'account', 'settings');
+}
+
+function getPublicUserCodeRef(code) {
+    return doc(db, 'artifacts', appId, 'publicUserCodes', code);
+}
+
+export function generatePublicUserCode() {
+    const letters = 'abcdefghijklmnopqrstuvwxyz';
+    const alnum = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let p1 = '';
+    for (let i = 0; i < 6; i++) {
+        const c = letters[Math.floor(Math.random() * 26)];
+        p1 += Math.random() < 0.5 ? c.toUpperCase() : c;
+    }
+    const mid = String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0');
+    let suf = '';
+    for (let i = 0; i < 6; i++) {
+        const c = alnum[Math.floor(Math.random() * alnum.length)];
+        suf += Math.random() < 0.5 ? c.toUpperCase() : c;
+    }
+    return `${p1}-${mid}-${suf}`;
+}
+
+export function normalizePublicCodeInput(raw) {
+    return String(raw || '').trim().replace(/\s+/g, '');
+}
+
+function assertPublicCodeLookupAllowed() {
+    const now = Date.now();
+    codeLookupTimestamps = codeLookupTimestamps.filter((t) => now - t < CODE_LOOKUP_WINDOW_MS);
+    if (codeLookupTimestamps.length >= CODE_LOOKUP_MAX) {
+        throw new Error('Слишком много проверок номера. Подождите минуту.');
+    }
+    codeLookupTimestamps.push(now);
+}
+
+export async function resolvePublicCodeToUid(codeNormalized) {
+    assertPublicCodeLookupAllowed();
+    const ref = getPublicUserCodeRef(codeNormalized);
+    const snap = await getDoc(ref);
+    if (!snap.exists()) return null;
+    const uid = snap.data()?.uid;
+    return typeof uid === 'string' && uid.length > 0 ? uid : null;
+}
+
+function getTrainerInvitesCollection(clientUid) {
+    return collection(db, 'artifacts', appId, 'users', clientUid, 'trainerInvites');
+}
+
+function getLinkedTrainerDocRef(clientUid, trainerUid) {
+    return doc(db, 'artifacts', appId, 'users', clientUid, 'linkedTrainers', trainerUid);
+}
+
+function mergeCyclesTrainerClientBuffers() {
+    const map = new Map();
+    for (const c of cyclesTrainerBuffer) {
+        map.set(c.id, { ...c, _firesAtClient: false });
+    }
+    for (const c of cyclesClientBuffer) {
+        map.set(c.id, { ...c, _firesAtClient: true });
+    }
+    state.cycles = Array.from(map.values());
+}
+
+async function syncTrainerClientCardsFromAcceptedInvites() {
+    if (state.currentMode !== 'personal' || !userId) return;
+    for (const c of state.clients || []) {
+        if (c.linkStatus !== 'pending' || !c.inviteId || !c.linkedUserUid) continue;
+        try {
+            const invRef = doc(db, 'artifacts', appId, 'users', c.linkedUserUid, 'trainerInvites', c.inviteId);
+            const inv = await getDoc(invRef);
+            if (!inv.exists()) continue;
+            const st = inv.data()?.status;
+            if (st === 'accepted') {
+                await updateDoc(doc(getClientsCollection(), c.id), { linkStatus: 'active' });
+            } else if (st === 'rejected') {
+                await deleteDoc(doc(getClientsCollection(), c.id));
+            }
+        } catch (e) {
+            console.warn('sync invite', e);
+        }
+    }
+}
+
+async function createTrainerInviteByPublicCode(codeRaw) {
+    const trainerUid = userId;
+    if (!trainerUid) throw new Error('Не авторизован');
+    const code = normalizePublicCodeInput(codeRaw);
+    if (!code) throw new Error('Введите личный номер клиента');
+    const clientUid = await resolvePublicCodeToUid(code);
+    if (!clientUid) throw new Error('Номер не найден');
+    if (clientUid === trainerUid) throw new Error('Нельзя добавить свой номер');
+
+    let displayName = `Клиент ${code.replace(/-/g, '').slice(0, 10)}…`;
+    try {
+        const prof = await getDoc(getUserAccountSettingsRef(clientUid));
+        if (prof.exists()) {
+            const d = prof.data();
+            const fn = [d.firstName, d.lastName].filter(Boolean).join(' ').trim();
+            if (fn) displayName = fn;
+        }
+    } catch (_) {
+        /* нет доступа к профилю до привязки — оставляем имя по номеру */
+    }
+
+    const clientsCol = getClientsCollection();
+    const newCardRef = doc(clientsCol);
+    const inviteRef = doc(getTrainerInvitesCollection(clientUid));
+    const batch = writeBatch(db);
+    batch.set(newCardRef, {
+        name: displayName,
+        linkedUserUid: clientUid,
+        linkStatus: 'pending',
+        inviteId: inviteRef.id,
+        invitedPublicCode: code,
+        createdAt: serverTimestamp()
+    });
+    batch.set(inviteRef, {
+        trainerUid: trainerUid,
+        trainerClientCardId: newCardRef.id,
+        status: 'pending',
+        createdAt: serverTimestamp()
+    });
+    await batch.commit();
+}
+
+export async function fetchPendingTrainerInvites() {
+    if (!userId) return [];
+    const invitesCol = collection(db, 'artifacts', appId, 'users', userId, 'trainerInvites');
+    const q = query(invitesCol, where('status', '==', 'pending'));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+export async function acceptTrainerInviteClient(inviteId) {
+    if (!userId) throw new Error('Не авторизован');
+    const invRef = doc(db, 'artifacts', appId, 'users', userId, 'trainerInvites', inviteId);
+    const snap = await getDoc(invRef);
+    if (!snap.exists()) throw new Error('Приглашение не найдено');
+    const data = snap.data();
+    if (data.status !== 'pending') throw new Error('Приглашение уже обработано');
+    const trainerUid = data.trainerUid;
+    if (typeof trainerUid !== 'string' || !trainerUid) throw new Error('Некорректные данные приглашения');
+
+    const batch = writeBatch(db);
+    batch.update(invRef, { status: 'accepted', acceptedAt: serverTimestamp() });
+    batch.set(getLinkedTrainerDocRef(userId, trainerUid), {
+        active: true,
+        trainerClientCardId: data.trainerClientCardId || '',
+        linkedAt: serverTimestamp()
+    });
+    await batch.commit();
+}
+
+export async function rejectTrainerInviteClient(inviteId) {
+    if (!userId) throw new Error('Не авторизован');
+    const invRef = doc(db, 'artifacts', appId, 'users', userId, 'trainerInvites', inviteId);
+    const snap = await getDoc(invRef);
+    if (!snap.exists()) return;
+    if (snap.data()?.status !== 'pending') return;
+    await updateDoc(invRef, { status: 'rejected', rejectedAt: serverTimestamp() });
+}
+
+function openAddClientChoiceModal() {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay-cicle modal-overlay-cicle--sheet';
+
+    const modalContent = document.createElement('div');
+    modalContent.className = 'modal-cicle modal-cicle--add-client';
+
+    const title = createElement('h3', 'modal-cicle__title', 'Добавить клиента');
+    const hint = createElement('div', 'modal-cicle__hint modal-hint--rich muted');
+    hint.innerHTML =
+        '<p><span class="modal-hint__badge">По номеру</span> Ученик в приложении — циклы и дневник общие после принятия приглашения.</p>' +
+        '<p><span class="modal-hint__badge modal-hint__badge--soft">Только имя</span> Без приложения — карточка только у вас.</p>';
+
+    const actions = document.createElement('div');
+    actions.className = 'modal-cicle__actions modal-cicle__actions--stack';
+    const byCode = createElement('button', 'btn btn-primary modal-cicle__action-btn', 'По личному номеру');
+    const byName = createElement('button', 'btn btn-secondary modal-cicle__action-btn', 'Только имя (без приложения)');
+    const cancel = createElement('button', 'btn cancel-btn modal-cicle__action-btn modal-cicle__action-btn--ghost', 'Отмена');
+    actions.append(byCode, byName, cancel);
+
+    const close = () => {
+        if (modal.parentNode) document.body.removeChild(modal);
+    };
+
+    byCode.addEventListener('click', () => {
+        close();
+        openAddClientByPublicCodeModal();
+    });
+    byName.addEventListener('click', () => {
+        close();
+        openAddClientByNameModal();
+    });
+    cancel.addEventListener('click', close);
+
+    modalContent.append(title, hint, actions);
+    modal.append(modalContent);
+    document.body.appendChild(modal);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) close();
+    });
+}
+
+function openAddClientByNameModal() {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay-cicle modal-overlay-cicle--sheet';
+
+    const modalContent = document.createElement('div');
+    modalContent.className = 'modal-cicle modal-cicle--add-client';
+
+    const title = createElement('h3', 'modal-cicle__title', 'Клиент только у вас');
+    const hint = createElement('p', 'modal-cicle__hint muted');
+    hint.textContent = 'Введите имя — карточка появится в списке без привязки к аккаунту ученика.';
+
+    const field = document.createElement('div');
+    field.className = 'modal-field';
+    const fieldLabel = createElement('label', 'modal-field__label', 'Имя клиента');
+    fieldLabel.htmlFor = 'add-client-by-name-input';
+    const input = document.createElement('input');
+    input.id = 'add-client-by-name-input';
+    input.type = 'text';
+    input.placeholder = 'Например: Мария';
+    input.className = 'modal-input';
+    field.append(fieldLabel, input);
+
+    const btnRow = document.createElement('div');
+    btnRow.className = 'modal-buttons modal-cicle__footer-actions';
+
+    const cancelBtn = createElement('button', 'btn cancel-btn', 'Отмена');
+    const saveBtn = createElement('button', 'btn btn-primary', 'Добавить');
+
+    const close = () => {
+        if (modal.parentNode) document.body.removeChild(modal);
+    };
+
+    cancelBtn.addEventListener('click', close);
+    saveBtn.addEventListener('click', async () => {
+        const name = input.value.trim();
+        if (!name) {
+            showToast('Введите имя клиента');
+            return;
+        }
+        try {
+            await addDoc(getClientsCollection(), { name, createdAt: Date.now() });
+            showToast('Клиент добавлен');
+            close();
+            render();
+        } catch (error) {
+            console.error('add client', error);
+            showToast('Ошибка сохранения. Проверьте правила Firebase.');
+        }
+    });
+
+    btnRow.append(cancelBtn, saveBtn);
+    modalContent.append(title, hint, field, btnRow);
+    modal.append(modalContent);
+    document.body.appendChild(modal);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) close();
+    });
+    input.focus();
+}
+
+function openAddClientByPublicCodeModal() {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay-cicle modal-overlay-cicle--sheet';
+
+    const modalContent = document.createElement('div');
+    modalContent.className = 'modal-cicle modal-cicle--add-client';
+
+    const title = createElement('h3', 'modal-cicle__title', 'Добавить по личному номеру');
+
+    const hint = createElement('p', 'modal-cicle__hint muted');
+    hint.textContent =
+        'Номер из профиля клиента в приложении. Он получит запрос в личном кабинете и сможет принять или отклонить связь.';
+
+    const field = document.createElement('div');
+    field.className = 'modal-field';
+    const fieldLabel = createElement('label', 'modal-field__label', 'Личный номер');
+    fieldLabel.htmlFor = 'add-client-by-code-input';
+    const input = document.createElement('input');
+    input.id = 'add-client-by-code-input';
+    input.type = 'text';
+    input.placeholder = 'AbCdEf-123456-a1B2c3';
+    input.className = 'modal-input';
+    input.autocomplete = 'off';
+    field.append(fieldLabel, input);
+
+    const btnGroup = document.createElement('div');
+    btnGroup.className = 'modal-buttons modal-cicle__footer-actions';
+
+    const cancelBtn = createElement('button', 'btn cancel-btn', 'Отмена');
+    const confirmBtn = createElement('button', 'btn btn-primary', 'Отправить приглашение');
+
+    const close = () => {
+        if (modal.parentNode) document.body.removeChild(modal);
+    };
+
+    cancelBtn.addEventListener('click', close);
+    confirmBtn.addEventListener('click', async () => {
+        const raw = input.value;
+        confirmBtn.disabled = true;
+        try {
+            await createTrainerInviteByPublicCode(raw);
+            showToast('Приглашение отправлено');
+            close();
+            render();
+        } catch (e) {
+            console.error(e);
+            showToast(e?.message || 'Не удалось отправить приглашение');
+        } finally {
+            confirmBtn.disabled = false;
+        }
+    });
+
+    btnGroup.append(cancelBtn, confirmBtn);
+    modalContent.append(title, hint, field, btnGroup);
+    modal.append(modalContent);
+    document.body.appendChild(modal);
+
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) close();
+    });
+
+    input.focus();
+}
+
+export function buildPublicCodeVisualHTML(code) {
+    if (!code || typeof code !== 'string') return '';
+    const wrap = document.createElement('span');
+    wrap.className = 'public-user-code-visual';
+    let i = 0;
+    for (const ch of code) {
+        const span = document.createElement('span');
+        span.className = 'public-user-code-char';
+        span.textContent = ch;
+        if (ch !== '-') {
+            const h = (code.charCodeAt(i) * 13 + i * 7) % 1000;
+            const scale = 0.88 + (h / 1000) * 0.32;
+            span.style.fontSize = `${Math.round(24 * scale)}px`;
+            span.style.fontWeight = h % 2 === 0 ? '600' : '800';
+        } else {
+            span.style.fontSize = '22px';
+            span.style.opacity = '0.75';
+            span.style.padding = '0 2px';
+        }
+        wrap.appendChild(span);
+        i++;
+    }
+    return wrap.outerHTML;
+}
+
+export async function createUserProfileAndAssignCode(uid, profileFields, mergeBase = null) {
+    const profileRef = getUserAccountSettingsRef(uid);
+    const base = mergeBase && typeof mergeBase === 'object' ? { ...mergeBase } : {};
+    delete base.publicCode;
+
+    for (let attempt = 0; attempt < 50; attempt++) {
+        const code = generatePublicUserCode();
+        const codeRef = getPublicUserCodeRef(code);
+        try {
+            await runTransaction(db, async (transaction) => {
+                const cSnap = await transaction.get(codeRef);
+                if (cSnap.exists()) {
+                    throw Object.assign(new Error('collision'), { _collision: true });
+                }
+                transaction.set(codeRef, {
+                    uid,
+                    assignedAt: serverTimestamp()
+                });
+                transaction.set(profileRef, {
+                    ...base,
+                    firstName: profileFields.firstName || '',
+                    lastName: profileFields.lastName || '',
+                    patronymic: profileFields.patronymic || '',
+                    birthDate: profileFields.birthDate || '',
+                    publicCode: code,
+                    createdAt: base.createdAt || serverTimestamp(),
+                    updatedAt: serverTimestamp()
+                });
+            });
+            return code;
+        } catch (e) {
+            if (e && e._collision) continue;
+            throw e;
+        }
+    }
+    throw new Error('Не удалось создать уникальный номер. Попробуйте позже.');
+}
+
+export async function refreshUserProfileFromServer() {
+    if (!userId) {
+        state.userProfile = null;
+        return null;
+    }
+    const ref = getUserAccountSettingsRef(userId);
+    const snap = await getDoc(ref);
+    state.userProfile = snap.exists() ? snap.data() : null;
+    return state.userProfile;
+}
+
+export async function saveCabinetUserProfile(fields) {
+    if (!userId) throw new Error('Не авторизован');
+    const profileRef = getUserAccountSettingsRef(userId);
+    const snap = await getDoc(profileRef);
+    const existing = snap.exists() ? snap.data() : {};
+
+    if (existing.publicCode) {
+        await updateDoc(profileRef, {
+            firstName: fields.firstName.trim(),
+            lastName: fields.lastName.trim(),
+            patronymic: (fields.patronymic || '').trim(),
+            birthDate: fields.birthDate,
+            updatedAt: serverTimestamp()
+        });
+        await refreshUserProfileFromServer();
+        return { publicCode: existing.publicCode, wasNewCode: false };
+    }
+
+    const code = await createUserProfileAndAssignCode(userId, {
+        firstName: fields.firstName.trim(),
+        lastName: fields.lastName.trim(),
+        patronymic: (fields.patronymic || '').trim(),
+        birthDate: fields.birthDate
+    }, existing);
+    await refreshUserProfileFromServer();
+    return { publicCode: code, wasNewCode: true };
+}
+
+function showPostRegistrationModal(publicCode) {
+    const backdrop = createElement('div', 'modal-overlay post-registration-overlay');
+    const box = createElement('div', 'modal-content post-registration-modal');
+
+    const title = createElement('h3', 'post-registration-modal__title', 'Регистрация завершена');
+    const text = createElement('p', 'muted post-registration-modal__text');
+    text.innerHTML =
+        'Аккаунт создан. Сохраните ваш <strong>личный номер</strong> — по нему тренер сможет пригласить вас в персональный режим.';
+
+    const label = createElement('div', 'post-registration-modal__code-label', 'Ваш уникальный номер');
+
+    const codeHost = document.createElement('div');
+    codeHost.className = 'public-user-code-host post-registration-modal__code';
+    codeHost.innerHTML = buildPublicCodeVisualHTML(publicCode);
+
+    const copyBtn = createElement('button', 'btn btn-secondary post-registration-modal__btn', 'Скопировать номер');
+    copyBtn.onclick = async () => {
+        try {
+            await navigator.clipboard.writeText(publicCode);
+            showToast('Номер скопирован');
+        } catch (_) {
+            showToast('Не удалось скопировать');
+        }
+    };
+
+    const ok = createElement('button', 'btn btn-primary post-registration-modal__btn post-registration-modal__btn--primary', 'Продолжить');
+    ok.onclick = () => backdrop.remove();
+
+    box.append(title, text, label, codeHost, copyBtn, ok);
+    backdrop.append(box);
+    document.body.append(backdrop);
+    backdrop.addEventListener('click', (e) => {
+        if (e.target === backdrop) backdrop.remove();
+    });
+}
+
+export function syncAuthRegisterFieldsVisibility(isLoginMode) {
+    const extra = document.getElementById('auth-register-extra');
+    if (!extra) return;
+    extra.hidden = !!isLoginMode;
+    const screen = document.getElementById('auth-screen');
+    const lede = document.getElementById('auth-lede');
+    if (screen) screen.classList.toggle('auth-screen--register', !isLoginMode);
+    if (lede) {
+        lede.textContent = isLoginMode
+            ? 'Войдите под своей учётной записью.'
+            : 'Заполните данные — получите личный номер для связи с тренером.';
+    }
+}
 
 
 
@@ -412,22 +1125,6 @@ export function dateToInputFormat(dateString) {
 }
 
 // =================================================================
-// 🌟 нав панель
-// =================================================================
-const navWrap = document.querySelector('.navigation-wrap');
-const nav = document.querySelector('.navigation');
-const buttons = document.querySelectorAll('.nav-btn');
-
-buttons.forEach((btn, i) => {
-  btn.addEventListener('click', () => {
-    buttons.forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    nav.dataset.active = i; // двигаем фон
-  });
-});
-
-
-// =================================================================
 // 🌟 РЕНДЕР: КНОПКА СМЕНЫ РЕЖИМА
 // =================================================================
 function renderModeChangeButton(contentContainer) {
@@ -435,10 +1132,8 @@ function renderModeChangeButton(contentContainer) {
 
     const changeModeBtn = createElement('button', 'btn change-mode-btn', 'Сменить режим');
     changeModeBtn.addEventListener('click', () => {
+        resetModeScopedState();
         state.currentMode = null;
-        state.selectedClientId = null;
-        state.selectedCycleId = null;
-        state.selectedProgramIdForDetails = null;
         setupDynamicListeners(); // Отключаем старые слушатели
         toggleAppVisibility(true); // Переключаем на экран выбора режима
     });
@@ -484,8 +1179,12 @@ function renderClientsPage() {
             const clientItem = createElement('div', 'list-item client-item');
             clientItem.dataset.id = client.id;
 
+            const pendingBadge =
+                client.linkStatus === 'pending'
+                    ? '<span class="muted" style="font-size:12px;margin-left:6px">ожидает ответа</span>'
+                    : '';
             clientItem.innerHTML = `
-                <div>${client.name}</div>
+                <div>${client.name}${pendingBadge}</div>
                 <div>
                     <button class="btn menu-btn">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
@@ -506,12 +1205,9 @@ function renderClientsPage() {
             // Клик по карточке → переход к циклам клиента
             clientItem.addEventListener('click', (e) => {
                 if (!e.target.closest('.menu-btn')) {
+                    resetClientScopedState();
                     state.selectedClientId = client.id;
                     state.currentPage = 'programs';
-                    state.selectedCycleId = null;
-                    state.selectedProgramIdForDetails = null;
-                    state.expandedExerciseId = null;
-                    state.editingSetId = null;
 
                     setupDynamicListeners();
                     render();
@@ -529,18 +1225,7 @@ function renderClientsPage() {
     addClientBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><title>Plus SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2" d="M12 20v-8m0 0V4m0 8h8m-8 0H4"/></svg>';
 
     addClientBtn.addEventListener('click', () => {
-        openAddClientModal(async (name) => {
-            const newClient = {
-                name: name,
-                createdAt: Date.now()
-            };
-            try {
-                await addDoc(getClientsCollection(), newClient);
-            } catch (error) {
-                console.error("Ошибка при добавлении клиента:", error);
-                showToast('Ошибка сохранения. Проверьте правила Firebase!');
-            }
-        });
+        openAddClientChoiceModal();
     });
     clientsList.append(addClientBtn);
 
@@ -574,7 +1259,9 @@ function openClientMenuModal(client) {
         openConfirmModal("Удалить этого клиента?", async () => {
             await deleteDoc(doc(getClientsCollection(), client.id));
             if (state.selectedClientId === client.id) {
-                state.selectedClientId = null;
+                resetClientScopedState();
+                setupDynamicListeners();
+                render();
             }
         });
     });
@@ -640,51 +1327,83 @@ function openEditClientModal(client) {
 }
 
 // =================================================================
-// 🌟 МОДАЛКА: ДОБАВЛЕНИЕ КЛИЕНТА
+// FLIP-анимация сетки циклов (перестановка без «рывка» и вылезания за экран)
 // =================================================================
-function openAddClientModal(onConfirm) {
-    const modal = document.createElement('div');
-    modal.className = 'modal-overlay-cicle';
-
-    const modalContent = document.createElement('div');
-    modalContent.className = 'modal-cicle';
-
-    const title = document.createElement('h3');
-    title.textContent = 'Добавление клиента';
-
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.placeholder = 'Введите имя клиента...';
-    input.className = 'modal-input';
-
-    const btnGroup = document.createElement('div');
-    btnGroup.className = 'modal-buttons';
-
-    const cancelBtn = createElement('button', 'btn cancel-btn', 'Отмена');
-    const confirmBtn = createElement('button', 'btn btn-primary', 'добавить');
-
-    cancelBtn.addEventListener('click', () => document.body.removeChild(modal));
-    confirmBtn.addEventListener('click', async () => {
-        const name = input.value.trim();
-        if (!name) {
-            showToast('Введите имя клиента!');
-            return;
-        }
-        await onConfirm(name);
-        document.body.removeChild(modal);
+function captureCycleCardRectsForFlip() {
+    const board = document.querySelector('#cycles-content .programs-list--cycles-board');
+    if (!board) return null;
+    const nodes = board.querySelectorAll('.cycle-card');
+    if (!nodes.length) return null;
+    const map = new Map();
+    nodes.forEach((el) => {
+        const r = el.getBoundingClientRect();
+        map.set(el.dataset.id, { left: r.left, top: r.top, width: r.width, height: r.height });
     });
+    return map;
+}
 
-    btnGroup.append( confirmBtn);
-    modalContent.append( input, btnGroup);
-    modal.append(modalContent);
-    document.body.appendChild(modal);
+function runCycleGridFlipAnimation(prevRects) {
+    if (!prevRects || !prevRects.size) return;
+    const board = document.querySelector('#cycles-content .programs-list--cycles-board');
+    if (!board) return;
+    const cards = [...board.querySelectorAll('.cycle-card')];
+    if (!cards.length) return;
 
-    // Закрытие при клике вне модалки
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) document.body.removeChild(modal);
+    board.classList.add('programs-list--cycles-board--flipping');
+
+    let cleaned = false;
+    const finishCleanup = () => {
+        if (cleaned) return;
+        cleaned = true;
+        if (board.isConnected) board.classList.remove('programs-list--cycles-board--flipping');
+        cards.forEach((el) => {
+            if (!el.isConnected) return;
+            el.style.transition = '';
+            el.style.transform = '';
+            el.style.opacity = '';
+        });
+    };
+
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            const nextRects = new Map();
+            cards.forEach((el) => {
+                const r = el.getBoundingClientRect();
+                nextRects.set(el.dataset.id, r);
+            });
+
+            cards.forEach((el) => {
+                const id = el.dataset.id;
+                const prev = prevRects.get(id);
+                const next = nextRects.get(id);
+                el.style.transition = 'none';
+                if (prev && next) {
+                    const dx = prev.left - next.left;
+                    const dy = prev.top - next.top;
+                    if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+                        el.style.transform = `translate(${dx}px, ${dy}px)`;
+                    }
+                } else {
+                    el.style.opacity = '0';
+                    el.style.transform = 'translateY(14px)';
+                }
+            });
+
+            requestAnimationFrame(() => {
+                cards.forEach((el) => {
+                    const id = el.dataset.id;
+                    const hadPrev = prevRects.has(id);
+                    el.style.transition = hadPrev
+                        ? 'transform 0.48s cubic-bezier(0.22, 1, 0.32, 1), opacity 0.32s ease'
+                        : 'transform 0.42s cubic-bezier(0.22, 1, 0.32, 1), opacity 0.42s ease';
+                    el.style.transform = '';
+                    el.style.opacity = '';
+                });
+
+                setTimeout(finishCleanup, 520);
+            });
+        });
     });
-
-    input.focus();
 }
 
 // =================================================================
@@ -711,46 +1430,77 @@ function renderCyclesPage() {
     contentContainer.append(header);
 
     // -----------------------------------------------------------
-    // СПИСОК ЦИКЛОВ
+    // СПИСОК ЦИКЛОВ (активация цикла → меню; «Перейти к тренировкам» → список программ)
     // -----------------------------------------------------------
-    const cyclesList = createElement('div', 'programs-list list-section');
+    const cyclesList = createElement('div', 'programs-list programs-list--cycles-board list-section');
 
     if (state.cycles.length === 0) {
         cyclesList.append(createElement('div', 'muted', 'Нет циклов. Создайте первый!'));
     } else {
-        state.cycles.forEach(cycle => {
-            const cycleItem = createElement('div', 'list-item program-item');
+        state.cycles.forEach((cycle) => {
+            const cycleItem = createElement('div', 'list-item program-item cycle-card');
             cycleItem.dataset.id = cycle.id;
+            const isActive = state.selectedCycleId === cycle.id;
+            if (isActive) cycleItem.classList.add('cycle-card--active');
 
-            // карточка с кнопкой ⋮
-            cycleItem.innerHTML = `
-                <div>${cycle.name} <small class="muted">(${cycle.startDateString})</small></div>
-                <div>
-                    <button class="btn menu-btn"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-    <circle cx="5" cy="12" r="2"/>
-    <circle cx="12" cy="12" r="2"/>
-    <circle cx="19" cy="12" r="2"/></button>
-                </div>`;
+            const headerRow = createElement('div', 'cycle-card-header');
+            const titleEl = createElement('div', 'cycle-card-title');
+            titleEl.innerHTML = `${cycle.name} <small class="muted">(${cycle.startDateString || '—'})</small>`;
+            titleEl.addEventListener('click', (e) => {
+                if (state.selectedCycleId === cycle.id) {
+                    e.stopPropagation();
+                    state.currentPage = 'programsInCycle';
+                    state.lastProgramsPage = 'programsInCycle';
+                    render();
+                }
+            });
 
-            // Открываем меню (редактировать / удалить)
-            const menuBtn = cycleItem.querySelector('.menu-btn');
+            const menuBtn = createElement('button', 'btn menu-btn');
+            menuBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>`;
             menuBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 openCycleMenuModal(cycle);
             });
+            headerRow.append(titleEl, menuBtn);
+            cycleItem.append(headerRow);
 
-            // Клик по карточке → открыть программы в цикле
-            cycleItem.addEventListener('click', (e) => {
-                if (!e.target.closest('.menu-btn')) {
-                    state.selectedCycleId = cycle.id;
+            if (isActive) {
+                const expand = createElement('div', 'cycle-card-expand');
+                const goBtn = createElement('button', 'btn btn-primary cycle-goto-programs-btn', 'Перейти к тренировкам');
+                goBtn.innerHTML = `<span>Перейти к тренировкам</span>
+                                    <span>
+                                       <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Arrow-drop-right-line SVG Icon</title><path fill="currentColor" d="M12.172 12L9.343 9.173l1.415-1.414L15 12l-4.242 4.242l-1.415-1.414z"></path></svg>
+                                    </span>
+                                    `;
+                goBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
                     state.currentPage = 'programsInCycle';
-                    state.selectedProgramIdForDetails = null;
-                    state.expandedExerciseId = null;
-                    state.editingSetId = null;
-                    state.supplementPlan = null;
+                    state.lastProgramsPage = 'programsInCycle';
+                    render();
+                });
+                expand.appendChild(goBtn);
+                cycleItem.appendChild(expand);
+            }
+
+            cycleItem.addEventListener('click', (e) => {
+                if (e.target.closest('.menu-btn')) return;
+                if (e.target.closest('.cycle-goto-programs-btn')) return;
+
+                if (state.selectedCycleId === cycle.id) {
+                    state.cycleFlipPrevRects = captureCycleCardRectsForFlip();
+                    resetCycleScopedState();
+                    state.selectedJournalCategory = '';
+                    state.loadedClientIdForCycles = null;
                     setupDynamicListeners();
                     render();
+                    return;
                 }
+
+                state.cycleFlipPrevRects = captureCycleCardRectsForFlip();
+                state.selectedCycleId = cycle.id;
+                state.selectedJournalCategory = cycle.name || '';
+                setupDynamicListeners();
+                render();
             });
 
             cyclesList.append(cycleItem);
@@ -760,8 +1510,8 @@ function renderCyclesPage() {
     // -----------------------------------------------------------
     // Кнопка "Добавить цикл"
     // -----------------------------------------------------------
-    const addCycleBtn = createElement('button', 'btn btn-primary add-cycle-btn');
-    addCycleBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><title>Plus SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2" d="M12 20v-8m0 0V4m0 8h8m-8 0H4"/></svg>';
+    const addCycleBtn = createElement('button', 'btn btn-primary add-cycle-btn add-cycle-btn--fullrow');
+    addCycleBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 14 14"><title>Add-1-solid SVG Icon</title><path fill="currentColor" fill-rule="evenodd" d="M8 1a1 1 0 0 0-2 0v5H1a1 1 0 0 0 0 2h5v5a1 1 0 1 0 2 0V8h5a1 1 0 1 0 0-2H8z" clip-rule="evenodd"></path></svg>';
 
     addCycleBtn.addEventListener('click', () => {
         openAddCycleModal(async (name) => {
@@ -782,7 +1532,14 @@ function renderCyclesPage() {
     cyclesList.append(addCycleBtn);
 
     contentContainer.append(cyclesList);
-    root.append(contentContainer);
+    const rootEl = document.getElementById('root');
+    rootEl.append(contentContainer);
+
+    const flipPrev = state.cycleFlipPrevRects;
+    state.cycleFlipPrevRects = null;
+    if (flipPrev && flipPrev.size) {
+        runCycleGridFlipAnimation(flipPrev);
+    }
 }
 
 // =================================================================
@@ -991,6 +1748,7 @@ function renderProgramsInCyclePage() {
             programItem.addEventListener('click', (e) => {
                 if (!e.target.closest('.menu-btn')) {
                     state.selectedProgramIdForDetails = program.id;
+                    state.programDetailsOrigin = 'programsInCycle';
                     state.currentPage = 'programDetails';
                     state.expandedExerciseId = null;
                     state.editingSetId = null;
@@ -1006,21 +1764,32 @@ function renderProgramsInCyclePage() {
     // Кнопка "Добавить программу"
     // -----------------------------------------------------------
     const addProgramBtn = createElement('button', 'btn btn-primary add-program-btn');
-    addProgramBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><title>Plus SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2" d="M12 20v-8m0 0V4m0 8h8m-8 0H4"/></svg>';
+    addProgramBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 14 14"><title>Add-1-solid SVG Icon</title><path fill="currentColor" fill-rule="evenodd" d="M8 1a1 1 0 0 0-2 0v5H1a1 1 0 0 0 0 2h5v5a1 1 0 1 0 2 0V8h5a1 1 0 1 0 0-2H8z" clip-rule="evenodd"></path></svg>';
     addProgramBtn.addEventListener('click', () => {
-        openAddProgramModal(async (name) => {
-            const newProgram = {
-                name: name,
-                exercises: [],
-                trainingNote: ''
-            };
-            try {
-                await addDoc(getUserProgramsCollection(), newProgram);
-            } catch (error) {
-                console.error("Ошибка при добавлении программы:", error);
-                showToast('Ошибка сохранения. Проверьте правила Firebase!');
+        openAddProgramModal(
+            async (name) => {
+                const newProgram = {
+                    name: name,
+                    exercises: [],
+                    trainingNote: ''
+                };
+                try {
+                    await addDoc(getUserProgramsCollection(), newProgram);
+                } catch (error) {
+                    console.error("Ошибка при добавлении программы:", error);
+                    showToast('Ошибка сохранения. Проверьте правила Firebase!');
+                }
+            },
+            async (programCopy) => {
+                try {
+                    await addDoc(getUserProgramsCollection(), programCopy);
+                    showToast('Программа скопирована');
+                } catch (error) {
+                    console.error("Ошибка при копировании программы:", error);
+                    showToast('Ошибка копирования. Проверьте правила Firebase!');
+                }
             }
-        });
+        );
     });
     programsList.append(addProgramBtn);
 
@@ -1122,48 +1891,242 @@ function openEditProgramModal(program) {
 // =================================================================
 // 🌟 МОДАЛКА: ДОБАВЛЕНИЕ ПРОГРАММЫ
 // =================================================================
-function openAddProgramModal(onConfirm) {
+function openAddProgramModal(onConfirmNew, onConfirmCopy) {
     const modal = document.createElement('div');
-    modal.className = 'modal-overlay-cicle';
+    modal.className = 'modal-overlay-cicle modal-overlay-cicle--sheet';
 
     const modalContent = document.createElement('div');
-    modalContent.className = 'modal-cicle';
+    modalContent.className = 'modal-cicle modal-cicle--add-program';
 
-    const title = document.createElement('h3');
-    title.textContent = 'Создание новой программы';
+    const title = createElement('h3', 'modal-cicle__title', 'Добавить новую программу');
 
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.placeholder = 'Введите название программы...';
-    input.className = 'modal-input';
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.placeholder = 'Введите название программы...';
+    nameInput.className = 'modal-input';
 
-    const btnGroup = document.createElement('div');
-    btnGroup.className = 'modal-buttons';
+    const divider = createElement('div', 'add-program-section-label', 'Перенос программы из другого цикла');
 
-    const confirmBtn = createElement('button', 'btn btn-primary', 'добавить');
+    let selectedCycleId = '';
+    let selectedProgramId = '';
+    let loadedPrograms = [];
 
+    // --- Custom cycle dropdown ---
+    const cycleRow = createElement('div', 'add-program-dropdown-row');
+    const cycleText = createElement('span', 'add-program-dropdown-text', 'Выберите цикл');
+    const cycleArrow = createElement('span', 'cycle-label-arrow', '▾');
+    cycleRow.append(cycleText, cycleArrow);
 
-    confirmBtn.addEventListener('click', async () => {
-        const name = input.value.trim();
-        if (!name) {
-            showToast('Введите название программы!');
-            return;
-        }
-        await onConfirm(name);
-        document.body.removeChild(modal);
+    const cycleDropdown = createElement('div', 'add-program-dropdown-list');
+    (state.cycles || []).forEach(cycle => {
+        if (cycle.id === state.selectedCycleId) return;
+        const item = createElement('div', 'add-program-dropdown-item', cycle.name);
+        item.dataset.id = cycle.id;
+        cycleDropdown.append(item);
     });
 
-    btnGroup.append(confirmBtn);
-    modalContent.append(input, btnGroup);
+    const cycleWrap = createElement('div', 'add-program-dropdown-wrap');
+    cycleWrap.append(cycleRow, cycleDropdown);
+
+    // --- Custom program dropdown ---
+    const programRow = createElement('div', 'add-program-dropdown-row add-program-dropdown-row--disabled');
+    const programText = createElement('span', 'add-program-dropdown-text', 'Выберите программу');
+    const programArrow = createElement('span', 'cycle-label-arrow', '▾');
+    programRow.append(programText, programArrow);
+
+    const programDropdown = createElement('div', 'add-program-dropdown-list');
+    const programWrap = createElement('div', 'add-program-dropdown-wrap');
+    programWrap.append(programRow, programDropdown);
+
+    const confirmBtn = createElement('button', 'btn btn-primary add-program-confirm-btn', 'Добавить');
+    confirmBtn.disabled = true;
+    const cancelBtn = createElement('button', 'btn add-program-cancel-btn', 'Отмена');
+
+    function closeAllDropdowns() {
+        cycleDropdown.classList.remove('open');
+        cycleArrow.classList.remove('open');
+        programDropdown.classList.remove('open');
+        programArrow.classList.remove('open');
+    }
+
+    function updateConfirmState() {
+        const hasName = nameInput.value.trim().length > 0;
+        const hasCopy = selectedCycleId && selectedProgramId;
+        confirmBtn.disabled = !hasName && !hasCopy;
+        confirmBtn.classList.toggle('disabled', confirmBtn.disabled);
+    }
+
+    function resetCopySelection() {
+        selectedCycleId = '';
+        selectedProgramId = '';
+        loadedPrograms = [];
+        cycleText.textContent = 'Выберите цикл';
+        cycleText.classList.remove('add-program-dropdown-text--active');
+        cycleDropdown.querySelectorAll('.add-program-dropdown-item').forEach(i => i.classList.remove('active'));
+        programText.textContent = 'Выберите программу';
+        programText.classList.remove('add-program-dropdown-text--active');
+        programRow.classList.add('add-program-dropdown-row--disabled');
+        programDropdown.innerHTML = '';
+        closeAllDropdowns();
+    }
+
+    nameInput.addEventListener('input', () => {
+        if (nameInput.value.trim().length > 0) {
+            resetCopySelection();
+        }
+        updateConfirmState();
+    });
+
+    cycleRow.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (nameInput.value.trim().length > 0) {
+            nameInput.value = '';
+            updateConfirmState();
+        }
+        programDropdown.classList.remove('open');
+        programArrow.classList.remove('open');
+        cycleDropdown.classList.toggle('open');
+        cycleArrow.classList.toggle('open');
+    });
+
+    cycleDropdown.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const item = e.target.closest('.add-program-dropdown-item');
+        if (!item) return;
+
+        selectedCycleId = item.dataset.id;
+        cycleText.textContent = item.textContent;
+        cycleText.classList.add('add-program-dropdown-text--active');
+        cycleDropdown.querySelectorAll('.add-program-dropdown-item').forEach(i => i.classList.remove('active'));
+        item.classList.add('active');
+        closeAllDropdowns();
+
+        nameInput.value = '';
+        selectedProgramId = '';
+        programText.textContent = 'Загрузка…';
+        programText.classList.remove('add-program-dropdown-text--active');
+        programRow.classList.add('add-program-dropdown-row--disabled');
+        programDropdown.innerHTML = '';
+        loadedPrograms = [];
+
+        try {
+            let programsRef;
+            if (state.currentMode === 'own') {
+                programsRef = collection(db, `artifacts/${appId}/users/${userId}/cycles/${selectedCycleId}/programs`);
+            } else if (state.currentMode === 'personal' && state.selectedClientId) {
+                const linked = getActiveLinkedClientUid();
+                const cy = state.cycles?.find(c => c.id === selectedCycleId);
+                if (linked && cy?._firesAtClient) {
+                    programsRef = collection(db, `artifacts/${appId}/users/${linked}/cycles/${selectedCycleId}/programs`);
+                } else {
+                    programsRef = collection(db, `artifacts/${appId}/users/${userId}/clients/${state.selectedClientId}/cycles/${selectedCycleId}/programs`);
+                }
+            }
+
+            if (!programsRef) {
+                programText.textContent = 'Выберите программу';
+                updateConfirmState();
+                return;
+            }
+
+            const snap = await getDocs(programsRef);
+            loadedPrograms = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+            if (loadedPrograms.length === 0) {
+                programText.textContent = 'Нет программ';
+                updateConfirmState();
+                return;
+            }
+
+            programDropdown.innerHTML = '';
+            loadedPrograms.forEach(prog => {
+                const pi = createElement('div', 'add-program-dropdown-item', prog.name || 'Без названия');
+                pi.dataset.id = prog.id;
+                programDropdown.append(pi);
+            });
+            programText.textContent = 'Выберите программу';
+            programRow.classList.remove('add-program-dropdown-row--disabled');
+        } catch (err) {
+            console.error('Ошибка загрузки программ цикла:', err);
+            showToast('Не удалось загрузить программы');
+            programText.textContent = 'Ошибка загрузки';
+        }
+        updateConfirmState();
+    });
+
+    programRow.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (programRow.classList.contains('add-program-dropdown-row--disabled')) return;
+        cycleDropdown.classList.remove('open');
+        cycleArrow.classList.remove('open');
+        programDropdown.classList.toggle('open');
+        programArrow.classList.toggle('open');
+    });
+
+    programDropdown.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const item = e.target.closest('.add-program-dropdown-item');
+        if (!item) return;
+
+        selectedProgramId = item.dataset.id;
+        programText.textContent = item.textContent;
+        programText.classList.add('add-program-dropdown-text--active');
+        programDropdown.querySelectorAll('.add-program-dropdown-item').forEach(i => i.classList.remove('active'));
+        item.classList.add('active');
+        closeAllDropdowns();
+        updateConfirmState();
+    });
+
+    confirmBtn.addEventListener('click', async () => {
+        if (confirmBtn.disabled) return;
+        confirmBtn.disabled = true;
+
+        const name = nameInput.value.trim();
+        if (name) {
+            await onConfirmNew(name);
+            modal.remove();
+            return;
+        }
+
+        const program = loadedPrograms.find(p => p.id === selectedProgramId);
+        if (!program) {
+            showToast('Программа не найдена');
+            confirmBtn.disabled = false;
+            return;
+        }
+
+        const programCopy = {
+            name: program.name || 'Без названия',
+            exercises: Array.isArray(program.exercises)
+                ? program.exercises.map(ex => ({
+                    ...ex,
+                    sets: Array.isArray(ex.sets) ? ex.sets.map(s => ({ ...s })) : []
+                }))
+                : [],
+            trainingNote: program.trainingNote || ''
+        };
+
+        await onConfirmCopy(programCopy);
+        modal.remove();
+    });
+
+    cancelBtn.addEventListener('click', () => {
+        modal.remove();
+    });
+
+    const btnGroup = createElement('div', 'add-program-actions');
+    btnGroup.append(cancelBtn, confirmBtn);
+
+    modalContent.append(title, nameInput, divider, cycleWrap, programWrap, btnGroup);
     modal.append(modalContent);
     document.body.appendChild(modal);
 
-    // Закрытие при клике вне модалки
     modal.addEventListener('click', (e) => {
-        if (e.target === modal) document.body.removeChild(modal);
+        if (e.target === modal) modal.remove();
+        else if (!e.target.closest('.add-program-dropdown-wrap')) closeAllDropdowns();
     });
 
-    input.focus();
+    nameInput.focus();
 }
 
 
@@ -1559,18 +2522,10 @@ let __openSwipeRoot = null;
 
 function __closeSwipe(swipeRoot) {
   if (!swipeRoot) return;
-  const content = swipeRoot.querySelector('.swipe-content');
-  if (!content) return;
-
-  content.style.transition = 'transform 200ms ease';
-  content.style.transform = 'translateX(0px)';
+  closeSwipeRowVisual(swipeRoot, () => {});
   swipeRoot.classList.remove('open-left', 'open-right');
 
   if (__openSwipeRoot === swipeRoot) __openSwipeRoot = null;
-
-  setTimeout(() => {
-    content.style.transition = '';
-  }, 220);
 }
 
 function closeAllSwipes() {
@@ -1593,34 +2548,19 @@ document.addEventListener('pointerdown', (e) => {
 function attachSwipeActions(swipeRoot, selectedProgram, exercise) {
   const content = swipeRoot.querySelector('.swipe-content');
   const rightActions = swipeRoot.querySelector('.swipe-actions.right');
-
-  let startX = 0;
-  let startY = 0;
-  let currentX = 0;
-  let lastX = 0;
-  let lastTime = 0;
-  let velocity = 0;
-  let dragging = false;
-  let opened = false;
-  let ignoreSwipe = false;
-  let hasMovedHorizontally = false;
+  if (!content) return;
 
   const MAX_RIGHT = rightActions ? rightActions.offsetWidth || 120 : 120;
-  const OPEN_THRESHOLD = 40;
-  const DEAD_ZONE = 12;
-  const VELOCITY_THRESHOLD = 0.35; // скорость взмаха
-  const BOUNCE_DISTANCE = 15; // насколько «отпружинивает» за предел
 
-  // --- Кнопки ---
   rightActions?.querySelector('.action-edit')?.addEventListener('click', (e) => {
     e.stopPropagation();
-    closeSwipe();
+    closeSwipeRowVisual(swipeRoot, () => {});
     openEditExerciseModal(selectedProgram, exercise);
   });
 
   rightActions?.querySelector('.action-delete')?.addEventListener('click', (e) => {
     e.stopPropagation();
-    closeSwipe();
+    closeSwipeRowVisual(swipeRoot, () => {});
     openConfirmModal('Удалить упражнение?', async () => {
       const progRef = doc(getUserProgramsCollection(), selectedProgram.id);
       const filtered = selectedProgram.exercises.filter(ex => ex.id !== exercise.id);
@@ -1629,124 +2569,18 @@ function attachSwipeActions(swipeRoot, selectedProgram, exercise) {
     });
   });
 
-  function closeSwipe() {
-    content.style.transition = 'transform 200ms cubic-bezier(0.22, 1.61, 0.36, 1)';
-    content.style.transform = 'translateX(0)';
-    swipeRoot.classList.remove('open');
-    opened = false;
-    setTimeout(() => (content.style.transition = ''), 250);
-  }
+  if (swipeRoot.dataset.exerciseSwipeBound === '1') return;
+  swipeRoot.dataset.exerciseSwipeBound = '1';
 
-  function openSwipe() {
-    content.style.transition = 'transform 200ms cubic-bezier(0.22, 1.61, 0.36, 1)';
-    content.style.transform = `translateX(-${MAX_RIGHT}px)`;
-    swipeRoot.classList.add('open');
-    opened = true;
-    setTimeout(() => (content.style.transition = ''), 250);
-  }
-
-  // 👇 Мягкое "отпружинивание" при чрезмерном свайпе
-  function bounceTo(position) {
-    content.style.transition = 'transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1)';
-    content.style.transform = `translateX(${position}px)`;
-    setTimeout(() => {
-      content.style.transition = 'transform 200ms ease-out';
-      content.style.transform = opened
-        ? `translateX(-${MAX_RIGHT}px)`
-        : 'translateX(0px)';
-      setTimeout(() => (content.style.transition = ''), 220);
-    }, 200);
-  }
-
-  // === Свайп ===
-  content.addEventListener('touchstart', (e) => {
-    if (e.target.closest('button') || e.target.closest('.menu-btn') || e.target.closest('svg')) {
-      ignoreSwipe = true;
-      return;
-    }
-    ignoreSwipe = false;
-    dragging = true;
-    hasMovedHorizontally = false;
-    startX = e.touches[0].clientX;
-    startY = e.touches[0].clientY;
-    lastX = startX;
-    lastTime = Date.now();
-  });
-
-  content.addEventListener('touchmove', (e) => {
-    if (!dragging || ignoreSwipe) return;
-    const touch = e.touches[0];
-    currentX = touch.clientX;
-    const deltaX = currentX - startX;
-    const deltaY = touch.clientY - startY;
-
-    if (Math.abs(deltaY) > Math.abs(deltaX)) return;
-    if (Math.abs(deltaX) < DEAD_ZONE) return;
-
-    hasMovedHorizontally = true;
-    if (e.cancelable) e.preventDefault();
-
-    const now = Date.now();
-    const dt = now - lastTime;
-    if (dt > 0) velocity = (currentX - lastX) / dt;
-    lastX = currentX;
-    lastTime = now;
-
-    let translate;
-
-    if (opened) {
-      translate = Math.min(BOUNCE_DISTANCE, Math.max(deltaX - MAX_RIGHT, -MAX_RIGHT - BOUNCE_DISTANCE));
-    } else {
-      translate = Math.min(BOUNCE_DISTANCE, Math.max(deltaX, -MAX_RIGHT - BOUNCE_DISTANCE));
-    }
-
-    content.style.transform = `translateX(${translate}px)`;
-  });
-
-  content.addEventListener('touchend', () => {
-    if (ignoreSwipe) return;
-    dragging = false;
-
-    const deltaX = currentX - startX;
-
-    // короткий тап
-    if (!hasMovedHorizontally) {
-      if (opened) closeSwipe();
-      return;
-    }
-
-    // “ФИЗИКА” — скорость
-    if (velocity < -VELOCITY_THRESHOLD) {
-      openSwipe();
-      return;
-    }
-    if (velocity > VELOCITY_THRESHOLD) {
-      closeSwipe();
-      return;
-    }
-
-    // Если ушёл слишком далеко влево или вправо — отпружиниваем
-    if (deltaX < -MAX_RIGHT - 10) {
-      bounceTo(-MAX_RIGHT - 10);
-      return;
-    }
-    if (deltaX > 10 && opened) {
-      bounceTo(10);
-      return;
-    }
-
-    // Стандартная логика
-    if (!opened && deltaX < -OPEN_THRESHOLD) {
-      openSwipe();
-    } else if (opened && deltaX > OPEN_THRESHOLD) {
-      closeSwipe();
-    } else {
-      opened ? openSwipe() : closeSwipe();
-    }
-  });
-
-  document.addEventListener('click', (e) => {
-    if (opened && !swipeRoot.contains(e.target)) closeSwipe();
+  attachSwipeRow({
+    swipeRoot,
+    contentEl: content,
+    maxSwipe: MAX_RIGHT,
+    rootSelectorForSameType: '.exercise-swipe',
+    onSwipeActiveVisual: null,
+    onSwipeClosedVisual: null,
+    onBeforeOpen: null,
+    addDocumentClickOutside: true
   });
 }
 
@@ -1758,38 +2592,60 @@ function attachSwipeActions(swipeRoot, selectedProgram, exercise) {
 
 function enableSwipeDone(setRow, set) {
     let startX = 0;
+    let startY = 0;
+    let currentX = 0;
     let isSwipe = false;
     let dragged = false;
+    let panAxis = null;
 
     setRow.addEventListener("touchstart", (e) => {
+        if (!e.touches || !e.touches.length) return;
         startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+        currentX = startX;
         isSwipe = true;
         dragged = false;
+        panAxis = null;
     });
 
     setRow.addEventListener("touchmove", (e) => {
-        if (!isSwipe) return;
+        if (!isSwipe || !e.touches || !e.touches.length) return;
 
-        const diff = e.touches[0].clientX - startX;
+        currentX = e.touches[0].clientX;
+        const deltaX = currentX - startX;
+        const deltaY = e.touches[0].clientY - startY;
 
-        if (Math.abs(diff) > 5) {
+        if (!panAxis) {
+            panAxis = resolveSwipePanAxis(deltaX, deltaY);
+            if (panAxis == null) return;
+            if (panAxis === "y") {
+                isSwipe = false;
+                return;
+            }
+        }
+
+        if (panAxis !== "x") return;
+
+        if (e.cancelable) e.preventDefault();
+
+        const diff = deltaX;
+        if (Math.abs(diff) > 10) {
             setRow.style.transform = `translateX(${diff * 0.3}px)`;
             dragged = true;
         }
-    });
+    }, { passive: false });
 
     setRow.addEventListener("touchend", (e) => {
+        panAxis = null;
         if (!isSwipe) return;
         isSwipe = false;
 
-        const diff = e.changedTouches[0].clientX - startX;
+        const diff = (e.changedTouches && e.changedTouches[0]
+            ? e.changedTouches[0].clientX
+            : currentX) - startX;
 
         if (Math.abs(diff) > 45) {
-
-            // 🔥 сохраняем состояние подхода
             set.done = !set.done;
-
-            // переключаем визуальный класс
             setRow.classList.toggle("done", set.done);
         }
 
@@ -1797,7 +2653,7 @@ function enableSwipeDone(setRow, set) {
 
         if (dragged) {
             setRow._preventClick = true;
-            setTimeout(() => setRow._preventClick = false, 100);
+            setTimeout(() => { setRow._preventClick = false; }, 120);
         }
     });
 }
@@ -2304,7 +3160,9 @@ contentContainer.append(commentWrapper);
         });
 
         showToast('Тренировка сохранена в дневнике!');
-        state.currentPage = 'programsInCycle';
+        const origin = state.programDetailsOrigin;
+        state.programDetailsOrigin = null;
+        state.currentPage = origin === 'journal' ? 'journal' : 'programsInCycle';
         state.selectedProgramIdForDetails = null;
         state.expandedExerciseId = null;
         render();
@@ -2977,37 +3835,43 @@ async function loadClientCycles(clientId) {
   try {
     console.log("📥 Загружаю циклы для клиента:", clientId);
 
-    const userId = auth.currentUser?.uid;
-    if (!userId) return [];
+    const uid = auth.currentUser?.uid;
+    if (!uid) return [];
 
-    const appId = db._databaseId?.projectId || "training-diary-51bcb";
+    const clientMeta = state.clients?.find((c) => c.id === clientId);
+    const linkedUid =
+      clientMeta?.linkedUserUid && clientMeta?.linkStatus === 'active' ? clientMeta.linkedUserUid : null;
 
-    const cyclesRef = collection(
+    const trainerCyclesRef = collection(
       db,
       "artifacts",
       appId,
       "users",
-      userId,
+      uid,
       "clients",
       clientId,
       "cycles"
     );
 
-    const snapshot = await getDocs(cyclesRef);
-    const cycles = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    console.log("📦 Найдено циклов для клиента:", cycles.length, cycles);
+    const snapT = await getDocs(trainerCyclesRef);
+    const byId = new Map();
+    for (const d of snapT.docs) {
+      byId.set(d.id, { id: d.id, ...d.data(), _firesAtClient: false });
+    }
+    if (linkedUid) {
+      const clientCyclesRef = collection(db, "artifacts", appId, "users", linkedUid, "cycles");
+      const snapC = await getDocs(clientCyclesRef);
+      for (const d of snapC.docs) {
+        byId.set(d.id, { id: d.id, ...d.data(), _firesAtClient: true });
+      }
+    }
+    const cycles = Array.from(byId.values());
+    console.log("📦 Найдено циклов для клиента (слияние):", cycles.length, cycles);
 
-    // 🔹 Загружаем журнал клиента
-    const journalRef = collection(
-      db,
-      "artifacts",
-      appId,
-      "users",
-      userId,
-      "clients",
-      clientId,
-      "journal"
-    );
+    // 🔹 Журнал: при активной связи — канон клиента, иначе карточка тренера
+    const journalRef = linkedUid
+      ? collection(db, "artifacts", appId, "users", linkedUid, "journal")
+      : collection(db, "artifacts", appId, "users", uid, "clients", clientId, "journal");
     const jSnap = await getDocs(journalRef);
     const records = jSnap.docs.map(d => d.data());
 
@@ -3145,10 +4009,9 @@ if (state.currentMode === 'own' && !state.cyclesLoaded) {
 
 // 🔄 Проверяем и загружаем циклы для клиента, если это персональный режим
 if (state.currentMode === 'personal' && state.selectedClientId) {
-  const hasClientCycles = state.cycles.some(c => c.clientId === state.selectedClientId);
-  if (!hasClientCycles && state.loadedClientIdForCycles !== state.selectedClientId) {
+  if (state.loadedClientIdForCycles !== state.selectedClientId) {
     console.log("🔄 Загружаю циклы для клиента:", state.selectedClientId);
-    state.loadedClientIdForCycles = state.selectedClientId; // ✅ ставим флаг
+    state.loadedClientIdForCycles = state.selectedClientId; // один раз на выбранную карточку клиента
     loadClientCycles(state.selectedClientId)
       .then(cycles => {
         state.cycles = cycles;
@@ -3188,8 +4051,15 @@ if (!state.selectedJournalCategory && state.journal.length > 0) {
   const relevantRecords = state.journal.filter(r => {
     if (state.currentMode === 'own') return true;
     if (state.currentMode === 'personal') {
-      // Убедимся, что цикл и тренировка принадлежат выбранному клиенту
-      return state.cycles.some(c => c.name === r.cycleName && c.clientId === state.selectedClientId);
+      const linked = getActiveLinkedClientUid();
+      if (linked) {
+        return state.cycles.some((c) => c.name === r.cycleName || c.id === r.cycleId);
+      }
+      return state.cycles.some(
+        (c) =>
+          c.name === r.cycleName &&
+          (!r.clientId || r.clientId === state.selectedClientId)
+      );
     }
     return false;
   });
@@ -3283,161 +4153,127 @@ if (!state.selectedJournalCategory && state.journal.length > 0) {
 
 
 
-// ✅ 1. КАСТОМНЫЙ SELECT ДЛЯ ЦИКЛОВ
+// ✅ ФИЛЬТРЫ ЖУРНАЛА: цикл + тренировки
 const filterWrapper = createElement('div', 'journal-filters');
-const cycleBlock = createElement('div', 'filter-block');
 
-console.log("Циклы для селекта:", state.cycles);
+// --- 1. СТРОКА ЦИКЛА (клик → выбор цикла) ---
+const cycleLabelBlock = createElement('div', 'cycle-label-block');
+const cycleLabelIcon = createElement('span', 'cycle-label-icon', '📋');
+const cycleLabelText = createElement('span', 'cycle-label-text',
+    state.selectedJournalCategory || 'Цикл не выбран'
+);
+const cycleArrow = createElement('span', 'cycle-label-arrow', '▾');
+cycleLabelBlock.append(cycleLabelIcon, cycleLabelText, cycleArrow);
 
-const cycleSelectWrapper = createElement('div', 'custom-select');
-const cycleSelectDisplay = createElement('div', 'select-display', state.selectedJournalCategory || 'Выберите цикл');
-const cycleArrow = createElement('span', 'select-arrow', '▾');
-cycleSelectDisplay.append(cycleArrow);
+const allCycleNames = [...new Set(
+    state.cycles
+        .filter(c => state.currentMode === 'own' || state.currentMode === 'personal')
+        .map(c => c.name)
+)];
 
-const cycleOptionsList = createElement('ul', 'select-options');
-// ✅ 1. Получаем корректный список категорий (циклов) в зависимости от режима
-const allCategories = [
-    ...new Set(
-        state.cycles
-            .filter(c => {
-                if (state.currentMode === 'own') return true;            // Личные циклы
-                if (state.currentMode === 'personal') return true; // ✅ убрали фильтр по clientId
-            })
-            .map(c => c.name)
-    )
-];
+if (allCycleNames.length > 0) {
+    const cycleDropdown = createElement('div', 'filter-dropdown cycle-dropdown');
+    const cycleDropdownLabel = createElement('div', 'filter-section-label', 'Циклы');
+    cycleDropdown.append(cycleDropdownLabel);
 
-
-allCategories.forEach(category => {
-    const li = createElement('li', 'select-option', category);
-    if (state.selectedJournalCategory === category) {
-        li.classList.add('selected');
-        cycleSelectDisplay.childNodes[0].textContent = category;
-    }
-    li.addEventListener('click', () => {
-        state.selectedJournalCategory = category;
-        state.selectedJournalProgram = '';
-
-        // ✅ Найти цикл по имени и сразу установить его как выбранный
-        const foundCycle = state.cycles.find(c => c.name === category);
-        if (foundCycle) {
-            state.selectedCycleId = foundCycle.id;
-            console.log('✅ Цикл выбран из дневника:', foundCycle.name, foundCycle.id);
-        } else {
-            console.warn('⚠ Цикл не найден в state.cycles, но есть в journal', category);
-        }
-
-        // ✅ После выбора цепляем слушатели Firestore для программ этого цикла
-        setupDynamicListeners();
-
-        render();
-    });
-    cycleOptionsList.append(li);
-});
-
-cycleSelectDisplay.addEventListener('click', (e) => {
-    e.stopPropagation();
-
-    const rect = cycleSelectWrapper.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const spaceAbove = rect.top;
-
-    cycleOptionsList.style.maxHeight = "200px"; // высота списка
-
-    if (spaceBelow < 200 && spaceAbove > spaceBelow) {
-        cycleOptionsList.classList.add('open-up');
-    } else {
-        cycleOptionsList.classList.remove('open-up');
-    }
-
-    cycleOptionsList.classList.toggle('open');
-    cycleArrow.classList.toggle('open');
-});
-
-document.addEventListener('click', () => {
-    cycleOptionsList.classList.remove('open');
-    cycleArrow.classList.remove('open');
-});
-
-cycleSelectWrapper.append(cycleSelectDisplay, cycleOptionsList);
-cycleBlock.append(cycleSelectWrapper);
-filterWrapper.append(cycleBlock);
-
-
-// ✅ 2. ЧЕКБОКС "ПОКАЗАТЬ ПРОГРАММЫ"
-const checkboxBlock = createElement('div', 'filter-block');
-checkboxBlock.innerHTML = `
-    <label class="checkbox-container">
-        <input type="checkbox" id="showPrograms" ${state.showPrograms ? 'checked' : ''}>
-        <span class="checkmark"></span>
-        Показать программы
-    </label>
-`;
-checkboxBlock.querySelector('input').addEventListener('change', e => {
-    state.showPrograms = e.target.checked;
-    if (!state.showPrograms) state.selectedJournalProgram = '';
-    render();
-});
-filterWrapper.append(checkboxBlock);
-
-
-// ✅ 3. КАСТОМНЫЙ SELECT ДЛЯ ПРОГРАММ
-const programBlock = createElement('div', 'filter-block');
-programBlock.style.display = state.showPrograms ? 'block' : 'none';
-
-const programSelectWrapper = createElement('div', 'custom-select');
-const programSelectDisplay = createElement('div', 'select-display', state.selectedJournalProgram || 'Выберите программу');
-const programArrow = createElement('span', 'select-arrow', '▾');
-programSelectDisplay.append(programArrow);
-
-const programOptionsList = createElement('ul', 'select-options');
-
-if (state.selectedJournalCategory) {
-    const programs = [...new Set(
-        state.journal.filter(r => r.cycleName === state.selectedJournalCategory)
-                     .map(r => r.programName)
-    )];
-    programs.forEach(prog => {
-        const li = createElement('li', 'select-option', prog);
-        if (state.selectedJournalProgram === prog) {
-            li.classList.add('selected');
-            programSelectDisplay.childNodes[0].textContent = prog;
-        }
-        li.addEventListener('click', () => {
-            state.selectedJournalProgram = prog;
+    const cyclePills = createElement('div', 'program-pills');
+    allCycleNames.forEach(name => {
+        const pill = createElement('button',
+            'program-pill' + (state.selectedJournalCategory === name ? ' active' : ''),
+            name
+        );
+        pill.addEventListener('click', (e) => {
+            e.stopPropagation();
+            state.selectedJournalCategory = name;
+            state.selectedJournalProgram = '';
+            const foundCycle = state.cycles.find(c => c.name === name);
+            if (foundCycle) {
+                state.selectedCycleId = foundCycle.id;
+                setupDynamicListeners();
+            }
             render();
         });
-        programOptionsList.append(li);
+        cyclePills.append(pill);
+    });
+    cycleDropdown.append(cyclePills);
+    filterWrapper.append(cycleDropdown);
+
+    cycleLabelBlock.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const programDd = filterWrapper.querySelector('.program-dropdown');
+        if (programDd) { programDd.classList.remove('open'); }
+        cycleDropdown.classList.toggle('open');
+        cycleArrow.classList.toggle('open');
     });
 }
 
-programSelectDisplay.addEventListener('click', e => {
-    e.stopPropagation();
+filterWrapper.append(cycleLabelBlock);
 
-    const rect = programSelectWrapper.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - rect.bottom;
-    const spaceAbove = rect.top;
+// --- 2. СТРОКА ФИЛЬТРА ТРЕНИРОВОК (клик → выбор программы) ---
+if (state.selectedJournalCategory) {
+    const programs = [...new Set(
+        state.journal
+            .filter(r => r.cycleName === state.selectedJournalCategory)
+            .map(r => r.programName)
+            .filter(Boolean)
+    )];
 
-    programOptionsList.style.maxHeight = "200px";
+    const activeFilterRow = createElement('div', 'active-filter-row');
+    const activeFilterLabel = createElement('span', 'active-filter-label', 'Тренировка:');
+    const activeFilterValue = createElement('span', 'active-filter-value' + (!state.selectedJournalProgram ? ' all' : ''),
+        state.selectedJournalProgram || 'Все'
+    );
+    const filterArrow = createElement('span', 'cycle-label-arrow', '▾');
+    activeFilterRow.append(activeFilterLabel, activeFilterValue, filterArrow);
 
-    if (spaceBelow < 200 && spaceAbove > spaceBelow) {
-        programOptionsList.classList.add('open-up');
-    } else {
-        programOptionsList.classList.remove('open-up');
+    if (programs.length > 0) {
+        const programDropdown = createElement('div', 'filter-dropdown program-dropdown');
+        const programDropdownLabel = createElement('div', 'filter-section-label', 'Тренировки');
+        programDropdown.append(programDropdownLabel);
+
+        const pillsContainer = createElement('div', 'program-pills');
+
+        const allPill = createElement('button', 'program-pill' + (!state.selectedJournalProgram ? ' active' : ''), 'Все');
+        allPill.addEventListener('click', (e) => {
+            e.stopPropagation();
+            state.selectedJournalProgram = '';
+            render();
+        });
+        pillsContainer.append(allPill);
+
+        programs.forEach(prog => {
+            const pill = createElement('button',
+                'program-pill' + (state.selectedJournalProgram === prog ? ' active' : ''),
+                prog
+            );
+            pill.addEventListener('click', (e) => {
+                e.stopPropagation();
+                state.selectedJournalProgram = prog;
+                render();
+            });
+            pillsContainer.append(pill);
+        });
+
+        programDropdown.append(pillsContainer);
+        filterWrapper.append(programDropdown);
+
+        activeFilterRow.style.cursor = 'pointer';
+        activeFilterRow.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const cycleDd = filterWrapper.querySelector('.cycle-dropdown');
+            if (cycleDd) { cycleDd.classList.remove('open'); cycleArrow.classList.remove('open'); }
+            programDropdown.classList.toggle('open');
+            filterArrow.classList.toggle('open');
+        });
     }
 
-    programOptionsList.classList.toggle('open');
-    programArrow.classList.toggle('open');
-});
+    filterWrapper.append(activeFilterRow);
+}
 
 document.addEventListener('click', () => {
-    programOptionsList.classList.remove('open');
-    programArrow.classList.remove('open');
+    filterWrapper.querySelectorAll('.filter-dropdown').forEach(d => d.classList.remove('open'));
+    filterWrapper.querySelectorAll('.cycle-label-arrow').forEach(a => a.classList.remove('open'));
 });
-
-programSelectWrapper.append(programSelectDisplay, programOptionsList);
-programBlock.append(programSelectWrapper);
-filterWrapper.append(programBlock);
 
 // ✅ Добавляем в DOM
 contentContainer.append(filterWrapper);
@@ -3555,6 +4391,7 @@ function renderCalendar(container, journalRecords) {
                     const program = state.programs.find(p => p.id === record.programId);
                     if (program) {
                         state.selectedProgramIdForDetails = program.id;
+                        state.programDetailsOrigin = 'journal';
                         state.currentPage = 'programDetails';
                         render();
                     } else {
@@ -3564,61 +4401,59 @@ function renderCalendar(container, journalRecords) {
             });
 
             // Обработчик для долгого нажатия (удаление тренировки)
+            let longPressTimer;
+            let isLongPress = false;
 
+            cell.addEventListener('touchstart', (e) => {
+                e.stopPropagation();
+                e.preventDefault(); // Предотвращаем выделение текста
 
-              let longPressTimer;
-              let isLongPress = false;
+                isLongPress = false;
 
-              cell.addEventListener('touchstart', (e) => {
-                  e.stopPropagation();
-                  e.preventDefault(); // Предотвращаем выделение текста
+                longPressTimer = setTimeout(() => {
+                    isLongPress = true; // помечаем, что был долгий тап
+                    openConfirmModal(
+                        `Удалить запланированную тренировку "${dayRecords[0].programName}"?`,
+                        async () => {
+                            await deleteDoc(doc(getUserJournalCollection(), dayRecords[0].id));
+                            showToast('Тренировка удалена!');
+                            render(); // Обновляем страницу после удаления
+                        }
+                    );
+                }, 800); // 800мс = долгое удержание
+            });
 
-                  isLongPress = false;
+            cell.addEventListener('touchend', async (e) => {
+                clearTimeout(longPressTimer);
 
-                  longPressTimer = setTimeout(() => {
-                      isLongPress = true; // помечаем, что был долгий тап
-                      openConfirmModal(
-                          `Удалить запланированную тренировку "${dayRecords[0].programName}"?`,
-                          async () => {
-                              await deleteDoc(doc(getUserJournalCollection(), dayRecords[0].id));
-                              showToast('Тренировка удалена!');
-                              render(); // Обновляем страницу после удаления
-                          }
-                      );
-                  }, 800); // 800мс = долгое удержание
-              });
+                // Если пользователь отпустил быстро (не долгий тап) → обычный переход
+                if (!isLongPress) {
+                    e.stopPropagation();
 
-              cell.addEventListener('touchend', async (e) => {
-                  clearTimeout(longPressTimer);
+                    const record = dayRecords[0];
+                    if (!record.isPlanned) {
+                        // Открываем завершённую тренировку
+                        state.selectedJournalRecord = record.id;
+                        state.currentPage = 'journal';
+                        render();
+                    } else {
+                        // Открываем запланированную
+                        const cycle = state.cycles.find(c => c.name === record.cycleName);
+                        if (cycle) {
+                            state.selectedCycleId = cycle.id;
+                            state.selectedJournalCategory = cycle.name;
+                            setupDynamicListeners?.();
+                        }
 
-                  // Если пользователь отпустил быстро (не долгий тап) → обычный переход
-                  if (!isLongPress) {
-                      e.stopPropagation();
+                        await openPlannedTraining(record);
+                    }
+                }
+            });
 
-                      const record = dayRecords[0];
-                      if (!record.isPlanned) {
-                          // Открываем завершённую тренировку
-                          state.selectedJournalRecord = record.id;
-                          state.currentPage = 'journal';
-                          render();
-                      } else {
-                          // Открываем запланированную
-                          const cycle = state.cycles.find(c => c.name === record.cycleName);
-                          if (cycle) {
-                              state.selectedCycleId = cycle.id;
-                              state.selectedJournalCategory = cycle.name;
-                              setupDynamicListeners?.();
-                          }
-
-                          await openPlannedTraining(record);
-                      }
-                  }
-              });
-
-              // Очистка таймера при отпускании
-              cell.addEventListener('touchend', () => {
-                  clearTimeout(longPressTimer); // отмена долгого нажатия
-              });
+            // Очистка таймера при отпускании
+            cell.addEventListener('touchend', () => {
+                clearTimeout(longPressTimer); // отмена долгого нажатия
+            });
 
         } else {
             // Пустая ячейка — планирование
@@ -3780,6 +4615,7 @@ function openTrainingDropdown(cell, dayRecords) {
                     const program = state.programs.find(p => p.name === record.programName);
                     if (program) {
                         state.selectedProgramIdForDetails = program.id;
+                        state.programDetailsOrigin = 'journal';
                         state.currentPage = 'programDetails';
                     }
                     render();
@@ -3887,6 +4723,7 @@ const openPlannedTraining = async (record) => {
 
     if (program) {
         state.selectedProgramIdForDetails = program.id;
+        state.programDetailsOrigin = 'journal';
         state.currentPage = 'programDetails';
         render();
     } else {
@@ -4149,6 +4986,11 @@ block.append(sets);
 // ✅ ГАРАНТИЯ ВЫБОРА ЦИКЛА
 // =================================================================
 export function ensureCycleSelected(onSelectedCallback) {
+    if (isPersonalMode() && !hasSelectedClient()) {
+        state.currentPage = 'programs';
+        if (typeof onSelectedCallback === 'function') onSelectedCallback();
+        return false;
+    }
     if (!state.selectedCycleId) {
         openCycleSelectModal(onSelectedCallback);
         return false;
@@ -4183,14 +5025,14 @@ export function ensureCycleSelected(onSelectedCallback) {
              const btn = createElement('button', 'btn btn-light', cycle.name);
 
              btn.addEventListener('click', () => {
+                 resetCycleScopedState();
                  state.selectedCycleId = cycle.id;
-                  resetSupplementsListener(); // 💥 ВАЖНО
 
                  console.log('✅ Цикл выбран:', cycle.name);
 
                  document.body.removeChild(modal);
 
-                 // 🔥 ЕДИНЫЙ ПРАВИЛЬНЫЙ РЕНДЕР
+                 setupDynamicListeners();
                  rerenderCurrentPage();
              });
 
@@ -4332,6 +5174,136 @@ function openFullScreenPhoto(url, name = '') {
 // ⚙️ СЛУШАТЕЛИ FIREBASE (Управление динамическими коллекциями)
 // =================================================================
 
+function computeCyclesLinkKey() {
+    if (state.currentMode !== 'personal' || !state.selectedClientId) return '';
+    const cx = state.clients?.find((x) => x.id === state.selectedClientId);
+    return `${cx?.linkStatus || 'none'}:${cx?.linkedUserUid || ''}`;
+}
+
+function attachCycleDataListeners() {
+    cyclesUnsubscribeTrainer();
+    cyclesUnsubscribeClient();
+    cyclesTrainerBuffer = [];
+    cyclesClientBuffer = [];
+
+    const mergeCyclesAndMaybeRender = () => {
+        mergeCyclesTrainerClientBuffers();
+        if (state.currentPage === 'programs') render();
+    };
+
+    if (state.currentMode === 'own') {
+        const ref = collection(db, `artifacts/${appId}/users/${userId}/cycles`);
+        cyclesUnsubscribeTrainer = onSnapshot(ref, (snapshot) => {
+            cyclesTrainerBuffer = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+            cyclesClientBuffer = [];
+            mergeCyclesTrainerClientBuffers();
+            if (state.currentPage === 'programs') render();
+        });
+        cyclesUnsubscribeClient = () => {};
+        cyclesUnsubscribe = () => {
+            cyclesUnsubscribeTrainer();
+            cyclesUnsubscribeClient();
+        };
+    } else if (state.currentMode === 'personal' && state.selectedClientId) {
+        const trainerCardRef = collection(
+            db,
+            `artifacts/${appId}/users/${userId}/clients/${state.selectedClientId}/cycles`
+        );
+        cyclesUnsubscribeTrainer = onSnapshot(trainerCardRef, (snapshot) => {
+            cyclesTrainerBuffer = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+            mergeCyclesAndMaybeRender();
+        });
+
+        const linkedUid = getActiveLinkedClientUid();
+        if (linkedUid) {
+            const clientCanonRef = collection(db, `artifacts/${appId}/users/${linkedUid}/cycles`);
+            cyclesUnsubscribeClient = onSnapshot(clientCanonRef, (snapshot) => {
+                cyclesClientBuffer = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+                mergeCyclesAndMaybeRender();
+            });
+        } else {
+            cyclesUnsubscribeClient = () => {};
+            cyclesClientBuffer = [];
+        }
+        cyclesUnsubscribe = () => {
+            cyclesUnsubscribeTrainer();
+            cyclesUnsubscribeClient();
+        };
+    } else {
+        cyclesUnsubscribe = () => {};
+        state.cycles = [];
+    }
+
+    const programsRef = getUserProgramsCollection();
+    if (programsRef && state.selectedCycleId) {
+        programsUnsubscribe = onSnapshot(programsRef, (snapshot) => {
+            state.programs = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+            if (['programsInCycle', 'programDetails', 'supplements', 'journal', 'meal', 'reports'].includes(state.currentPage)) render();
+        });
+    }
+
+    const journalRef = getUserJournalCollection();
+    if (journalRef) {
+        journalUnsubscribe = onSnapshot(journalRef, (snapshot) => {
+            state.journal = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+
+            if (state.currentMode === 'personal' && state.selectedClientId && state.journal.length > 0 && !state.selectedCycleId) {
+                const linked = getActiveLinkedClientUid();
+                const clientRecords = linked
+                    ? state.journal
+                    : state.journal.filter((r) => r.clientId === state.selectedClientId);
+
+                if (clientRecords.length > 0) {
+                    const latestRecord = clientRecords.sort((a, b) => {
+                        const aTime = a.updatedAt?.seconds || a.createdAt?.seconds || 0;
+                        const bTime = b.updatedAt?.seconds || b.createdAt?.seconds || 0;
+                        return bTime - aTime;
+                    })[0];
+
+                    const usedCycle =
+                        state.cycles.find((c) => c.id === latestRecord.cycleId) ||
+                        state.cycles.find((c) => c.name === latestRecord.cycleName);
+
+                    if (usedCycle) {
+                        state.selectedCycleId = usedCycle.id;
+                        state.selectedJournalCategory = usedCycle.name;
+                        console.log(`📘 Установлен цикл по умолчанию (журнал): ${usedCycle.name}`);
+                    }
+                }
+            }
+
+            if (state.currentPage === 'journal') render();
+        });
+    }
+
+    if (state.selectedCycleId) {
+        const cycleRef = getCycleDocRef?.();
+        if (cycleRef) {
+            supplementsUnsubscribe = onSnapshot(cycleRef, (docSnap) => {
+                const docData = docSnap.exists() ? docSnap.data() : {};
+                const supplementPlan = docData.supplementPlan || {};
+                state.supplementPlan = {
+                    supplements: Array.isArray(supplementPlan.supplements) ? supplementPlan.supplements : [],
+                    data: Array.isArray(supplementPlan.data) ? supplementPlan.data : []
+                };
+                if (state.currentPage === 'supplements') render();
+            });
+        }
+    }
+
+    if (state.selectedCycleId) {
+        const reportsRef = getReportsCollection();
+        if (reportsRef) {
+            reportsUnsubscribe = onSnapshot(reportsRef, (snapshot) => {
+                state.reports = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+                if (state.currentPage === 'reports') render();
+            });
+        }
+    }
+
+    cyclesLinkKey = computeCyclesLinkKey();
+}
+
 function unsubscribeAll() {
     programsUnsubscribe();
     journalUnsubscribe();
@@ -4351,108 +5323,28 @@ function setupDynamicListeners() {
     if (state.currentMode === 'personal') {
         const clientsRef = getClientsCollection();
         if (clientsRef) {
-            clientsUnsubscribe = onSnapshot(clientsRef, snapshot => {
+            clientsUnsubscribe = onSnapshot(clientsRef, async (snapshot) => {
                 state.clients = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                await syncTrainerClientCardsFromAcceptedInvites();
+                const nk = computeCyclesLinkKey();
+                if (state.currentMode === 'personal' && state.selectedClientId && nk !== cyclesLinkKey) {
+                    programsUnsubscribe();
+                    journalUnsubscribe();
+                    supplementsUnsubscribe();
+                    reportsUnsubscribe();
+                    cyclesUnsubscribe();
+                    attachCycleDataListeners();
+                    if (['programs', 'programsInCycle', 'programDetails', 'journal', 'meal', 'reports', 'supplements'].includes(state.currentPage)) {
+                        render();
+                    }
+                }
                 if (state.currentPage === 'programs' && !state.selectedClientId) render();
             });
         }
     }
 
-    // 2. Циклы
-    const cyclesRef = getUserCyclesCollection();
-    if (cyclesRef) {
-        cyclesUnsubscribe = onSnapshot(cyclesRef, snapshot => {
-            state.cycles = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            if (state.currentPage === 'programs') render();
-        });
-    } else {
-        state.cycles = [];
-    }
-
-    // 3. Программы — ТОЛЬКО ЕСЛИ ЕСТЬ ВЫБРАННЫЙ ЦИКЛ
-    const programsRef = getUserProgramsCollection();
-    if (programsRef && state.selectedCycleId) {
-        programsUnsubscribe = onSnapshot(programsRef, snapshot => {
-            state.programs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            if (['programsInCycle', 'programDetails', 'supplements', 'journal'].includes(state.currentPage)) render();
-        });
-    }
-
-    // 4. Журнал
-
-    const journalRef = getUserJournalCollection();
-    if (journalRef) {
-        journalUnsubscribe = onSnapshot(journalRef, snapshot => {
-            state.journal = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-            // ✅ Определяем последний использованный цикл по записям журнала
-            if (state.currentMode === 'personal' && state.selectedClientId && state.journal.length > 0) {
-                // Фильтруем записи по текущему клиенту
-                const clientRecords = state.journal.filter(r => r.clientId === state.selectedClientId);
-
-                if (clientRecords.length > 0) {
-                    // Сортируем по дате (новейшая запись)
-                    const latestRecord = clientRecords.sort((a, b) => {
-                        // пробуем учитывать timestamp если есть
-                        const aTime = a.updatedAt?.seconds || a.createdAt?.seconds || 0;
-                        const bTime = b.updatedAt?.seconds || b.createdAt?.seconds || 0;
-                        return bTime - aTime;
-                    })[0];
-
-                    // ищем цикл по имени
-                    const usedCycle =
-                        state.cycles.find(c => c.id === latestRecord.cycleId) ||
-                        state.cycles.find(c => c.name === latestRecord.cycleName);
-
-                    if (usedCycle) {
-                        state.selectedCycleId = usedCycle.id;
-                        state.selectedJournalCategory = usedCycle.name;
-                        console.log(`📘 Установлен цикл по умолчанию (журнал): ${usedCycle.name}`);
-                    }
-                }
-            }
-
-            if (state.currentPage === 'journal') render();
-        });
-    }
-
-
-// 5. БАДы — только если выбран цикл
-if (state.selectedCycleId) {
-    const cycleRef = getCycleDocRef?.();
-    if (cycleRef) {
-        supplementsUnsubscribe = onSnapshot(cycleRef, docSnap => {
-            const docData = docSnap.exists() ? docSnap.data() : {};
-            const supplementPlan = docData.supplementPlan || {};
-            console.log("📦 Firestore snapshot (cycle.supplementPlan):", supplementPlan);
-
-            state.supplementPlan = {
-                supplements: Array.isArray(supplementPlan.supplements)
-                    ? supplementPlan.supplements
-                    : [],
-                data: Array.isArray(supplementPlan.data)
-                    ? supplementPlan.data
-                    : []
-            };
-
-            console.log("✅ Загружено в state.supplementPlan:", state.supplementPlan);
-
-            if (state.currentPage === 'supplements') render();
-        });
-    }
-}
-
-
-    // 6. Отчёты — только если выбран цикл
-    if (state.selectedCycleId) {
-        const reportsRef = getReportsCollection();
-        if (reportsRef) {
-            reportsUnsubscribe = onSnapshot(reportsRef, snapshot => {
-                state.reports = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                if (state.currentPage === 'reports') render();
-            });
-        }
-    }
+    // 2–6. Циклы, программы, журнал, БАДы, отчёты
+    attachCycleDataListeners();
 }
 
 
@@ -4519,17 +5411,6 @@ export function renderTopBar() {
      const wrap = document.createElement('div');
      wrap.className = 'topbar-cycle-btns';
 
-     // 🔁 КНОПКА ВЫБОРА ЦИКЛА
-     const selectCycleBtn = document.createElement('button');
-     selectCycleBtn.className = 'btn btn-secondary';
-     selectCycleBtn.innerHTML = `
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><title>Arrow-collapse-all-20-regular SVG Icon</title><path fill="currentColor" d="M2 4.5a.5.5 0 0 1 .5-.5h15a.5.5 0 0 1 0 1h-15a.5.5 0 0 1-.5-.5m3.146 2.646a.5.5 0 0 1 .708 0l2.5 2.5a.5.5 0 0 1-.708.708L6 8.707V15.5a.5.5 0 0 1-1 0V8.707l-1.646 1.647a.5.5 0 0 1-.708-.708zM17.5 8h-7a.5.5 0 0 1 0-1h7a.5.5 0 0 1 0 1"></path></svg>
-                 `;
-
-                    selectCycleBtn.onclick = () => {
-                        openCycleSelectModal(() => render());
-                    };
-
                     // 📄 PDF кнопка
                     const pdfButton = document.createElement('button');
                     pdfButton.className = 'btn btn-primaryPdf';
@@ -4544,7 +5425,6 @@ export function renderTopBar() {
 
                 if (!cycle) {
                     console.log('❌ нет цикла');
-                    openCycleSelectModal(() => render());
                     return;
                 }
 
@@ -4561,7 +5441,6 @@ export function renderTopBar() {
                 }
             };
 
-            // 📅 КАЛЕНДАРЬ (только для meals)
             if (state.currentPage === 'meal') {
                 const targetBtn = document.createElement('button');
                 targetBtn.type = 'button';
@@ -4574,18 +5453,9 @@ export function renderTopBar() {
                     state.mealView = 'goal';
                     renderMealPage();
                 };
-
-                const calendarBtn = document.createElement('button');
-                calendarBtn.type = 'button';
-                calendarBtn.className = 'calendar-btn';
-                calendarBtn.id = 'meal-calendar-btn';
-                calendarBtn.innerHTML = `
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><title>Calendar SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 4V2m0 2v2m0-2h-4.5M3 10v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-9zm0 0V6a2 2 0 0 1 2-2h2m0-2v4m14 4V6a2 2 0 0 0-2-2h-.5"></path></svg>
-                `;
-
-                wrap.append(selectCycleBtn, pdfButton, targetBtn, calendarBtn);
+                wrap.append(pdfButton, targetBtn);
             } else {
-                wrap.append(selectCycleBtn, pdfButton);
+                wrap.append(pdfButton);
             }
 
             topBar.appendChild(wrap);
@@ -4603,12 +5473,24 @@ export function renderTopBar() {
         if (state.currentMode === 'personal' && state.currentPage === 'programs' && state.selectedClientId) {
             backBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><title>Ios-arrow-ltr-24-filled SVG Icon</title><path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"></path></svg>';
             backBtn.onclick = () => {
-                state.selectedClientId = null;
+                resetClientScopedState();
                 state.currentPage = 'programs'; // вернёмся в список клиентов
+                setupDynamicListeners();
                 render();
             };
             showBack = true;
         }
+
+    if (state.currentPage === 'profile') {
+        backBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><title>Ios-arrow-ltr-24-filled SVG Icon</title><path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"></path></svg>';
+        backBtn.onclick = () => {
+            state.profileCabinetEditing = false;
+            state.currentPage = state.profileOriginPage || 'programs';
+            state.profileOriginPage = null;
+            render();
+        };
+        showBack = true;
+    }
 
     if (state.currentPage === 'programsInCycle') {
         backBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><title>Ios-arrow-ltr-24-filled SVG Icon</title><path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"></path></svg>';
@@ -4618,7 +5500,16 @@ export function renderTopBar() {
 
     if (state.currentPage === 'programDetails') {
         backBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><title>Ios-arrow-ltr-24-filled SVG Icon</title><path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"></path></svg>';
-        backBtn.onclick = () => { state.currentPage = 'programsInCycle'; render(); };
+        backBtn.onclick = () => {
+            const origin = state.programDetailsOrigin;
+            state.programDetailsOrigin = null;
+            if (origin === 'journal') {
+                state.currentPage = 'journal';
+            } else {
+                state.currentPage = 'programsInCycle';
+            }
+            render();
+        };
         showBack = true;
 
         // 🔥 Кнопка таймера для страницы деталей программы
@@ -4680,6 +5571,20 @@ function openMenuModal() {
         render();
     };
 
+    const profileBtn = document.createElement('button');
+    profileBtn.className = 'menu-icon-btn';
+    profileBtn.title = 'Личный кабинет';
+    profileBtn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><title>Person SVG Icon</title><path fill="currentColor" d="M12 12q-1.65 0-2.825-1.175T8 8t1.175-2.825T12 4t2.825 1.175T16 8t-1.175 2.825T12 12m-8 8v-1.8q0-.85.438-1.55T5.6 15.85q1.55-.775 3.15-1.163T12 14.5q1.65 0 3.25.388t3.15 1.162q.775.4 1.213 1.1T20 18.2V20zm2-2h12v-.8q0-.3-.137-.512t-.363-.288q-1.425-.725-2.787-1.112T12 16.5q-1.65 0-3.012.388T6.5 18.1q-.225.125-.363.3T6 18.8zm6-8.5q.825 0 1.413-.587T14 8t-.587-1.412T12 6t-1.412.588T10 8t.588 1.413T12 11.5m0 8"/></svg>
+    `;
+    profileBtn.onclick = () => {
+        overlay.remove();
+        state.profileCabinetEditing = false;
+        state.profileOriginPage = state.currentPage;
+        state.currentPage = 'profile';
+        render();
+    };
+
     // SVG кнопка выхода
     const logoutBtn = document.createElement('button');
     logoutBtn.className = 'menu-icon-btn';
@@ -4693,7 +5598,7 @@ function openMenuModal() {
         showToast("Вы вышли.");
     };
 
-    modal.append(modeBtn, logoutBtn);
+    modal.append(modeBtn, profileBtn, logoutBtn);
     overlay.append(modal);
     document.body.append(overlay);
 
@@ -4709,11 +5614,23 @@ function openMenuModal() {
 // ============================================================
 // 📦 Регистрация Service Worker и уведомления
 // ============================================================
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker
-    .register('/training-diary/sw.js')
-    .then(() => console.log('✅ Service Worker зарегистрирован'))
-    .catch(err => console.error('Ошибка регистрации SW', err));
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+  const isCapacitorNative =
+    window.Capacitor?.isNativePlatform?.() === true ||
+    /Capacitor/i.test(window.navigator?.userAgent || '');
+
+  if (!isCapacitorNative) {
+    try {
+      const swUrl = new URL('./sw.js', import.meta.url);
+      const scope = new URL('./', import.meta.url).href;
+      navigator.serviceWorker
+        .register(swUrl.href, { scope })
+        .then(() => console.log('✅ Service Worker зарегистрирован'))
+        .catch((err) => console.error('Ошибка регистрации SW', err));
+    } catch (err) {
+      console.error('Ошибка регистрации SW', err);
+    }
+  }
 }
 
 
@@ -4723,32 +5640,33 @@ if ('serviceWorker' in navigator) {
 // =================================================================
 // 🔄 ГЛАВНЫЙ РЕНДЕР: Определяет, что показать (ИСПРАВЛЕНО)
 // =================================================================
-
-function render() {
-
-
+export function render() {
     const root = document.getElementById('root');
-    root.innerHTML = ''; // Очистка
+    root.innerHTML = '';
 
+    renderTopBar();
 
-        renderTopBar();
-
-
-
-
-    // ✅ Удаляем выпадающие меню (training-dropdown), если они остались открыты
     const openDropdown = document.querySelector('.training-dropdown');
     if (openDropdown) openDropdown.remove();
 
-
-    // Сначала убеждаемся, что видимость экранов установлена корректно
     toggleAppVisibility(!!userId);
 
-    // Если нет userId (не авторизован) или режим не выбран - ничего не рендерим в root
-    if (!userId || state.currentMode === null) return;
+    if (!userId || state.currentMode === null) {
+        hideStatusBarEverywhere();
+        syncBottomNavAfterRender(state.currentPage);
+        return;
+    }
 
-    // 🔥 ЕДИНЫЙ БЛОК РЕНДЕРИНГА
-    // Теперь рендерим содержимое root в зависимости от state.currentPage
+    const clientRequiredPages = ['programsInCycle', 'programDetails', 'meal', 'reports', 'supplements', 'journal', 'journalRecordDetails'];
+    if (isPersonalMode() && !hasSelectedClient() && clientRequiredPages.includes(state.currentPage)) {
+        state.currentPage = 'programs';
+    }
+
+    const cycleRequiredPages = ['programsInCycle', 'programDetails', 'meal', 'reports', 'supplements', 'cycleReport', 'mealsReport'];
+    if (!hasSelectedCycle() && cycleRequiredPages.includes(state.currentPage)) {
+        state.currentPage = 'programs';
+    }
+
     if (state.currentPage === 'programs') {
         renderCyclesPage();
     } else if (state.currentPage === 'programsInCycle') {
@@ -4757,60 +5675,51 @@ function render() {
         renderProgramDetailsPage();
     } else if (state.currentPage === 'journal') {
         renderJournalPage();
-    }  else if (state.currentPage === 'journalRecordDetails') {
-              renderJournalRecordDetails();
-
-
-    }else if (state.currentPage === 'supplements') {
+    } else if (state.currentPage === 'journalRecordDetails') {
+        renderJournalRecordDetails();
+    } else if (state.currentPage === 'supplements') {
         renderSupplementsPage();
-
     } else if (state.currentPage === 'meal') {
-            renderMealPage();
-
+        renderMealPage();
+    } else if (state.currentPage === 'profile') {
+        renderProfilePage();
     } else if (state.currentPage === 'reports') {
         renderReportsPage();
-    } else if (state.currentPage === 'cycleReport') { // Обработка страницы отчета
-        renderCycleReportPage(state.reportHtmlCache); // Предполагается наличие renderCycleReportPage
-        document.querySelector('.navigation').style.display = 'none'; // Скрываем навигацию
-        return; // Выходим, чтобы не обновлять активную кнопку и не показывать навигацию
-    }
-    else if (state.currentPage === 'mealsReport') {
+    } else if (state.currentPage === 'cycleReport') {
+        renderCycleReportPage(state.reportHtmlCache);
+        syncBottomNavAfterRender(state.currentPage);
+        hideStatusBarEverywhere();
+        return;
+    } else if (state.currentPage === 'mealsReport') {
         renderMealsReportPage(state.reportHtmlCache);
-        document.querySelector('.navigation').style.display = 'none';
+        syncBottomNavAfterRender(state.currentPage);
+        hideStatusBarEverywhere();
+        return;
+    } else if (state.currentPage === 'modeSelect') {
+        syncBottomNavAfterRender(state.currentPage);
+        hideStatusBarEverywhere();
         return;
     }
 
-    else if (state.currentPage === 'modeSelect') {
-        // Заглушка для рендера экрана выбора режима (если она тут)
-        document.querySelector('.navigation').style.display = 'none'; // Скрываем навигацию на этом экране
-        return;
-    }
+    syncBottomNavAfterRender(state.currentPage);
 
-    // Если страница не 'cycleReport' и не 'modeSelect', показываем навигацию
-    document.querySelector('.navigation').style.display = 'flex';
-
-
-    // Обновление активной кнопки в нижней навигации
-    document.querySelectorAll('.nav-btn').forEach(btn => {
-        btn.classList.remove('active');
-    });
-
-    // Определение активной кнопки
-    const activeNavButtonId = {
-        'programs': 'programs-btn',
-        'programsInCycle': 'programs-btn',
-        'programDetails': 'programs-btn',
-        'journal': 'journal-btn',
-        'supplements': 'supplements-btn',
-        'meal': 'meal-btn',
-        'reports': 'reports-btn'
-    }[state.currentPage];
-
-    if (activeNavButtonId) {
-        document.getElementById(activeNavButtonId)?.classList.add('active');
-    }
+    hideStatusBarEverywhere();
 }
 window.render = render;
+
+initBottomNav();
+
+async function hideStatusBarEverywhere() {
+    try {
+        const StatusBar = window.Capacitor?.Plugins?.StatusBar;
+        if (!StatusBar) return;
+        await StatusBar.hide({ animation: 'NONE' });
+    } catch (err) {
+        console.error('StatusBar error:', err);
+    }
+}
+
+window.hideStatusBarEverywhere = hideStatusBarEverywhere;
 
 // =================================================================
 // 🔑 АУТЕНТИФИКАЦИЯ
@@ -4826,19 +5735,45 @@ if (authToggleBtn && authLoginBtn) {
         isLoginMode = !isLoginMode;
         authLoginBtn.innerText = isLoginMode ? 'Войти' : 'Зарегистрироваться';
         authToggleBtn.innerText = isLoginMode ? 'Зарегистрироваться' : 'Войти';
-        document.querySelector('.auth-box h3').innerText = isLoginMode ? 'Вход в Дневник' : 'Регистрация';
+        const titleEl = document.querySelector('.auth-box__title') || document.querySelector('.auth-box h3');
+        if (titleEl) titleEl.textContent = isLoginMode ? 'Вход в Дневник' : 'Регистрация';
+        syncAuthRegisterFieldsVisibility(isLoginMode);
     });
 
+    syncAuthRegisterFieldsVisibility(isLoginMode);
+
     authLoginBtn.addEventListener('click', async () => {
-        const email = document.getElementById('auth-email').value;
+        const email = document.getElementById('auth-email').value.trim();
         const password = document.getElementById('auth-password').value;
         try {
             if (isLoginMode) {
                 await signInWithEmailAndPassword(auth, email, password);
                 showToast('Вход выполнен успешно!');
             } else {
-                await createUserWithEmailAndPassword(auth, email, password);
-                showToast('Регистрация прошла успешно! Выполнен вход.');
+                const firstName = document.getElementById('auth-first-name')?.value?.trim() || '';
+                const lastName = document.getElementById('auth-last-name')?.value?.trim() || '';
+                const patronymic = document.getElementById('auth-patronymic')?.value?.trim() || '';
+                const birthDate = document.getElementById('auth-birth-date')?.value || '';
+
+                if (!firstName || !lastName || !patronymic || !birthDate) {
+                    showToast('Заполните имя, фамилию, отчество и дату рождения.');
+                    return;
+                }
+                if (!email || !password) {
+                    showToast('Укажите email и пароль.');
+                    return;
+                }
+
+                const cred = await createUserWithEmailAndPassword(auth, email, password);
+                const code = await createUserProfileAndAssignCode(cred.user.uid, {
+                    firstName,
+                    lastName,
+                    patronymic,
+                    birthDate
+                });
+                await refreshUserProfileFromServer();
+                render();
+                showPostRegistrationModal(code);
             }
         } catch (error) {
             console.error("Ошибка аутентификации:", error);
@@ -4848,75 +5783,15 @@ if (authToggleBtn && authLoginBtn) {
 }
 
 
+// ======================================================================
+// 🖱️ ОБРАБОТЧИКИ КЛИКОВ (нижняя навигация — ./nav/bottom-nav.js)
 // =================================================================
-// 🖱️ ОБРАБОТЧИКИ КЛИКОВ (Нижняя навигация и Выбор режима)
-// =================================================================
-
-// 🔥 ОБРАБОТЧИК ДЛЯ КНОПКИ "ПРОГРАММЫ"
-document.getElementById('programs-btn')?.addEventListener('click', () => {
-    if (!state.currentMode) return;
-
-    // Если мы уже в разделе программ — ничего не меняем
-    if (['programs', 'programsInCycle', 'programDetails'].includes(state.currentPage)) return;
-
-    // Переходим туда, где были в последний раз
-    if (state.lastProgramsPage === 'programDetails' && state.selectedProgramIdForDetails) {
-        state.currentPage = 'programDetails';
-    } else if (state.lastProgramsPage === 'programsInCycle' && state.selectedCycleId) {
-        state.currentPage = 'programsInCycle';
-    } else {
-        state.currentPage = 'programs'; // по умолчанию
-    }
-
-    render();
-});
-
-
-// 🔥 ОБРАБОТЧИК ДЛЯ КНОПКИ "ДНЕВНИК"
-document.getElementById('journal-btn')?.addEventListener('click', () => {
-    if (state.currentMode) {
-        state.currentPage = 'journal';
-        render();
-    }
-});
-
-// 🔥 ОБРАБОТЧИК ДЛЯ КНОПКИ "БАДЫ" - ИСПРАВЛЕН
-document.getElementById('supplements-btn')?.addEventListener('click', () => {
-    if (state.currentMode) {
-        state.currentPage = 'supplements';
-        render();
-    }
-});
-
-
-// 🔥 ОБРАБОТЧИК ДЛЯ КНОПКИ "ЕДА" - ИСПРАВЛЕН
-document.getElementById('meal-btn')?.addEventListener('click', () => {
-    if (state.currentMode) {
-        state.currentPage = 'meal';
-        render();
-    }
-});
-
-
-// 🔥 ОБРАБОТЧИК ДЛЯ КНОПКИ "ОТЧЕТЫ" - ИСПРАВЛЕН
-document.getElementById('reports-btn')?.addEventListener('click', () => {
-    if (state.currentMode) {
-        state.currentPage = 'reports';
-        render();
-    }
-});
-
 
 // 🔥 ОБРАБОТЧИК: СОБСТВЕННЫЕ ТРЕНИРОВКИ
 document.getElementById('select-own-mode')?.addEventListener('click', () => {
+    resetModeScopedState();
     state.currentMode = 'own';
     state.currentPage = 'programs';
-
-    // ✅ Полностью сбрасываем данные клиента/цикла
-    state.selectedClientId = null;
-    state.selectedCycleId = null;
-    state.selectedJournalCategory = null;
-    state.selectedJournalProgram = null;
 
     setupDynamicListeners();
     render();
@@ -4924,14 +5799,9 @@ document.getElementById('select-own-mode')?.addEventListener('click', () => {
 
 // 🔥 ОБРАБОТЧИК: ПЕРСОНАЛЬНЫЕ (ТРЕНЕР)
 document.getElementById('select-personal-mode')?.addEventListener('click', () => {
+    resetModeScopedState();
     state.currentMode = 'personal';
     state.currentPage = 'programs';
-
-    // ✅ ОБЯЗАТЕЛЬНО сбрасываем прошлые выбранные циклы из "own"
-    state.selectedClientId = null;
-    state.selectedCycleId = null;
-    state.selectedJournalCategory = null;
-    state.selectedJournalProgram = null;
 
     setupDynamicListeners();
     render();
@@ -4959,7 +5829,7 @@ document.getElementById('mode-logout-btn')?.addEventListener('click', async () =
 // =================================================================
 // ... (Код onAuthStateChanged без изменений) ...
 
-onAuthStateChanged(auth, (user) => {
+onAuthStateChanged(auth, async (user) => {
     const loading = document.getElementById('loading-screen');
 
     // Пока грузится — показываем лоадер
@@ -4970,6 +5840,13 @@ onAuthStateChanged(auth, (user) => {
     if (user) {
         userId = user.uid;
         console.log('🔑 Пользователь вошёл:', userId);
+
+        try {
+            await refreshUserProfileFromServer();
+        } catch (e) {
+            console.warn('Профиль не загружен:', e);
+            state.userProfile = null;
+        }
 
         // Если режим ещё не выбран — показываем выбор режима
         if (state.currentMode === null) {
@@ -4984,6 +5861,7 @@ onAuthStateChanged(auth, (user) => {
         state.currentMode = null;
         state.selectedClientId = null;
         state.currentPage = 'auth';
+        state.userProfile = null;
         toggleAppVisibility(false);
     }
 

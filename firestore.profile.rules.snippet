@@ -1,0 +1,4 @@
+// Устарело как отдельный фрагмент: полные правила с профилем и publicUserCodes — в файле firestore.rules
+// Добавлено к вашим правилам:
+//   1) match /account/{docId} внутри users/{userId}
+//   2) match /artifacts/{appId}/publicUserCodes/{code} рядом с блоком users

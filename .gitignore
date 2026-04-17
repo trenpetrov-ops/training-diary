@@ -44,6 +44,9 @@ bower_components
 # Compiled binary addons (http://nodejs.org/api/addons.html)
 build/Release
 
+# Capacitor: заполнить командой `npm run build` перед `npx cap sync`
+www/
+
 # Dependency directories
 node_modules/
 
@@ -64,6 +67,9 @@ node_modules/
 
 # dotenv environment variables file
 .env
+.env.*
+functions/.env
+functions/.env.*
 
 # dataconnect generated files
 .dataconnect

@@ -2,26 +2,62 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 
 
     <meta name="theme-color" content="#f2f2f7">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Training Diary">
+    <link rel="apple-touch-icon" href="./icons/icon-192.png">
     <title>Дневник тренировок</title>
     <link rel="manifest" href="./manifest.json">
     <link rel="stylesheet" href="./styles.css">
+    <link rel="stylesheet" href="/css/awesome/css/all.css" />
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
+
 
 </head>
 <body>
 
-<div id="auth-screen">
+<div id="auth-screen" class="auth-screen">
     <div class="auth-box">
-        <h3>Вход в Дневник</h3>
-        <input type="email" id="auth-email" placeholder="Email">
-        <input type="password" id="auth-password" placeholder="Пароль">
-        <button id="auth-login-btn" class="btn btn-primary">Войти</button>
-        <button id="auth-toggle-btn" class="auth-toggle-btn">Зарегистрироваться</button>
+        <div class="auth-box__brand" aria-hidden="true">
+            <span class="auth-box__brand-mark">TD</span>
+        </div>
+        <h3 class="auth-box__title">Вход в Дневник</h3>
+        <p class="auth-box__lede" id="auth-lede">Войдите под своей учётной записью.</p>
+        <div id="auth-register-extra" class="auth-register-extra" hidden>
+            <div class="auth-field-group">
+                <label class="auth-field-label" for="auth-first-name">Имя</label>
+                <input type="text" id="auth-first-name" class="auth-field" placeholder="Иван" autocomplete="given-name">
+            </div>
+            <div class="auth-field-group">
+                <label class="auth-field-label" for="auth-last-name">Фамилия</label>
+                <input type="text" id="auth-last-name" class="auth-field" placeholder="Иванов" autocomplete="family-name">
+            </div>
+            <div class="auth-field-group">
+                <label class="auth-field-label" for="auth-patronymic">Отчество</label>
+                <input type="text" id="auth-patronymic" class="auth-field" placeholder="Иванович" autocomplete="additional-name">
+            </div>
+            <div class="auth-field-group">
+                <label class="auth-field-label" for="auth-birth-date">Дата рождения</label>
+                <input type="date" id="auth-birth-date" class="auth-field" autocomplete="bday">
+            </div>
+        </div>
+        <div class="auth-credentials">
+            <div class="auth-field-group">
+                <label class="auth-field-label" for="auth-email">Email</label>
+                <input type="email" id="auth-email" class="auth-field" placeholder="you@example.com" autocomplete="email">
+            </div>
+            <div class="auth-field-group">
+                <label class="auth-field-label" for="auth-password">Пароль</label>
+                <input type="password" id="auth-password" class="auth-field" placeholder="••••••••" autocomplete="current-password">
+            </div>
+        </div>
+        <button type="button" id="auth-login-btn" class="btn btn-primary auth-submit-btn">Войти</button>
+        <button type="button" id="auth-toggle-btn" class="auth-toggle-btn">Зарегистрироваться</button>
     </div>
 </div>
 
@@ -164,279 +200,6 @@
 <div class="container">
 
     <div id="root"></div>
-    <div class="navigation-fon"></div>
-        <div class="navigation">
-        <button id="programs-btn" class="nav-btn">
-            <div id="programs-icon" class="lottie-icon">
-                <!-- SVG статичен по умолчанию -->
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" preserveAspectRatio="xMidYMid meet" style="width:100%;height:100%;">
-                    <defs>
-                        <clipPath id="__lottie_element_74442"><rect width="48" height="48" x="0" y="0"/></clipPath>
-                    </defs>
-
-                    <style>
-                        /* === КАДРЫ АНИМАЦИЙ (одноразовые) === */
-                        @keyframes swayOnce {
-                          0% { transform: rotate(0deg); }
-                          25% { transform: rotate(4deg); }
-                          75% { transform: rotate(-4deg); }
-                          100% { transform: rotate(0deg); }
-                        }
-                        @keyframes dotUpOnce {
-                          0% { transform: translateY(0); opacity: 1; }
-                          50% { transform: translateY(-2px); opacity: .95; }
-                          100% { transform: translateY(0); opacity: 1; }
-                        }
-                        @keyframes dotDownOnce {
-                          0% { transform: translateY(0); opacity: 1; }
-                          50% { transform: translateY(2px); opacity: .95; }
-                          100% { transform: translateY(0); opacity: 1; }
-                        }
-
-                        /* триггер анимаций (вешаем на #icon) */
-                        #icon.play #bell {
-                          transform-origin: 24px 24px;
-                          animation: swayOnce 2s ease-in-out 1 both;
-                        }
-                        #icon.play .dot-top    { animation: dotUpOnce   2s ease-in-out 1 both; }
-                        #icon.play .dot-bottom { animation: dotDownOnce 2s ease-in-out 1 both; }
-
-                        /* статика по умолчанию */
-                        .dot, #bell { transform: none; opacity: 1; }
-                    </style>
-
-                    <!-- Обёртка для синхронного триггера -->
-                    <g id="icon">
-                        <!-- (1) покачивающаяся часть -->
-                        <g id="bell" clip-path="url(#__lottie_element_74442)">
-                            <!-- Центральная часть гантели -->
-                            <g transform="matrix(0.8833087683,0,0,0.8833087683,2.80059,2.80059)" opacity="1">
-                                <g opacity="1" transform="matrix(1,0,0,1,24,24.076)">
-                                    <path fill="#fff" d="M6.091,3c0,0-12.182,0-12.182,0c0,0,0-6,0-6c0,0,12.182,0,12.182,0c0,0,0,6,0,6z"></path>
-                                    <path stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="#000" stroke-width="1" d="M6.091,3c0,0-12.182,0-12.182,0c0,0,0-6,0-6c0,0,12.182,0,12.182,0c0,0,0,6,0,6z"></path>
-                                </g>
-                                <g opacity="1" transform="matrix(1,0,0,1,8.716,24.076)">
-                                    <path fill="#fff" d="M0.345,5.935c0,0-0.690,0-0.690,0c-0.744,0-1.348-0.604-1.348-1.348c0,0,0-9.174,0-9.174c0-0.745,0.604-1.349,1.348-1.349c0,0,0.690,0,0.690,0c0.745,0,1.349,0.603,1.349,1.348c0,0,0,9.174,0,9.174C1.694,5.331,1.090,5.935,0.345,5.935z"></path>
-                                    <path stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="#000" stroke-width="1" d="M0.345,5.935c0,0-0.690,0-0.690,0c-0.744,0-1.348-0.604-1.348-1.348c0,0,0-9.174,0-9.174c0-0.745,0.604-1.349,1.348-1.349c0,0,0.690,0,0.690,0c0.745,0,1.349,0.603,1.349,1.348c0,0,0,9.174,0,9.174C1.694,5.331,1.090,5.935,0.345,5.935z"></path>
-                                </g>
-                                <g opacity="1" transform="matrix(1,0,0,1,39.284,24.076)">
-                                    <path fill="#fff" d="M-0.345,-5.935c0,0,0.690,0,0.690,0c0.744,0,1.349,0.604,1.349,1.349c0,0,0,9.174,0,9.174c0,0.745-0.604,1.349-1.349,1.349c0,0-0.690,0-0.690,0c-0.745,0-1.349-0.604-1.349-1.349c0,0,0-9.174,0-9.174C-1.694,-5.331-1.090,-5.935-0.345,-5.935z"></path>
-                                    <path stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="#000" stroke-width="1" d="M-0.345,-5.935c0,0,0.690,0,0.690,0c0.744,0,1.349,0.604,1.349,1.349c0,0,0,9.174,0,9.174c0,0.745-0.604,1.349-1.349,1.349c0,0-0.690,0-0.690,0c-0.745,0-1.349-0.604-1.349-1.349c0,0,0-9.174,0-9.174C-1.694,-5.331-1.090,-5.935-0.345,-5.935z"></path>
-                                </g>
-                            </g>
-                            <!-- Внешние пластины -->
-                            <g transform="matrix(0.8833087683,0,0,0.8833087683,2.80059,2.80059)" opacity="1">
-                                <g opacity="1" transform="matrix(1,0,0,1,14.159,24.076)">
-                                    <path fill="#fff" d="M1.273,9.046c0,0-2.546,0-2.546,0C-2.641,9.046-3.75,7.936-3.75,6.568c0,0,0-13.136,0-13.136c0-1.368,1.109-2.478,2.477-2.478c0,0,2.546,0,2.546,0c1.368,0,2.477,1.110,2.477,2.478c0,0,0,13.136,0,13.136C3.75,7.936,2.641,9.046,1.273,9.046z"></path>
-                                    <path stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="rgb(0,122,255)" stroke-width="1" d="M1.273,9.046c0,0-2.546,0-2.546,0C-2.641,9.046-3.75,7.936-3.75,6.568c0,0,0-13.136,0-13.136c0-1.368,1.109-2.478,2.477-2.478c0,0,2.546,0,2.546,0c1.368,0,2.477,1.110,2.477,2.478c0,0,0,13.136,0,13.136C3.75,7.936,2.641,9.046,1.273,9.046z"></path>
-                                </g>
-                                <g opacity="1" transform="matrix(1,0,0,1,33.841,24.076)">
-                                    <path fill="#fff" d="M-1.273,-9.046c0,0,2.546,0,2.546,0c1.368,0,2.477,1.110,2.477,2.478c0,0,0,13.136,0,13.136c0,1.368-1.109,2.478-2.477,2.478c0,0-2.546,0-2.546,0c-1.368,0-2.477-1.110-2.477-2.478c0,0,0-13.136,0-13.136C-3.75,-7.936-2.641,-9.046-1.273,-9.046z"></path>
-                                    <path stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="rgb(0,122,255)" stroke-width="1" d="M-1.273,-9.046c0,0,2.546,0,2.546,0c1.368,0,2.477,1.110,2.477,2.478c0,0,0,13.136,0,13.136c0,1.368-1.109,2.478-2.477,2.478c0,0-2.546,0-2.546,0c-1.368,0-2.477-1.110-2.477-2.478c0,0,0-13.136,0-13.136C-3.75,-7.936-2.641,-9.046-1.273,-9.046z"></path>
-                                </g>
-                            </g>
-                        </g>
-
-                        <!-- (2) «точечки» (верх/низ) — анимируются вместе с колебанием -->
-                        <g id="dots">
-                            <!-- верхние -->
-                            <g opacity="1" transform="matrix(1,0,0,1,32.909,10.359)">
-                                <path class="dot dot-top" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="rgb(0,122,255)" stroke-width="1" d="M-0.512,0.505 C-0.512,0.505 -0.417,0.411 -0.285,0.281"></path>
-                            </g>
-                            <g opacity="1" transform="matrix(1,0,0,1,14.909,10.359)">
-                                <path class="dot dot-top" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="rgb(0,122,255)" stroke-width="1" d="M0.512,0.505 C0.512,0.505 0.417,0.411 0.285,0.281"></path>
-                            </g>
-                            <g opacity="1" transform="matrix(1,0,0,1,23.771,7.703)">
-                                <path class="dot dot-top" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="rgb(0,122,255)" stroke-width="1" d="M-0.005,0.719 C-0.005,0.719 -0.004,0.585 -0.003,0.4"></path>
-                            </g>
-                            <!-- нижние -->
-                            <g opacity="1" transform="matrix(1,0,0,1,14.909,37.641)">
-                                <path class="dot dot-bottom" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="rgb(0,122,255)" stroke-width="1" d="M0.512,-0.505 C0.512,-0.505 0.417,-0.411 0.285,-0.281"></path>
-                            </g>
-                            <g opacity="1" transform="matrix(1,0,0,1,32.909,37.641)">
-                                <path class="dot dot-bottom" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="rgb(0,122,255)" stroke-width="1" d="M-0.512,-0.505 C-0.512,-0.505 -0.417,-0.411 -0.285,-0.281"></path>
-                            </g>
-                            <g opacity="1" transform="matrix(1,0,0,1,24.047,40.298)">
-                                <path class="dot dot-bottom" stroke-linecap="round" stroke-linejoin="round" fill="none" stroke="rgb(0,122,255)" stroke-width="1" d="M0.005,-0.719 C0.005,-0.719 0.004,-0.585 0.003,-0.4"></path>
-                            </g>
-                        </g>
-                    </g>
-                </svg>
-            </div>
-        </button>
-
-        <script>
-            document.addEventListener('DOMContentLoaded', () => {
-              const btn  = document.getElementById('programs-btn');
-              const icon = btn.querySelector('#icon'); // общий триггер для bell + dots
-
-              function playOnce() {
-                // снять/вернуть класс, чтобы анимации запускались каждый раз
-                icon.classList.remove('play');
-                // форс-рефлоу — гарантирует перезапуск даже при повторном выборе
-                void icon.offsetWidth;
-                icon.classList.add('play');
-
-                // убрать класс по завершении (через 2с), чтобы при возврате работало снова
-                setTimeout(() => icon.classList.remove('play'), 2000);
-              }
-
-              // 1) клик по пункту — анимация 1 раз
-              btn.addEventListener('click', playOnce);
-
-              // 2) если твой роутер/меню помечает активный пункт классом "active"
-              //    — анимация при установке класса (возвращение на пункт)
-              const mo = new MutationObserver(muts => {
-                for (const m of muts) {
-                  if (m.attributeName === 'class' || m.attributeName === 'aria-selected' || m.attributeName === 'aria-current') {
-                    const isActive =
-                      btn.classList.contains('active') ||
-                      btn.getAttribute('aria-selected') === 'true' ||
-                      btn.getAttribute('aria-current') === 'page';
-                    if (isActive) playOnce();
-                  }
-                }
-              });
-              mo.observe(btn, { attributes: true });
-
-              // 3) если пункт скрывают/показывают (SPA), проигрываем при появлении, если он активен
-              const io = new IntersectionObserver(entries => {
-                entries.forEach(e => {
-                  if (e.isIntersecting) {
-                    const isActive =
-                      btn.classList.contains('active') ||
-                      btn.getAttribute('aria-selected') === 'true' ||
-                      btn.getAttribute('aria-current') === 'page';
-                    if (isActive) playOnce();
-                  }
-                });
-              });
-              io.observe(btn);
-            });
-        </script>
-
-        <button id="journal-btn" class="nav-btn">
-            <div id="journal-icon" class="lottie-icon"></div>
-            <script>
-                document.addEventListener('DOMContentLoaded', () => {
-                  const journalAnim = lottie.loadAnimation({
-                    container: document.getElementById('journal-icon'),
-                    renderer: 'svg',
-                    loop: false,
-                    autoplay: false,
-                    path: './icon-animations/menuCalendar.json'
-                  });
-
-                  const journalBtn = document.getElementById('journal-btn');
-                  let isPlaying = false;
-
-                  journalBtn.addEventListener('click', () => {
-                    if (isPlaying) return;
-                    isPlaying = true;
-
-                    journalAnim.goToAndPlay(0, true);
-
-                    journalAnim.addEventListener('complete', () => {
-                      isPlaying = false;
-                      journalAnim.pause(); // останавливаем на последнем кадре
-                    });
-                  });
-                });
-            </script>
-
-        </button>
-        <button id="supplements-btn" class="nav-btn">
-            <div id="supplement-icon" class="lottie-icon"></div>
-            <script>
-                document.addEventListener('DOMContentLoaded', () => {
-                  const supplementsAnim = lottie.loadAnimation({
-                    container: document.getElementById('supplement-icon'),
-                    renderer: 'svg',
-                    loop: false,
-                    autoplay: false,
-                    path: './icon-animations/menuBad.json'
-                  });
-
-                  const supplementsBtn = document.getElementById('supplements-btn');
-                  let isPlaying = false;
-
-                  supplementsBtn.addEventListener('click', () => {
-                    if (isPlaying) return;
-                    isPlaying = true;
-
-                    supplementsAnim.goToAndPlay(0, true);
-
-                    supplementsAnim.addEventListener('complete', () => {
-                      isPlaying = false;
-                      supplementsAnim.pause(); // останавливаем на последнем кадре
-                    });
-                  });
-                });
-            </script>
-        </button>
-
-            <button id="meal-btn" class="nav-btn">
-                <div id="meal-icon" class="lottie-icon"></div>
-                <script>
-                    document.addEventListener('DOMContentLoaded', () => {
-                      const reportsAnim = lottie.loadAnimation({
-                        container: document.getElementById('meal-icon'),
-                        renderer: 'svg',
-                        loop: false,
-                        autoplay: false,
-                        path: './icon-animations/menuMeal.json'
-                      });
-
-                      const reportsBtn = document.getElementById('meal-btn');
-                      let isPlaying = false;
-
-                      reportsBtn.addEventListener('click', () => {
-                        if (isPlaying) return;
-                        isPlaying = true;
-
-                        reportsAnim.goToAndPlay(0, true);
-
-                        reportsAnim.addEventListener('complete', () => {
-                          isPlaying = false;
-                          reportsAnim.pause(); // останавливаем на последнем кадре
-                        });
-                      });
-                    });
-                </script>
-            </button>
-
-
-
-        <button id="reports-btn" class="nav-btn">
-            <div id="reports-icon" class="lottie-icon"></div>
-            <script>
-                document.addEventListener('DOMContentLoaded', () => {
-                  const reportsAnim = lottie.loadAnimation({
-                    container: document.getElementById('reports-icon'),
-                    renderer: 'svg',
-                    loop: false,
-                    autoplay: false,
-                    path: './icon-animations/menuReports.json'
-                  });
-
-                  const reportsBtn = document.getElementById('reports-btn');
-                  let isPlaying = false;
-
-                  reportsBtn.addEventListener('click', () => {
-                    if (isPlaying) return;
-                    isPlaying = true;
-
-                    reportsAnim.goToAndPlay(0, true);
-
-                    reportsAnim.addEventListener('complete', () => {
-                      isPlaying = false;
-                      reportsAnim.pause(); // останавливаем на последнем кадре
-                    });
-                  });
-                });
-            </script>
-        </button>
-    </div>
 
 </div>
 
@@ -493,7 +256,6 @@
 
 
 </script>
-
 <script type="module" src="./script.js"></script>
 
 </body>

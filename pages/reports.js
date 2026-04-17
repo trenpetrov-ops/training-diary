@@ -1,17 +1,22 @@
-import { getTodayDateString } from '../script.js';
-import { getReportsCollection } from '../script.js';
+import {
+    getTodayDateString,
+    getReportsCollection,
+    ensureCycleSelected,
+    render,
+    showToast
+} from '../script.js';
 
 // =================================================================
 // 🌟 НОВАЯ ФУНКЦИЯ: РЕНДЕР СТРАНИЦЫ ОТЧЕТОВ (ИСПРАВЛЕНО)
 // =================================================================
 export function renderReportsPage() {
     const root = document.getElementById('root');
-
+    if (!ensureCycleSelected(render)) return;
 
     const contentContainer = createElement('div', 'reports-page');
     contentContainer.style.padding = '10px';
 
-    const selectedCycle = state.cycles.find(c => c.id === state.selectedCycleId);
+    const selectedCycle = state.cycles?.find(c => c.id === state.selectedCycleId);
 
     if (!selectedCycle) {
         // Цикл не выбран — только заголовок и сообщение
@@ -831,6 +836,10 @@ function collectCurrentMetrics(metricsListDiv) {
 // 🔥 НОВАЯ ФУНКЦИЯ: Сохранение / Обновление отчета о прогрессе
 async function saveProgressReport(reportData, reportId = null) {
     const reportsCollection = getReportsCollection();
+    if (!reportsCollection) {
+        showToast('Нет контекста цикла для сохранения отчёта.');
+        return;
+    }
 
     try {
         if (reportId) {
@@ -851,6 +860,10 @@ async function saveProgressReport(reportData, reportId = null) {
 async function deleteReport(reportId) {
     if (!confirm('Вы уверены, что хотите удалить этот отчет о прогрессе?')) return;
     const reportsCollection = getReportsCollection();
+    if (!reportsCollection) {
+        showToast('Нет контекста цикла для удаления.');
+        return;
+    }
     try {
         // 🔥 В реальном приложении здесь должна быть логика удаления фото из Storage
         await deleteDoc(doc(reportsCollection, reportId));

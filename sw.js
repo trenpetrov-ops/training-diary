@@ -1,39 +1,55 @@
-// ============================================================
-// 🌐 Чистый Service Worker для PWA без уведомлений
-// ============================================================
-
-const CACHE_NAME = 'training-diary-v1';
+const CACHE_NAME = 'training-diary-v6';
 const CACHE_URLS = [
-  '/training-diary/',
-  '/training-diary/index.html',
-  '/training-diary/manifest.json',
-  '/training-diary/styles.css',
-  '/training-diary/script.js',
-  '/training-diary/icons/icon-192.png',
-  '/training-diary/icons/icon-512.png'
+  '/',
+  '/index.html',
+  '/manifest.json',
+  '/styles.css',
+  '/nav/bottom-nav.css',
+  '/nav/bottom-nav.js',
+  '/nav/bottom-nav-markup.js',
+  '/script.js',
+  '/pages/meal.js',
+  '/pages/profile.js',
+  '/pages/reports.js',
+  '/pages/supplement.js',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png'
 ];
 
-// Установка и кэширование файлов
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => cache.addAll(CACHE_URLS))
   );
-  console.log('✅ Service Worker установлен и ресурсы закэшированы');
+  self.skipWaiting();
 });
 
-// Активация и очистка старого кеша
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.map(key => key !== CACHE_NAME && caches.delete(key)))
+      Promise.all(
+        keys.map(key => {
+          if (key !== CACHE_NAME) {
+            return caches.delete(key);
+          }
+        })
+      )
     )
   );
-  console.log('🧹 Старые кеши удалены');
+  self.clients.claim();
 });
 
-// Обработка запросов: сначала сеть, потом кеш
 self.addEventListener('fetch', event => {
+  if (event.request.method !== 'GET') return;
+
   event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request))
+    fetch(event.request)
+      .then(response => {
+        const responseClone = response.clone();
+        caches.open(CACHE_NAME).then(cache => {
+          cache.put(event.request, responseClone);
+        });
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });

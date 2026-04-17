@@ -1,0 +1,18 @@
+{
+  "appId": "com.trenpetrov.trainingdiary",
+  "appName": "Training Diary",
+  "webDir": "www",
+  "ios": {
+    "scheme": "App"
+  },
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "StatusBar": {
+      "overlaysWebView": false,
+      "style": "DARK",
+      "backgroundColor": "#f2f2f7ff"
+    }
+  }
+}

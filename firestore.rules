@@ -1,0 +1,146 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    function clientLinkedTrainerAccess(appIdVal, clientUid) {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/artifacts/$(appIdVal)/users/$(clientUid)/linkedTrainers/$(request.auth.uid))
+        && get(/databases/$(database)/documents/artifacts/$(appIdVal)/users/$(clientUid)/linkedTrainers/$(request.auth.uid)).data.active == true;
+    }
+
+    function ownerOrLinkedTrainer(appIdVal, clientUid) {
+      return isOwner(clientUid) || clientLinkedTrainerAccess(appIdVal, clientUid);
+    }
+
+    match /artifacts/{appId}/users/{userId} {
+      allow read, write: if isOwner(userId);
+
+      match /mealLibraryFoods/{foodId} {
+        allow read, write: if isOwner(userId) || clientLinkedTrainerAccess(appId, userId);
+      }
+
+      match /mealLibraryRecipes/{recipeId} {
+        allow read, write: if isOwner(userId) || clientLinkedTrainerAccess(appId, userId);
+      }
+
+      match /account/{docId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /trainerInvites/{inviteId} {
+        allow create: if request.auth != null
+          && request.auth.uid == request.resource.data.trainerUid
+          && request.resource.data.status == 'pending'
+          && request.resource.data.keys().hasAll(['trainerUid', 'trainerClientCardId', 'status', 'createdAt']);
+        allow read: if request.auth != null
+          && (request.auth.uid == userId || resource.data.trainerUid == request.auth.uid);
+        allow update: if request.auth != null
+          && request.auth.uid == userId
+          && resource.data.status == 'pending'
+          && request.resource.data.trainerUid == resource.data.trainerUid
+          && request.resource.data.trainerClientCardId == resource.data.trainerClientCardId
+          && request.resource.data.status in ['accepted', 'rejected'];
+        allow delete: if false;
+      }
+
+      match /linkedTrainers/{trainerUid} {
+        allow read: if request.auth != null
+          && (request.auth.uid == userId || request.auth.uid == trainerUid);
+        allow write: if isOwner(userId);
+      }
+
+      match /cycles/{cycleId} {
+        allow read, write: if ownerOrLinkedTrainer(appId, userId);
+
+        match /programs/{programId} {
+          allow read, write: if ownerOrLinkedTrainer(appId, userId);
+        }
+
+        match /reports/{reportId} {
+          allow read, write: if ownerOrLinkedTrainer(appId, userId);
+        }
+
+        match /supplements/{docId} {
+          allow read, write: if ownerOrLinkedTrainer(appId, userId);
+        }
+
+        match /foods/{foodId} {
+          allow read, write: if ownerOrLinkedTrainer(appId, userId);
+        }
+
+        match /meals/{mealId} {
+          allow read, write: if ownerOrLinkedTrainer(appId, userId);
+        }
+
+        match /recipes/{recipeId} {
+          allow read, write: if ownerOrLinkedTrainer(appId, userId);
+        }
+      }
+
+      match /clients/{clientId} {
+        allow read, write: if isOwner(userId);
+
+        match /mealLibraryFoods/{foodId} {
+          allow read, write: if isOwner(userId);
+        }
+
+        match /mealLibraryRecipes/{recipeId} {
+          allow read, write: if isOwner(userId);
+        }
+
+        match /cycles/{cycleId} {
+          allow read, write: if isOwner(userId);
+
+          match /programs/{programId} {
+            allow read, write: if isOwner(userId);
+          }
+          match /reports/{reportId} {
+            allow read, write: if isOwner(userId);
+          }
+          match /supplements/{docId} {
+            allow read, write: if isOwner(userId);
+          }
+          match /foods/{foodId} {
+            allow read, write: if isOwner(userId);
+          }
+          match /meals/{mealId} {
+            allow read, write: if isOwner(userId);
+          }
+          match /recipes/{recipeId} {
+            allow read, write: if isOwner(userId);
+          }
+        }
+
+        match /journal/{docId} {
+          allow read, write: if isOwner(userId);
+        }
+      }
+
+      match /journal/{docId} {
+        allow read, write: if ownerOrLinkedTrainer(appId, userId);
+      }
+    }
+
+    match /artifacts/{appId}/publicUserCodes/{code} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasAll(['uid', 'assignedAt']);
+      allow update, delete: if false;
+    }
+
+    // Общий каталог продуктов приложения (копии при создании у пользователя/клиента).
+    match /artifacts/{appId}/globalFoodCatalog/{foodId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+        && request.resource.data.createdByUid == request.auth.uid
+        && request.resource.data.keys().hasAll(['name', 'nameLower', 'createdByUid', 'createdAt']);
+      allow update, delete: if request.auth != null
+        && resource.data.createdByUid == request.auth.uid;
+    }
+  }
+}
