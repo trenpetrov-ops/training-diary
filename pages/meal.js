@@ -3179,10 +3179,12 @@ function openMealOverlay(content) {
     // Legacy behavior: replace everything.
     mealOverlayStack.forEach(cleanupMealOverlayNode);
     mealOverlayEl.classList.remove('meal-overlay-layer--search');
+    mealOverlayEl.classList.remove('meal-overlay-layer--contained-scroll');
     mealOverlayEl.innerHTML = '';
     mealOverlayEl.style.display = 'block';
     mealOverlayEl.append(content);
     mealOverlayStack = [content];
+    syncMealOverlayScrollMode();
     syncMealOverlayBottomNav();
 }
 
@@ -3190,6 +3192,7 @@ function closeMealOverlay() {
     if (!mealOverlayEl) return;
     mealOverlayStack.forEach(cleanupMealOverlayNode);
     mealOverlayEl.classList.remove('meal-overlay-layer--search');
+    mealOverlayEl.classList.remove('meal-overlay-layer--contained-scroll');
     mealOverlayEl.innerHTML = '';
     mealOverlayEl.style.display = 'none';
     mealOverlayStack = [];
@@ -3227,6 +3230,22 @@ function syncMealOverlayBottomNav() {
     syncMealSearchBottomNavFromOverlay(top);
 }
 
+function shouldUseContainedMealOverlayScroll(node) {
+    if (!node?.classList) return false;
+    return node.classList.contains('meal-monthly-summary-screen')
+        || node.classList.contains('meal-burned-summary-stub-screen')
+        || node.classList.contains('meal-goal-overlay-wrap');
+}
+
+function syncMealOverlayScrollMode() {
+    if (!mealOverlayEl) return;
+    const top = mealOverlayStack.length ? mealOverlayStack[mealOverlayStack.length - 1] : null;
+    mealOverlayEl.classList.toggle(
+        'meal-overlay-layer--contained-scroll',
+        shouldUseContainedMealOverlayScroll(top)
+    );
+}
+
 function getMealTransitionMs(varName) {
     const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
     const n = parseFloat(raw);
@@ -3259,6 +3278,7 @@ function pushMealOverlay(content, { isSearch = false } = {}) {
 
     mealOverlayEl.append(content);
     mealOverlayStack.push(content);
+    syncMealOverlayScrollMode();
     syncMealOverlayBottomNav();
 }
 
@@ -3277,11 +3297,13 @@ function popMealOverlay() {
         if (prev && prev.style) prev.style.display = '';
         if (!prev) {
             mealOverlayEl.classList.remove('meal-overlay-layer--search');
+            mealOverlayEl.classList.remove('meal-overlay-layer--contained-scroll');
             mealOverlayEl.innerHTML = '';
             mealOverlayEl.style.display = 'none';
         } else {
             const hasSearch = mealOverlayStack.some((n) => n?.classList?.contains('meal-search-screen'));
             mealOverlayEl.classList.toggle('meal-overlay-layer--search', Boolean(hasSearch));
+            syncMealOverlayScrollMode();
         }
         syncMealOverlayBottomNav();
     };

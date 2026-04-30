@@ -54,6 +54,49 @@ function ensureCustomUrlScheme(plistContent, scheme) {
   };
 }
 
+function ensurePlistStringValue(plistContent, key, value) {
+  const keyRegex = new RegExp(`(<key>${key}<\\/key>\\s*<string>)([^<]*)(<\\/string>)`, 'i');
+  if (keyRegex.test(plistContent)) {
+    return {
+      changed: !new RegExp(`(<key>${key}<\\/key>\\s*<string>${value}<\\/string>)`, 'i').test(plistContent),
+      content: plistContent.replace(keyRegex, `$1${value}$3`)
+    };
+  }
+
+  const insertion = `\n\t<key>${key}</key>\n\t<string>${value}</string>`;
+  const closingDictTag = '\n</dict>\n</plist>';
+  if (!plistContent.includes(closingDictTag)) {
+    throw new Error(`Could not find the closing </dict></plist> sequence while inserting ${key}.`);
+  }
+
+  return {
+    changed: true,
+    content: plistContent.replace(closingDictTag, `${insertion}${closingDictTag}`)
+  };
+}
+
+function ensurePlistBoolValue(plistContent, key, boolValue) {
+  const valueTag = boolValue ? '<true/>' : '<false/>';
+  const keyRegex = new RegExp(`(<key>${key}<\\/key>\\s*)(<true\\/>|<false\\/>)`, 'i');
+  if (keyRegex.test(plistContent)) {
+    return {
+      changed: !new RegExp(`(<key>${key}<\\/key>\\s*${valueTag})`, 'i').test(plistContent),
+      content: plistContent.replace(keyRegex, `$1${valueTag}`)
+    };
+  }
+
+  const insertion = `\n\t<key>${key}</key>\n\t${valueTag}`;
+  const closingDictTag = '\n</dict>\n</plist>';
+  if (!plistContent.includes(closingDictTag)) {
+    throw new Error(`Could not find the closing </dict></plist> sequence while inserting ${key}.`);
+  }
+
+  return {
+    changed: true,
+    content: plistContent.replace(closingDictTag, `${insertion}${closingDictTag}`)
+  };
+}
+
 function main() {
   if (!fs.existsSync(infoPlistPath)) {
     console.log(`[configure-capacitor-ios] skipped: ${infoPlistPath} not found`);
@@ -61,15 +104,36 @@ function main() {
   }
 
   const original = fs.readFileSync(infoPlistPath, 'utf8');
-  const result = ensureCustomUrlScheme(original, CALLBACK_SCHEME);
+  let content = original;
+  let changed = false;
 
-  if (!result.changed) {
-    console.log(`[configure-capacitor-ios] already configured with URL scheme "${CALLBACK_SCHEME}"`);
+  const schemeResult = ensureCustomUrlScheme(content, CALLBACK_SCHEME);
+  content = schemeResult.content;
+  changed = changed || schemeResult.changed;
+
+  const controllerAppearanceResult = ensurePlistBoolValue(
+    content,
+    'UIViewControllerBasedStatusBarAppearance',
+    true
+  );
+  content = controllerAppearanceResult.content;
+  changed = changed || controllerAppearanceResult.changed;
+
+  const styleResult = ensurePlistStringValue(content, 'UIStatusBarStyle', 'UIStatusBarStyleDarkContent');
+  content = styleResult.content;
+  changed = changed || styleResult.changed;
+
+  if (!changed) {
+    console.log(
+      `[configure-capacitor-ios] already configured with URL scheme "${CALLBACK_SCHEME}" and dark-content status bar defaults`
+    );
     return;
   }
 
-  fs.writeFileSync(infoPlistPath, result.content, 'utf8');
-  console.log(`[configure-capacitor-ios] added URL scheme "${CALLBACK_SCHEME}" to ${infoPlistPath}`);
+  fs.writeFileSync(infoPlistPath, content, 'utf8');
+  console.log(
+    `[configure-capacitor-ios] updated ${infoPlistPath} with URL scheme "${CALLBACK_SCHEME}" and dark-content status bar defaults`
+  );
 }
 
 main();

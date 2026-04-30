@@ -4663,7 +4663,7 @@ function renderProgramDetailsPage() {
     contentContainer.id = 'program-details-content';
 
     // Заголовок
-    contentContainer.append(createElement('h3', null, selectedProgram.name));
+    contentContainer.append(createElement('h3', 'program-details-page-title', selectedProgram.name));
 
     // -----------------------------
     // Список упражнений
@@ -5267,6 +5267,7 @@ contentContainer.append(commentWrapper);
 
    // Итог
     root.append(contentContainer);
+    setupProgramDetailsTopBarTitleSync();
 
 
 
@@ -5660,12 +5661,82 @@ let dragging = false;
 let longPressTimer = null;
 let dragDX = 0;
 let dragDY = 0;
+let cleanupProgramDetailsTopBarTitleSync = null;
 
 function cleanupFloatingTimer() {
     if (timerObserver) {
         try { timerObserver.disconnect(); } catch(_) {}
         timerObserver = null;
     }
+}
+
+function teardownProgramDetailsTopBarTitleSync() {
+    if (typeof cleanupProgramDetailsTopBarTitleSync === 'function') {
+        try { cleanupProgramDetailsTopBarTitleSync(); } catch (_) {}
+    }
+    cleanupProgramDetailsTopBarTitleSync = null;
+}
+
+function setupProgramDetailsTopBarTitleSync() {
+    teardownProgramDetailsTopBarTitleSync();
+
+    if (state.currentPage !== 'programDetails') return;
+
+    const rootScroll = document.getElementById('root');
+    const topBar = document.querySelector('.top-bar.top-bar--program-details');
+    const pageBlock = document.getElementById('program-details-content');
+    const barTitle = topBar?.querySelector('.top-bar-program-title');
+    const pageTitle = document.querySelector('#program-details-content > h3.program-details-page-title');
+    if (!rootScroll || !topBar || !pageBlock || !barTitle || !pageTitle) return;
+
+    let frameId = 0;
+    const EPS = 0.5;
+
+    const update = () => {
+        frameId = 0;
+
+        const topBarRect = topBar.getBoundingClientRect();
+        const pageBlockRect = pageBlock.getBoundingClientRect();
+        const pageTitleRect = pageTitle.getBoundingClientRect();
+        const overlapPx = topBarRect.bottom - pageBlockRect.top;
+        const titleSwapThreshold = Math.max(22, Math.round((pageTitleRect.height || 44) / 2));
+        const shouldShowBorder = overlapPx > EPS;
+        const shouldSwapTitles = overlapPx >= titleSwapThreshold;
+
+        barTitle.style.opacity = shouldSwapTitles ? '1' : '0';
+        pageTitle.style.opacity = shouldSwapTitles ? '0' : '1';
+        topBar.classList.toggle('top-bar-stuck-border', shouldShowBorder);
+    };
+
+    const requestUpdate = () => {
+        if (frameId) return;
+        frameId = window.requestAnimationFrame(update);
+    };
+
+    barTitle.style.opacity = '0';
+    pageTitle.style.opacity = '1';
+    topBar.classList.remove('top-bar-stuck-border');
+
+    rootScroll.addEventListener('scroll', requestUpdate, { passive: true });
+    window.addEventListener('resize', requestUpdate);
+    window.visualViewport?.addEventListener?.('resize', requestUpdate);
+    window.visualViewport?.addEventListener?.('scroll', requestUpdate);
+
+    requestUpdate();
+
+    cleanupProgramDetailsTopBarTitleSync = () => {
+        if (frameId) {
+            window.cancelAnimationFrame(frameId);
+            frameId = 0;
+        }
+        rootScroll.removeEventListener('scroll', requestUpdate);
+        window.removeEventListener('resize', requestUpdate);
+        window.visualViewport?.removeEventListener?.('resize', requestUpdate);
+        window.visualViewport?.removeEventListener?.('scroll', requestUpdate);
+        barTitle.style.opacity = '0';
+        pageTitle.style.opacity = '1';
+        topBar.classList.remove('top-bar-stuck-border');
+    };
 }
 
 // -----------------------------------------------------------
@@ -6358,7 +6429,7 @@ function syncJournalCalendarLayout(container, viewport, track) {
     journalRoot?.style?.setProperty?.('--journal-filters-height', `${Math.round(filtersH)}px`);
 
     const containerTop = container.getBoundingClientRect().top || 0;
-    const gapBeforeFilters = 14;
+    const gapBeforeFilters = 18;
 
     // Самый надёжный способ (особенно на iOS): ограничиваем календарь фактическим верхом фиксированных фильтров.
     // Тогда нижний ряд дней физически не сможет уйти "под" `journal-filters`.
@@ -6371,9 +6442,10 @@ function syncJournalCalendarLayout(container, viewport, track) {
     } else {
         // Fallback: считаем от высоты viewport (на случай, если фильтры ещё не в DOM / не измерились).
         const vvHeight = window.visualViewport?.height || window.innerHeight || document.documentElement.clientHeight || 0;
-        const bottomClearance = typeof readCssPxVar === 'function' ? readCssPxVar('--bottom-nav-clearance', 0) : 0;
+        const bottomNavOccupied = typeof readCssPxVar === 'function' ? readCssPxVar('--bottom-nav-occupied', 82) : 82;
+        const bottomNavGap = typeof readCssPxVar === 'function' ? readCssPxVar('--bottom-nav-gap', 10) : 10;
         // -19px тот же буфер, что и в основном пути (через filtersTop)
-        available = Math.max(0, Math.floor(vvHeight - containerTop - bottomClearance - filtersH - gapBeforeFilters));
+        available = Math.max(0, Math.floor(vvHeight - containerTop - bottomNavOccupied - bottomNavGap - filtersH - gapBeforeFilters));
     }
 
     const calendarHeader = container.querySelector('.calendar-header');
@@ -7759,6 +7831,7 @@ export function renderTopBar() {
 
     const oldBar = document.querySelector('.top-bar');
     const root = document.getElementById('root');
+    teardownProgramDetailsTopBarTitleSync();
     if (oldBar) oldBar.remove();
 
 
@@ -7773,6 +7846,9 @@ export function renderTopBar() {
 
     const topBar = document.createElement('div');
     topBar.className = 'top-bar';
+    if (state.currentPage === 'programDetails') {
+        topBar.classList.add('top-bar--program-details');
+    }
 
 
  if (state.currentPage === 'supplements' || state.currentPage === 'meal') {
@@ -7898,16 +7974,6 @@ export function renderTopBar() {
         showBack = true;
 
         // 🔥 Кнопка таймера для страницы деталей программы
-        if (state.currentPage === 'programDetails') {
-            const timerBtn = document.createElement('button');
-            timerBtn.className = 'btn btn-timer';
-            timerBtn.innerHTML = `
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 12 12"><title>Timer-12-regular SVG Icon</title><path fill="currentColor" d="M3 .5a.5.5 0 0 1 .5-.5h4a.5.5 0 0 1 0 1h-4A.5.5 0 0 1 3 .5m2 7a.5.5 0 0 0 1 0v-3a.5.5 0 0 0-1 0zM5.5 2a4.5 4.5 0 1 0 0 9a4.5 4.5 0 0 0 0-9M2 6.5a3.5 3.5 0 1 1 7 0a3.5 3.5 0 0 1-7 0m8.148-2.647a.5.5 0 1 0 .706-.708l-1.002-.998a.5.5 0 1 0-.706.708z"></path></svg>
-            `;
-            timerBtn.onclick = openTimerModal;
-            topBar.appendChild(timerBtn);
-        }
-
     }
 
 
@@ -7915,6 +7981,13 @@ export function renderTopBar() {
 
     // ------- ГАМБУРГЕР (ВСЕГДА СПРАВА) -------
     const burger = document.createElement('button');
+    if (state.currentPage === 'programDetails') {
+        const selectedProgram = state.programs.find(p => p.id === state.selectedProgramIdForDetails);
+        const barTitle = document.createElement('div');
+        barTitle.className = 'top-bar-program-title';
+        barTitle.textContent = selectedProgram?.name || '';
+        topBar.appendChild(barTitle);
+    }
     burger.className = 'top-menu-btn';
     burger.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 15 15"><title>Hamburger-menu SVG Icon</title><path fill="currentColor" fill-rule="evenodd" d="M1.5 3a.5.5 0 0 0 0 1h12a.5.5 0 0 0 0-1zM1 7.5a.5.5 0 0 1 .5-.5h12a.5.5 0 0 1 0 1h-12a.5.5 0 0 1-.5-.5m0 4a.5.5 0 0 1 .5-.5h12a.5.5 0 0 1 0 1h-12a.5.5 0 0 1-.5-.5" clip-rule="evenodd"></path></svg>';
     burger.onclick = openMenuModal;
@@ -8058,14 +8131,17 @@ function shouldApplyStandaloneTopGapForCurrentView() {
 function syncAppChromeClasses() {
     const docEl = document.documentElement;
     const bodyEl = document.body;
+    const isNativePlatform = isCapacitorNativePlatform();
     const shouldShowNativeStatusBar = shouldShowNativeStatusBarForCurrentView();
     const shouldApplyStandaloneTopGap = shouldApplyStandaloneTopGapForCurrentView();
 
+    docEl.classList.toggle('app-capacitor-native', isNativePlatform);
     docEl.classList.toggle('app-native-statusbar-visible', shouldShowNativeStatusBar);
     docEl.classList.toggle('app-native-statusbar-hidden', !shouldShowNativeStatusBar);
     docEl.classList.toggle('app-standalone-top-gap', shouldApplyStandaloneTopGap);
 
     if (bodyEl) {
+        bodyEl.classList.toggle('app-capacitor-native', isNativePlatform);
         bodyEl.classList.toggle('app-native-statusbar-visible', shouldShowNativeStatusBar);
         bodyEl.classList.toggle('app-native-statusbar-hidden', !shouldShowNativeStatusBar);
         bodyEl.classList.toggle('app-standalone-top-gap', shouldApplyStandaloneTopGap);
@@ -8111,7 +8187,7 @@ async function syncAppChrome() {
 
         if (shouldShowNativeStatusBarForCurrentView()) {
             if (StatusBar.setStyle) {
-                await StatusBar.setStyle({ style: 'DARK' });
+                await StatusBar.setStyle({ style: 'LIGHT' });
             }
             await StatusBar.show({ animation: 'NONE' });
         } else {
@@ -8168,6 +8244,8 @@ function syncBottomNavClearanceVar() {
     const effectiveNavBlock = Math.max(navRect.height || 0, occupiedFromBottom);
     const clearance = Math.max(0, Math.round(effectiveNavBlock + safeBottom + extraPadding));
     if (!clearance) return;
+    document.documentElement.style.setProperty('--bottom-nav-occupied', `${Math.max(0, Math.round(effectiveNavBlock))}px`);
+    document.documentElement.style.setProperty('--bottom-nav-gap', '10px');
     document.documentElement.style.setProperty('--bottom-nav-clearance', `${clearance}px`);
 }
 
