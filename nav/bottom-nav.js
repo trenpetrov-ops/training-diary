@@ -19,50 +19,190 @@ function ensureBottomNavStyles() {
 }
 
 function mountBottomNavMarkup() {
-    if (document.getElementById('programs-btn')) return;
-    document.querySelector('#root')?.insertAdjacentHTML('afterend', bottomNavMarkup);
+    if (!document.getElementById('programs-btn')) {
+        document.querySelector('#root')?.insertAdjacentHTML('afterend', bottomNavMarkup);
+    }
+    applyBottomNavButtonOrder();
 }
 
 let mealSearchNavOnBack = null;
 let mealSearchNavOnAction = null;
+let mealSearchNavOnSecondaryAction = null;
 
-/** Вызывается из pages/meal.js при смене верхнего слоя оверлея. */
-export function syncMealSearchBottomNavFromOverlay(topOverlayEl) {
+function getMealOverlayNavElements() {
+    ensureNavigationMealSearchStructure();
+
     const nav = document.querySelector('.navigation');
+    if (!nav) return {};
+
+    return {
+        nav,
+        backBtn: nav.querySelector('.meal-search-nav-back'),
+        actionBtn: nav.querySelector('.meal-search-nav-action-primary'),
+        secondaryActionBtn: nav.querySelector('.meal-search-nav-action-secondary'),
+        wrap: nav.querySelector('.navigation__icons-wrap')
+    };
+}
+
+function setMealBottomNavOverlayVisibility(visible) {
+    const { nav, backBtn, actionBtn, secondaryActionBtn, wrap } = getMealOverlayNavElements();
     if (!nav) return;
 
-    const isSearchOnTop =
-        topOverlayEl?.classList?.contains('meal-search-screen') &&
-        !topOverlayEl?.classList?.contains('recipe-food-search-screen');
+    nav.classList.toggle('navigation--meal-search', Boolean(visible));
+    nav.classList.remove('navigation--meal-search-expanded');
+    wrap?.classList.remove('navigation__icons-wrap--from-right');
 
-    if (isSearchOnTop) {
-        nav.classList.add('navigation--meal-search');
-        nav.classList.remove('navigation--meal-search-expanded');
-    } else {
-        nav.classList.remove('navigation--meal-search', 'navigation--meal-search-expanded');
-        const wrap = nav.querySelector('.navigation__icons-wrap');
-        if (wrap) {
-            wrap.classList.remove('navigation__icons-wrap--from-right');
+    if (!visible) {
+        mealSearchNavOnBack = null;
+        mealSearchNavOnAction = null;
+        mealSearchNavOnSecondaryAction = null;
+
+        if (backBtn) {
+            backBtn.style.display = '';
+            backBtn.setAttribute('aria-label', 'Назад');
+        }
+
+        if (actionBtn) {
+            actionBtn.style.display = 'none';
+            actionBtn.textContent = '';
+            actionBtn.disabled = true;
+            actionBtn.classList.remove('active', 'disabled', 'meal-search-nav-action--icon');
+        }
+
+        if (secondaryActionBtn) {
+            secondaryActionBtn.style.display = 'none';
+            secondaryActionBtn.innerHTML = '';
+            secondaryActionBtn.disabled = true;
+            secondaryActionBtn.classList.remove('active', 'disabled', 'meal-search-nav-action--icon');
+            secondaryActionBtn.removeAttribute('aria-label');
         }
     }
 }
 
-/**
- * @param {{ text?: string, visible?: boolean, onClick?: (() => void) | null }} opts
- */
-export function updateMealSearchBottomNavAction(opts) {
-    const btn = document.querySelector('.meal-search-nav-action');
+function updateMealBottomNavButton(btn, opts, setHandler) {
     if (!btn) return;
 
     const text = opts.text != null ? String(opts.text) : '';
-    const show = opts.visible !== false && text.length > 0;
+    const html = opts.html != null ? String(opts.html) : '';
+    const show = opts.visible !== false && (html.length > 0 || text.length > 0);
+    const disabled = show && opts.disabled === true;
+
     btn.style.display = show ? '' : 'none';
-    btn.textContent = text;
-    mealSearchNavOnAction = show && typeof opts.onClick === 'function' ? opts.onClick : null;
+    btn.classList.toggle('meal-search-nav-action--icon', opts.icon === true);
+    btn.disabled = !show || disabled;
+    btn.classList.toggle('active', show && !disabled);
+    btn.classList.toggle('disabled', show && disabled);
+
+    if (show) {
+        if (html.length > 0) {
+            btn.innerHTML = html;
+        } else {
+            btn.textContent = text;
+        }
+        const ariaLabel = opts.label != null ? String(opts.label) : text;
+        if (ariaLabel) btn.setAttribute('aria-label', ariaLabel);
+    } else {
+        btn.textContent = '';
+        btn.removeAttribute('aria-label');
+    }
+
+    setHandler(show && !disabled && typeof opts.onClick === 'function' ? opts.onClick : null);
+}
+
+/** Вызывается из pages/meal.js при смене верхнего слоя оверлея. */
+export function syncMealSearchBottomNavFromOverlay(topOverlayEl) {
+    const isSearchOnTop =
+        topOverlayEl?.classList?.contains('meal-search-screen') &&
+        !topOverlayEl?.classList?.contains('recipe-food-search-screen');
+
+    setMealBottomNavOverlayVisibility(isSearchOnTop);
+}
+
+/**
+ * @param {{
+ *   text?: string,
+ *   visible?: boolean,
+ *   onClick?: (() => void) | null,
+ *   disabled?: boolean
+ * }} opts
+ */
+export function updateMealSearchBottomNavAction(opts) {
+    const btn = document.querySelector('.meal-search-nav-action-primary');
+    updateMealBottomNavButton(btn, opts || {}, (handler) => {
+        mealSearchNavOnAction = handler;
+    });
 }
 
 export function setMealSearchNavBackHandler(fn) {
     mealSearchNavOnBack = typeof fn === 'function' ? fn : null;
+}
+
+export function clearMealBottomNavOverlayMode() {
+    setMealBottomNavOverlayVisibility(false);
+}
+
+/**
+ * @param {{
+ *   visible?: boolean,
+ *   backVisible?: boolean,
+ *   backLabel?: string,
+ *   onBack?: (() => void) | null,
+ *   actionText?: string,
+ *   actionHtml?: string,
+ *   actionLabel?: string,
+ *   actionVisible?: boolean,
+ *   onAction?: (() => void) | null,
+ *   actionDisabled?: boolean,
+ *   actionIcon?: boolean,
+ *   secondaryActionText?: string,
+ *   secondaryActionHtml?: string,
+ *   secondaryActionLabel?: string,
+ *   secondaryActionVisible?: boolean,
+ *   onSecondaryAction?: (() => void) | null,
+ *   secondaryActionDisabled?: boolean,
+ *   secondaryActionIcon?: boolean
+ * }} opts
+ */
+export function setMealBottomNavOverlayMode(opts = {}) {
+    const { backBtn, secondaryActionBtn } = getMealOverlayNavElements();
+    const visible = opts.visible !== false;
+
+    setMealBottomNavOverlayVisibility(visible);
+
+    if (!visible) return;
+
+    if (backBtn) {
+        backBtn.style.display = opts.backVisible === false ? 'none' : '';
+        backBtn.setAttribute('aria-label', opts.backLabel || 'Назад');
+    }
+
+    mealSearchNavOnBack = typeof opts.onBack === 'function' ? opts.onBack : null;
+
+    updateMealSearchBottomNavAction({
+        text: opts.actionText,
+        html: opts.actionHtml,
+        label: opts.actionLabel,
+        visible: opts.actionVisible,
+        onClick: opts.onAction,
+        disabled: opts.actionDisabled,
+        icon: opts.actionIcon
+    });
+
+    updateMealBottomNavButton(
+        secondaryActionBtn,
+        {
+            text: opts.secondaryActionText,
+            html: opts.secondaryActionHtml,
+            label: opts.secondaryActionLabel,
+            visible: opts.secondaryActionVisible,
+            onClick: opts.onSecondaryAction,
+            disabled: opts.secondaryActionDisabled,
+            icon: opts.secondaryActionIcon
+        },
+        (handler) => {
+            mealSearchNavOnSecondaryAction = handler;
+        }
+    );
 }
 
 function ensureNavigationMealSearchStructure() {
@@ -73,32 +213,32 @@ function ensureNavigationMealSearchStructure() {
     const lead = document.createElement('div');
     lead.className = 'navigation__meal-search-lead';
 
-    const hamburger = document.createElement('button');
-    hamburger.type = 'button';
-    hamburger.className = 'meal-search-nav-hamburger';
-    hamburger.setAttribute('aria-label', 'Меню навигации');
-    hamburger.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-            <path fill="currentColor" d="M4 7h16v2H4V7zm0 5h16v2H4v-2zm0 5h16v2H4v-2z"/>
-        </svg>
-    `;
-
     const back = document.createElement('button');
     back.type = 'button';
     back.className = 'meal-search-nav-back';
+    const Spanback = document.createElement('span');
+    Spanback.innerHTML = ` Назад `;
     back.setAttribute('aria-label', 'Назад к приёмам пищи');
     back.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
-            <path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"/>
-        </svg>
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Arrow-back-ios-rounded SVG Icon</title><path fill="currentColor" d="m3.55 12l7.35 7.35q.375.375.363.875t-.388.875t-.875.375t-.875-.375l-7.7-7.675q-.3-.3-.45-.675T.825 12t.15-.75t.45-.675l7.7-7.7q.375-.375.888-.363t.887.388t.375.875t-.375.875z"/></svg>
     `;
+
+    const actions = document.createElement('div');
+    actions.className = 'meal-search-nav-actions';
+
+    const secondaryAction = document.createElement('button');
+    secondaryAction.type = 'button';
+    secondaryAction.className = 'meal-search-nav-action meal-search-nav-action-secondary';
+    secondaryAction.style.display = 'none';
 
     const action = document.createElement('button');
     action.type = 'button';
-    action.className = 'meal-search-nav-action meal-search-main-action meal-search-main-action--text';
+    action.className = 'meal-search-nav-action meal-search-nav-action-primary meal-search-main-action meal-search-main-action--text';
     action.style.display = 'none';
 
-    lead.append(hamburger, back, action);
+    back.append(Spanback);
+    actions.append(secondaryAction, action);
+    lead.append(back, actions);
 
     const wrap = document.createElement('div');
     wrap.className = 'navigation__icons-wrap';
@@ -107,30 +247,16 @@ function ensureNavigationMealSearchStructure() {
     }
     nav.append(lead, wrap);
 
-    hamburger.addEventListener('click', () => {
-        if (!nav.classList.contains('navigation--meal-search')) return;
-
-        if (nav.classList.contains('navigation--meal-search-expanded')) {
-            nav.classList.remove('navigation--meal-search-expanded');
-            wrap.classList.remove('navigation__icons-wrap--from-right');
-            return;
-        }
-
-        nav.classList.add('navigation--meal-search-expanded');
-        wrap.classList.add('navigation__icons-wrap--from-right');
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                wrap.classList.remove('navigation__icons-wrap--from-right');
-            });
-        });
-    });
-
     back.addEventListener('click', () => {
         if (typeof mealSearchNavOnBack === 'function') mealSearchNavOnBack();
     });
 
     action.addEventListener('click', () => {
         if (typeof mealSearchNavOnAction === 'function') mealSearchNavOnAction();
+    });
+
+    secondaryAction.addEventListener('click', () => {
+        if (typeof mealSearchNavOnSecondaryAction === 'function') mealSearchNavOnSecondaryAction();
     });
 }
 
@@ -167,7 +293,106 @@ export function bottomNavLockedMessage() {
     return 'Сначала выберите цикл на экране циклов.';
 }
 
-const NAV_BTN_ORDER = ['programs-btn', 'journal-btn', 'supplements-btn', 'meal-btn', 'reports-btn'];
+const NAV_BTN_ORDER = ['reports-btn', 'journal-btn', 'programs-btn', 'meal-btn', 'supplements-btn'];
+
+function applyBottomNavButtonOrder() {
+    const nav = document.querySelector('.navigation');
+    if (!nav) return;
+    const buttonHost = nav.querySelector('.navigation__icons-wrap') || nav;
+
+    NAV_BTN_ORDER.forEach((btnId) => {
+        const btn = document.getElementById(btnId);
+        if (btn && (btn.parentElement === buttonHost || btn.parentElement === nav)) {
+            buttonHost.appendChild(btn);
+        }
+    });
+}
+
+function getBottomNavTodayDateString() {
+    const today = new Date();
+    const day = String(today.getDate()).padStart(2, '0');
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const year = today.getFullYear();
+    return `${day}.${month}.${year}`;
+}
+
+function normalizeBottomNavSupplementTimes(value) {
+    if (Array.isArray(value)) {
+        return value
+            .map((item) => String(item || '').trim())
+            .filter(Boolean);
+    }
+
+    const singleValue = String(value || '').trim();
+    return singleValue ? [singleValue] : [];
+}
+
+function parseBottomNavSupplementDose(rawDose) {
+    if (rawDose && typeof rawDose === 'object' && !Array.isArray(rawDose)) {
+        const times = normalizeBottomNavSupplementTimes(rawDose.times || rawDose.time || rawDose.at);
+        return {
+            dosage: String(rawDose.dosage || rawDose.dose || rawDose.value || '').trim(),
+            tablets: String(rawDose.tablets || rawDose.pills || rawDose.count || '').trim(),
+            times,
+            taken: Boolean(rawDose.taken || rawDose.completed || rawDose.done || rawDose.isTaken)
+        };
+    }
+
+    return {
+        dosage: rawDose == null ? '' : String(rawDose).trim(),
+        tablets: '',
+        times: [],
+        taken: false
+    };
+}
+
+function hasBottomNavSupplementDose(rawDose) {
+    const parsedDose = parseBottomNavSupplementDose(rawDose);
+    return Boolean(parsedDose.dosage || parsedDose.tablets || parsedDose.times.length);
+}
+
+function getTodayPendingSupplementsCount(planData = st()?.supplementPlan) {
+    const todayDateString = getBottomNavTodayDateString();
+    const dayRecord = Array.isArray(planData?.data)
+        ? planData.data.find((day) => day?.date === todayDateString)
+        : null;
+
+    if (!dayRecord?.doses || typeof dayRecord.doses !== 'object') return 0;
+
+    return Object.values(dayRecord.doses).reduce((count, rawDose) => {
+        if (!hasBottomNavSupplementDose(rawDose)) return count;
+        return count + (parseBottomNavSupplementDose(rawDose).taken ? 0 : 1);
+    }, 0);
+}
+
+function ensureSupplementsNavBadge() {
+    const supplementsBtn = document.getElementById('supplements-btn');
+    if (!supplementsBtn) return null;
+
+    let badge = supplementsBtn.querySelector('.nav-supplement-badge');
+    if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'nav-supplement-badge';
+        badge.hidden = true;
+        badge.setAttribute('aria-hidden', 'true');
+        supplementsBtn.appendChild(badge);
+    }
+
+    return badge;
+}
+
+export function syncSupplementsBottomNavBadge(planData = st()?.supplementPlan) {
+    const supplementsBtn = document.getElementById('supplements-btn');
+    const badge = ensureSupplementsNavBadge();
+    if (!supplementsBtn || !badge) return;
+
+    const pendingCount = getTodayPendingSupplementsCount(planData);
+    const hasBadge = pendingCount > 0;
+
+    badge.hidden = !hasBadge;
+    badge.textContent = pendingCount > 99 ? '99+' : String(pendingCount);
+    supplementsBtn.classList.toggle('nav-btn--has-badge', hasBadge);
+}
 
 export function setBottomNavLayoutFromAppVisibility(isAuthenticated, modeSelected) {
     const nav = document.querySelector('.navigation');
@@ -221,7 +446,11 @@ export function syncBottomNavAfterRender(currentPage) {
 
     const activeBtn = document.querySelector('.nav-btn.active');
     const idx = activeBtn ? NAV_BTN_ORDER.indexOf(activeBtn.id) : 0;
-    if (idx >= 0) navEl.dataset.active = String(idx);
+    if (idx >= 0) {
+        navEl.dataset.active = String(idx);
+    }
+
+    syncSupplementsBottomNavBadge();
 }
 
 function setupProgramsIconAnimation() {
@@ -343,6 +572,9 @@ function wireRouteHandlers() {
             toast(bottomNavLockedMessage());
             return;
         }
+        // Вход через кнопку меню: хотим дефолтное состояние (таблица, Пн текущей недели, верх таблицы),
+        // а не "последний сохранённый скролл" после редактирований.
+        state._supplementsForceDefaultOpen = true;
         state.currentPage = 'supplements';
         renderApp();
     });
@@ -380,11 +612,8 @@ export function initBottomNav() {
         ensureBottomNavStyles();
         mountBottomNavMarkup();
         ensureNavigationMealSearchStructure();
-        setupProgramsIconAnimation();
-        setupLottieNavClick('journal-icon', 'journal-btn', './icon-animations/menuCalendar.json');
-        setupLottieNavClick('supplement-icon', 'supplements-btn', './icon-animations/menuBad.json');
-        setupLottieNavClick('meal-icon', 'meal-btn', './icon-animations/menuMeal.json');
-        setupLottieNavClick('reports-icon', 'reports-btn', './icon-animations/menuReports.json');
+        syncSupplementsBottomNavBadge();
+        // Animated bottom-nav icons are temporarily disabled; assets remain in the project.
         wireRouteHandlers();
     };
 

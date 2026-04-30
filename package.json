@@ -5,11 +5,15 @@
   "description": "Training Diary iOS wrapper",
   "scripts": {
     "build": "node scripts/prepare-web.cjs",
-    "cap:ios": "npm run build && npx cap sync ios"
+    "cap:copy": "npm run build && npx cap copy",
+    "cap:ios:configure": "node scripts/configure-capacitor-ios.cjs",
+    "cap:ios": "npm run build && npx cap sync ios && npm run cap:ios:configure"
   },
   "dependencies": {
+    "@capacitor/app": "^7.1.2",
     "@capacitor/cli": "^7.4.4",
     "@capacitor/core": "^7.4.4",
-    "@capacitor/ios": "^7.4.4"
+    "@capacitor/ios": "^7.4.4",
+    "@capacitor/status-bar": "^7.0.6"
   }
 }

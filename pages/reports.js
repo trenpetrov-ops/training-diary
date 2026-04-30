@@ -1,9 +1,19 @@
 import {
+    addDoc,
+    deleteDoc,
+    doc,
+    updateDoc
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import {
     getTodayDateString,
     getReportsCollection,
     ensureCycleSelected,
     render,
-    showToast
+    showToast,
+    openConfirmModal,
+    openDateModal,
+    uploadUserMediaFileWithProgress,
+    deleteUserFirebaseStorageFileByDownloadUrl
 } from '../script.js';
 
 // =================================================================
@@ -182,9 +192,33 @@ export function renderReportsPage() {
     modalContent.appendChild(createElement('div', 'modal-title', reportData ? 'Редактирование Отчета' : 'Новый Отчет о Прогрессе'));
 
     // --- Дата ---
-    const dateDisplay = createElement('p', 'report-date-display', `Дата: ${reportToEdit.date || getTodayDateString()}`);
-    dateDisplay.style.marginBottom = '15px';
-    modalContent.appendChild(dateDisplay);
+    const reportDateRow = createElement('div', 'report-date-display', '');
+    reportDateRow.style.marginBottom = '15px';
+
+    const reportDateText = createElement('span', null, `Дата: ${reportToEdit.date || getTodayDateString()}`);
+    reportDateRow.appendChild(reportDateText);
+
+    // Редактирование даты — только когда открыли "Редактировать" (не при дубликате и не при новом)
+    if (reportData && !isDuplicate) {
+        const editBtn = createElement('button', 'edit-date-btn');
+        editBtn.type = 'button';
+        editBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24"><title>Edit SVG Icon</title><path fill="currentColor" d="M3.548 20.938h16.9a.5.5 0 0 0 0-1h-16.9a.5.5 0 0 0 0 1M9.71 17.18a2.587 2.587 0 0 0 1.12-.65l9.54-9.54a1.75 1.75 0 0 0 0-2.47l-.94-.93a1.788 1.788 0 0 0-2.47 0l-9.54 9.53a2.473 2.473 0 0 0-.64 1.12L6.04 17a.737.737 0 0 0 .19.72a.767.767 0 0 0 .53.22Zm.41-1.36a1.468 1.468 0 0 1-.67.39l-.97.26l-1-1l.26-.97a1.521 1.521 0 0 1 .39-.67l.38-.37l1.99 1.99Zm1.09-1.08l-1.99-1.99l6.73-6.73l1.99 1.99Zm8.45-8.45L18.65 7.3l-1.99-1.99l1.01-1.02a.748.748 0 0 1 1.06 0l.93.94a.754.754 0 0 1 0 1.06"></path></svg>`;
+
+        editBtn.addEventListener('click', () => {
+            const current = reportToEdit.date || getTodayDateString();
+            openDateModal(current, async (newDate) => {
+                if (!newDate) return;
+                const [year, month, day] = newDate.split('-');
+                const formatted = `${day}.${month}.${year}`;
+                reportToEdit.date = formatted;
+                reportDateText.textContent = `Дата: ${formatted}`;
+            });
+        });
+
+        reportDateRow.appendChild(editBtn);
+    }
+
+    modalContent.appendChild(reportDateRow);
 
 
     // -----------------------------------------------------------
@@ -762,8 +796,10 @@ function renderPhotoControls(photos, container, reportId) {
         deleteBtn.innerHTML = '×';
 
 
-        deleteBtn.addEventListener('click', () => {
+        deleteBtn.addEventListener('click', async () => {
             if (!confirm('Вы уверены, что хотите удалить это фото?')) return;
+            const url = typeof photo.url === 'string' ? photo.url : '';
+            if (url) await deleteUserFirebaseStorageFileByDownloadUrl(url);
             photos.splice(index, 1);
             renderPhotoControls(photos, container, reportId);
         });
@@ -790,14 +826,16 @@ function renderPhotoControls(photos, container, reportId) {
     fileInput.addEventListener('change', async (e) => {
         const files = Array.from(e.target.files);
         for (const file of files) {
-            showToast(`Загрузка ${file.name} через Cloudinary...`);
+            showToast(`Загрузка ${file.name} в Storage...`);
             try {
-                const permanentUrl = await uploadFileToCloudinary(file);
+                const permanentUrl = await uploadUserMediaFileWithProgress(file, 'reports', (pct) => {
+                    if (pct >= 99) showToast(`${file.name}: почти готово…`);
+                });
 
-                // Проверяем, что Cloudinary вернул строку
+                // Проверяем, что Storage вернул строку URL
                 if (typeof permanentUrl !== "string") {
-                    console.error("❌ Cloudinary вернул не строку:", permanentUrl);
-                    showToast(`Ошибка: Cloudinary вернул невалидный URL для ${file.name}`, 'error');
+                    console.error("❌ Storage вернул не строку:", permanentUrl);
+                    showToast(`Ошибка: невалидный URL для ${file.name}`, 'error');
                     continue;
                 }
 

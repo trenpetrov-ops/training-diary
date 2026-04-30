@@ -21,6 +21,7 @@ const FATSECRET_CONSUMER_KEY = defineSecret('FATSECRET_CONSUMER_KEY');
 const FATSECRET_CONSUMER_SECRET = defineSecret('FATSECRET_CONSUMER_SECRET');
 
 const FATSECRET_ENDPOINT = 'https://platform.fatsecret.com/rest/server.api';
+const APP_ARTIFACT_ID = admin.app().options.projectId || process.env.GCLOUD_PROJECT || 'training-diary-51f0f';
 
 const DAILY_LIMIT = 5000;
 const QUOTA_DOC_PREFIX = 'fatsecret_basic';
@@ -199,6 +200,214 @@ function withCors(req, res) {
   }
   return false;
 }
+
+function isIsoDayString(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '').trim());
+}
+
+function normalizeImportedDayString(value) {
+  const raw = String(value || '').trim();
+  if (!isIsoDayString(raw)) return '';
+
+  const [yearRaw, monthRaw, dayRaw] = raw.split('-');
+  let year = Number(yearRaw);
+  const month = Number(monthRaw);
+  const day = Number(dayRaw);
+
+  if (year >= 2400 && year <= 2700) {
+    year -= 543;
+  }
+
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return '';
+
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  if (
+    utc.getUTCFullYear() !== year ||
+    utc.getUTCMonth() !== month - 1 ||
+    utc.getUTCDate() !== day
+  ) {
+    return '';
+  }
+
+  return `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function sha256Hex(value) {
+  return crypto.createHash('sha256').update(String(value || ''), 'utf8').digest('hex');
+}
+
+function timingSafeHexEqual(leftHex, rightHex) {
+  try {
+    const left = Buffer.from(String(leftHex || ''), 'hex');
+    const right = Buffer.from(String(rightHex || ''), 'hex');
+    if (!left.length || !right.length || left.length !== right.length) return false;
+    return crypto.timingSafeEqual(left, right);
+  } catch (_) {
+    return false;
+  }
+}
+
+function toWholeMetric(value, { nullable = false } = {}) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0) return nullable ? null : 0;
+  return Math.round(numeric);
+}
+
+function toDecimalMetric(value, { nullable = false, precision = 2, mode = 'round' } = {}) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0) return nullable ? null : 0;
+  const factor = 10 ** precision;
+  if (mode === 'floor') {
+    return Math.floor(numeric * factor) / factor;
+  }
+  return Math.round(numeric * factor) / factor;
+}
+
+function extractUidFromPrivateDocPath(path) {
+  const parts = String(path || '').split('/');
+  const usersIndex = parts.indexOf('users');
+  if (usersIndex === -1 || !parts[usersIndex + 1]) return '';
+  return String(parts[usersIndex + 1] || '').trim();
+}
+
+function resolveIncomingTokenHash(token) {
+  const normalized = String(token || '').trim();
+  if (/^[a-f0-9]{64}$/i.test(normalized)) {
+    return normalized.toLowerCase();
+  }
+  return sha256Hex(normalized);
+}
+
+exports.appleHealthImport = onRequest(
+  {
+    region: 'us-central1'
+  },
+  async (req, res) => {
+    if (withCors(req, res)) return;
+    if (req.method !== 'POST') {
+      return jsonResponse(res, 405, { ok: false, error: 'method_not_allowed' });
+    }
+
+    try {
+      let uid = String(req.body?.uid || '').trim();
+      const debugMode = req.body?.debug === true || req.query?.debug === '1' || String(req.headers['x-apple-health-debug'] || '') === '1';
+      const rawDate = String(req.body?.date || '').trim();
+      const date = normalizeImportedDayString(rawDate);
+      const metrics = req.body?.metrics && typeof req.body.metrics === 'object' ? req.body.metrics : {};
+      const authHeader = String(req.headers.authorization || '');
+      const tokenMatch = authHeader.match(/^Bearer\s+(.+)$/i);
+      const token = tokenMatch?.[1]?.trim() || '';
+
+      if (!date) {
+        return jsonResponse(res, 400, { ok: false, error: 'invalid_date' });
+      }
+      if (!token) {
+        return jsonResponse(res, 401, { ok: false, error: 'missing_token' });
+      }
+
+      const db = admin.firestore();
+      const incomingHash = resolveIncomingTokenHash(token);
+      const debug = debugMode ? {
+        appArtifactId: APP_ARTIFACT_ID,
+        providedUid: uid || null,
+        tokenLength: token.length,
+        incomingHash,
+        rawDate,
+        normalizedDate: date
+      } : null;
+
+      if (!uid) {
+        let resolvedUid = '';
+        const tokenMapRef = db.doc(`artifacts/${APP_ARTIFACT_ID}/appleHealthImportTokens/${incomingHash}`);
+        const tokenMapSnap = await tokenMapRef.get();
+        if (debug) {
+          debug.tokenMapPath = tokenMapRef.path;
+          debug.tokenMapExists = tokenMapSnap.exists;
+          debug.tokenMapUid = tokenMapSnap.exists ? String(tokenMapSnap.data()?.uid || '') : '';
+        }
+        if (tokenMapSnap.exists) {
+          resolvedUid = String(tokenMapSnap.data()?.uid || '').trim();
+        }
+
+        if (!resolvedUid) {
+          try {
+            const tokenQuery = await db
+              .collectionGroup('private')
+              .where('tokenHash', '==', incomingHash)
+              .limit(1)
+              .get();
+
+            if (debug) {
+              debug.privateMatchCount = tokenQuery.size;
+              debug.privateMatchPath = tokenQuery.empty ? '' : String(tokenQuery.docs[0]?.ref?.path || '');
+            }
+
+            if (!tokenQuery.empty) {
+              resolvedUid = extractUidFromPrivateDocPath(tokenQuery.docs[0]?.ref?.path);
+              if (resolvedUid) {
+                await tokenMapRef.set({
+                  uid: resolvedUid,
+                  source: 'server_repair',
+                  updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                }, { merge: true });
+              }
+            }
+          } catch (repairError) {
+            console.warn('appleHealthImport token repair failed', repairError);
+          }
+        }
+
+        if (!resolvedUid) {
+          return jsonResponse(res, 403, debug ? { ok: false, error: 'invalid_token', debug } : { ok: false, error: 'invalid_token' });
+        }
+
+        uid = resolvedUid;
+        if (!uid) {
+          return jsonResponse(res, 500, debug ? { ok: false, error: 'uid_resolution_failed', debug } : { ok: false, error: 'uid_resolution_failed' });
+        }
+      } else {
+        const tokenRef = db.doc(`artifacts/${APP_ARTIFACT_ID}/users/${uid}/private/appleHealthImport`);
+        const tokenSnap = await tokenRef.get();
+        const tokenHash = String(tokenSnap.data()?.tokenHash || '').trim();
+        if (debug) {
+          debug.directTokenRefPath = tokenRef.path;
+          debug.directTokenHash = tokenHash;
+        }
+        if (!tokenHash) {
+          return jsonResponse(res, 403, debug ? { ok: false, error: 'token_not_configured', debug } : { ok: false, error: 'token_not_configured' });
+        }
+
+        if (!timingSafeHexEqual(incomingHash, tokenHash)) {
+          return jsonResponse(res, 403, debug ? { ok: false, error: 'invalid_token', debug } : { ok: false, error: 'invalid_token' });
+        }
+      }
+
+      const payload = {
+        date,
+        steps: toWholeMetric(metrics.steps),
+        activeKcal: toDecimalMetric(metrics.activeKcal, { precision: 1, mode: 'floor' }),
+        restingKcal: toDecimalMetric(metrics.restingKcal, { precision: 1, mode: 'floor' }),
+        exerciseMinutes: toWholeMetric(metrics.exerciseMinutes),
+        distanceKm: toDecimalMetric(metrics.distanceKm, { precision: 2 }),
+        heartRateAvg: toWholeMetric(metrics.heartRateAvg),
+        standHours: toWholeMetric(metrics.standHours, { nullable: true }),
+        source: 'apple_shortcuts',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      };
+
+      const healthRef = db.doc(`artifacts/${APP_ARTIFACT_ID}/users/${uid}/healthDaily/${date}`);
+      await healthRef.set(payload, { merge: true });
+
+      return jsonResponse(res, 200, { ok: true, date });
+    } catch (error) {
+      console.error('appleHealthImport failed', error);
+      return jsonResponse(res, 500, {
+        ok: false,
+        error: 'internal_error'
+      });
+    }
+  }
+);
 
 exports.fatsecretSearch = onRequest(
   {

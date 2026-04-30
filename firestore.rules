@@ -31,6 +31,15 @@ service cloud.firestore {
         allow read, write: if isOwner(userId);
       }
 
+      match /private/{docId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /healthDaily/{date} {
+        allow read: if isOwner(userId);
+        allow write: if false;
+      }
+
       match /trainerInvites/{inviteId} {
         allow create: if request.auth != null
           && request.auth.uid == request.resource.data.trainerUid
@@ -44,13 +53,30 @@ service cloud.firestore {
           && request.resource.data.trainerUid == resource.data.trainerUid
           && request.resource.data.trainerClientCardId == resource.data.trainerClientCardId
           && request.resource.data.status in ['accepted', 'rejected'];
-        allow delete: if false;
+        allow delete: if request.auth != null && request.auth.uid == userId;
       }
 
       match /linkedTrainers/{trainerUid} {
         allow read: if request.auth != null
           && (request.auth.uid == userId || request.auth.uid == trainerUid);
-        allow write: if isOwner(userId);
+        allow create, delete: if isOwner(userId);
+        // Клиент — полный контроль; тренер из связи может только дополнять allowedCycleIds (+ метка времени).
+        allow update: if isOwner(userId)
+          || (
+            request.auth != null
+            && request.auth.uid == trainerUid
+            && resource.data.active == true
+            && request.resource.data.active == true
+            && request.resource.data.fullCycleAccess == resource.data.fullCycleAccess
+            && request.resource.data.trainerClientCardId == resource.data.trainerClientCardId
+            && request.resource.data.inviteId == resource.data.inviteId
+            && request.resource.data.trainerFirstName == resource.data.trainerFirstName
+            && request.resource.data.trainerLastName == resource.data.trainerLastName
+            && request.resource.data.trainerName == resource.data.trainerName
+            && request.resource.data.allowedCycleIds is list
+            && resource.data.allowedCycleIds is list
+            && request.resource.data.allowedCycleIds.hasAll(resource.data.allowedCycleIds)
+          );
       }
 
       match /cycles/{cycleId} {
@@ -82,7 +108,10 @@ service cloud.firestore {
       }
 
       match /clients/{clientId} {
-        allow read, write: if isOwner(userId);
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId);
+        allow delete: if isOwner(userId)
+          || (request.auth != null && resource.data.linkedUserUid == request.auth.uid);
 
         match /mealLibraryFoods/{foodId} {
           allow read, write: if isOwner(userId);
@@ -131,6 +160,17 @@ service cloud.firestore {
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.keys().hasAll(['uid', 'assignedAt']);
       allow update, delete: if false;
+    }
+
+    match /artifacts/{appId}/appleHealthImportTokens/{tokenHash} {
+      allow read: if false;
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid;
+      allow update: if request.auth != null
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == request.auth.uid;
+      allow delete: if request.auth != null
+        && resource.data.uid == request.auth.uid;
     }
 
     // Общий каталог продуктов приложения (копии при создании у пользователя/клиента).

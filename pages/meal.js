@@ -25,24 +25,32 @@ const mealOpenState = JSON.parse(localStorage.getItem('mealOpenState') || '{}');
 import {
     getCycleDocRef,
     getCurrentAuthUid,
+    getCurrentUserHealthDailyCollection,
+    getCurrentUserHealthDailyDocRef,
     getGlobalFoodCatalogCollection,
     getMealLibraryContextKey,
     getMealLibraryFoodsCollection,
     getMealLibraryRecipesCollection,
+    isAppleShortcutsLaunchSupported,
+    isStandalonePwaDisplayMode,
+    launchAppleHealthShortcut,
     openCycleSelectModal,
     openConfirmModal,
+    openMediaFullScreen,
     renderTopBar,
     ensureCycleSelected,
     render,
-    showToast
+    showToast,
+    uploadUserMediaFileWithProgress,
+    deleteUserFirebaseStorageFileByDownloadUrl
 } from '../script.js';
 import { debounce } from './supplement.js';
 import { resolveSwipePanAxis } from '../gestures.js';
 import { bindSwipeBlock, closeSwipeRowVisual } from '../swipe-engine.js';
 import {
     syncMealSearchBottomNavFromOverlay,
-    updateMealSearchBottomNavAction,
-    setMealSearchNavBackHandler
+    setMealBottomNavOverlayMode,
+    clearMealBottomNavOverlayMode
 } from '../nav/bottom-nav.js';
 let unsubscribeMeals = null;
 let foodsMapCache = null;
@@ -61,6 +69,8 @@ let mealTotalsCache = {};
 let mealSwipeDocumentBound = false;
 let monthMealsPresenceCache = {};
 let monthMealsPresenceCycleId = null;
+let monthMealsDailySummaryCache = {};
+let monthMealsDailySummaryCycleId = null;
 let mealPageScrollY = 0;
 let mealScrollRestorePending = false;
 let mealMainMounted = false;
@@ -70,6 +80,12 @@ let mealShellEl = null;
 let mealOverlayStack = [];
 let cleanupMealMacrosBorderObserver = null;
 let cleanupTopBarMealBorderObserver = null;
+let weekMealsPresenceCache = {};
+let mealsDataLoadedDate = null;
+const MEAL_NO_GOAL_SUMMARY_VIEW_KEY = 'mealNoGoalSummaryView';
+let mealNoGoalSummaryCurrentMode = localStorage.getItem(MEAL_NO_GOAL_SUMMARY_VIEW_KEY) === 'current';
+const MEAL_GOAL_SUMMARY_VIEW_KEY = 'mealGoalSummaryView';
+let mealGoalSummaryCurrentMode = localStorage.getItem(MEAL_GOAL_SUMMARY_VIEW_KEY) === 'current';
 
 
 // функция сброса
@@ -87,8 +103,12 @@ export function resetMealsState() {
     recipesCache = null;
     recipesCacheLibraryKey = null;
     recipesCachePromise = null;
+    weekMealsPresenceCache = {};
+    mealsDataLoadedDate = null;
     monthMealsPresenceCache = {};
     monthMealsPresenceCycleId = null;
+    monthMealsDailySummaryCache = {};
+    monthMealsDailySummaryCycleId = null;
     historyPreviewCache = null;
     historyPreviewCacheKey = null;
     foodsPreviewCache = null;
@@ -160,6 +180,29 @@ function restoreMealPageScroll() {
     });
 }
 
+function syncMealRootScrollAvailability() {
+    const root = document.getElementById('root');
+    if (!root) return;
+
+    const hasScrollableOverflow = root.scrollHeight > root.clientHeight + 1;
+    root.classList.toggle('root-no-scroll', !hasScrollableOverflow);
+
+    if (!hasScrollableOverflow) {
+        root.scrollTop = 0;
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+    }
+}
+
+function scheduleMealRootScrollAvailabilitySync() {
+    requestAnimationFrame(() => {
+        syncMealRootScrollAvailability();
+        requestAnimationFrame(syncMealRootScrollAvailability);
+    });
+    window.setTimeout(syncMealRootScrollAvailability, 160);
+    window.setTimeout(syncMealRootScrollAvailability, 360);
+}
+
 function getWeekDates(dateStr) {
     const [year, month, day] = dateStr.split('-').map(Number);
     const date = new Date(year, month - 1, day);
@@ -178,6 +221,84 @@ function getWeekDates(dateStr) {
     }
 
     return week;
+}
+
+const WEEK_DAY_CHECK_MARK = '\u2713';
+
+function getWeekPresenceCacheKey(weekDates = []) {
+    const first = weekDates[0] || 'no-start';
+    const last = weekDates[weekDates.length - 1] || 'no-end';
+    return `${state.selectedCycleId || 'no-cycle'}__${first}__${last}`;
+}
+
+function getWeekPresenceStorageKey(cacheKey) {
+    return `mealWeekPresence:${cacheKey}`;
+}
+
+function normalizeWeekPresenceForDates(weekDates = [], presence = {}) {
+    const normalized = {};
+    weekDates.forEach(date => {
+        normalized[date] = Boolean(presence?.[date]);
+    });
+    return normalized;
+}
+
+function readWeekMealsPresenceCache(weekDates = []) {
+    if (!weekDates.length) return null;
+
+    const cacheKey = getWeekPresenceCacheKey(weekDates);
+    if (weekMealsPresenceCache[cacheKey]) {
+        return normalizeWeekPresenceForDates(weekDates, weekMealsPresenceCache[cacheKey]);
+    }
+
+    try {
+        const raw = localStorage.getItem(getWeekPresenceStorageKey(cacheKey));
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        const presence = parsed?.presence || parsed;
+        if (!presence || typeof presence !== 'object') return null;
+        weekMealsPresenceCache[cacheKey] = normalizeWeekPresenceForDates(weekDates, presence);
+        return weekMealsPresenceCache[cacheKey];
+    } catch (_) {
+        return null;
+    }
+}
+
+function writeWeekMealsPresenceCache(weekDates = [], presence = {}) {
+    if (!weekDates.length) return;
+
+    const cacheKey = getWeekPresenceCacheKey(weekDates);
+    const normalized = normalizeWeekPresenceForDates(weekDates, presence);
+    weekMealsPresenceCache[cacheKey] = normalized;
+
+    try {
+        localStorage.setItem(
+            getWeekPresenceStorageKey(cacheKey),
+            JSON.stringify({ savedAt: Date.now(), presence: normalized })
+        );
+    } catch (_) {}
+}
+
+function updateCachedWeekPresenceForDate(dateStr, hasFood) {
+    if (!dateStr) return;
+    const weekDates = getWeekDates(dateStr);
+    const cached = readWeekMealsPresenceCache(weekDates) || normalizeWeekPresenceForDates(weekDates);
+    cached[dateStr] = Boolean(hasFood);
+    writeWeekMealsPresenceCache(weekDates, cached);
+}
+
+function applyWeekRowPresence(presence = {}, root = mealMainEl) {
+    const scope = root || document;
+    scope.querySelectorAll?.('.week-day-item').forEach(btn => {
+        const date = btn.dataset.date;
+        if (!date || !(date in presence)) return;
+        btn.classList.toggle('has-food', Boolean(presence[date]));
+
+        const check = btn.querySelector('.week-day-check');
+        if (check && check.textContent !== WEEK_DAY_CHECK_MARK) {
+            check.textContent = WEEK_DAY_CHECK_MARK;
+        }
+    });
 }
 
 
@@ -252,6 +373,66 @@ function getCalendarMonthTitle(date) {
         'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'
     ];
     return months[date.getMonth()];
+}
+
+const MEAL_SUMMARY_MONTH_NAMES = [
+    'январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
+    'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'
+];
+const MEAL_SUMMARY_MONTH_SHORT_NAMES = [
+    'янв.', 'февр.', 'март', 'апр.', 'май', 'июнь',
+    'июль', 'авг.', 'сент.', 'окт.', 'нояб.', 'дек.'
+];
+const MEAL_SUMMARY_WEEKDAY_SHORT_NAMES = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+
+function getMealSummaryMonthKey(monthDate) {
+    return `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function parseMealSummaryMonthKey(monthKey) {
+    const match = String(monthKey || '').match(/^(\d{4})-(\d{2})$/);
+    if (!match) return null;
+
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+        return null;
+    }
+
+    return new Date(year, month - 1, 1);
+}
+
+function getMealSummaryVisibleMonth() {
+    const parsed = parseMealSummaryMonthKey(state.mealSummaryMonth);
+    if (parsed) return parsed;
+
+    const fallback = state.selectedDate ? parseLocalDate(state.selectedDate) : new Date();
+    return getMonthStart(fallback);
+}
+
+function setMealSummaryVisibleMonth(monthDate) {
+    state.mealSummaryMonth = getMealSummaryMonthKey(getMonthStart(monthDate));
+}
+
+function formatMealSummaryMonthLabel(monthDate) {
+    return `${MEAL_SUMMARY_MONTH_NAMES[monthDate.getMonth()]} ${monthDate.getFullYear()}`;
+}
+
+function formatMealSummaryStubDateLabel(dateStr) {
+    if (!dateStr) return '';
+    const date = parseLocalDate(dateStr);
+    return `${date.getDate()} ${MEAL_SUMMARY_MONTH_NAMES[date.getMonth()]} ${date.getFullYear()}`;
+}
+
+function getMealSummaryMonthDays(monthDate) {
+    const lastDay = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
+    const result = [];
+
+    for (let day = 1; day <= lastDay; day += 1) {
+        result.push(formatLocalDate(new Date(monthDate.getFullYear(), monthDate.getMonth(), day)));
+    }
+
+    return result;
 }
 
 function formatMacro(value, digits = 1) {
@@ -534,6 +715,208 @@ function buildMealSplitArc({ carbsKcal, fatKcal, proteinKcal, totalKcal }) {
     `;
 }
 
+function buildMealSummaryCurrentCard({
+    eatenCalories,
+    eatenProtein,
+    eatenFat,
+    eatenCarbs,
+    carbsPercent,
+    fatPercent,
+    proteinPercent
+}) {
+    const circumference = 301.59;
+    const carbsLen = (clampMealPercent(carbsPercent) / 100) * circumference;
+    const fatLen = (clampMealPercent(fatPercent) / 100) * circumference;
+    const proteinLen = (clampMealPercent(proteinPercent) / 100) * circumference;
+
+    return `
+        <div class="meal-summary-current-card food-current-card">
+            <div class="food-current-ring-block">
+                <div class="food-current-ring">
+                    <svg viewBox="0 0 120 120" class="food-ring-svg">
+                        <circle class="food-ring-bg" cx="60" cy="60" r="48"></circle>
+
+                        <circle
+                            class="food-ring-segment food-ring-carbs"
+                            cx="60"
+                            cy="60"
+                            r="48"
+                            stroke-dasharray="${carbsLen} ${circumference}"
+                            stroke-dashoffset="0"
+                        ></circle>
+
+                        <circle
+                            class="food-ring-segment food-ring-fat"
+                            cx="60"
+                            cy="60"
+                            r="48"
+                            stroke-dasharray="${fatLen} ${circumference}"
+                            stroke-dashoffset="-${carbsLen}"
+                        ></circle>
+
+                        <circle
+                            class="food-ring-segment food-ring-protein"
+                            cx="60"
+                            cy="60"
+                            r="48"
+                            stroke-dasharray="${proteinLen} ${circumference}"
+                            stroke-dashoffset="-${carbsLen + fatLen}"
+                        ></circle>
+                    </svg>
+
+                    <div class="food-ring-center">
+                        <div class="food-ring-kcal">${eatenCalories}</div>
+                        <div class="food-ring-label">ккал</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="food-current-macros">
+                <div class="food-current-macro food-current-macro-carbs">
+                    <div class="food-current-percent">${Math.round(carbsPercent)} %</div>
+                    <div class="food-current-grams">${String(formatMacro(eatenCarbs, 1)).replace('.', ',')} г</div>
+                    <div class="food-current-name">Углев.</div>
+                </div>
+
+                <div class="food-current-macro food-current-macro-fat">
+                    <div class="food-current-percent">${Math.round(fatPercent)} %</div>
+                    <div class="food-current-grams">${String(formatMacro(eatenFat, 1)).replace('.', ',')} г</div>
+                    <div class="food-current-name">Жиры</div>
+                </div>
+
+                <div class="food-current-macro food-current-macro-protein">
+                    <div class="food-current-percent">${Math.round(proteinPercent)} %</div>
+                    <div class="food-current-grams">${String(formatMacro(eatenProtein, 1)).replace('.', ',')} г</div>
+                    <div class="food-current-name">Белки</div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function bindMealNoGoalSummaryToggle(root = document) {
+    const card = root.querySelector?.('.meal-summary-card-no-goal');
+    if (!card) return;
+
+    const setMode = (enabled) => {
+        mealNoGoalSummaryCurrentMode = Boolean(enabled);
+        localStorage.setItem(
+            MEAL_NO_GOAL_SUMMARY_VIEW_KEY,
+            mealNoGoalSummaryCurrentMode ? 'current' : 'arc'
+        );
+        card.classList.toggle('meal-summary-card-no-goal--current', mealNoGoalSummaryCurrentMode);
+        card.setAttribute('aria-pressed', mealNoGoalSummaryCurrentMode ? 'true' : 'false');
+    };
+
+    card.addEventListener('click', () => {
+        setMode(!mealNoGoalSummaryCurrentMode);
+    });
+
+    card.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        setMode(!mealNoGoalSummaryCurrentMode);
+    });
+}
+
+function formatMealCompactValue(value) {
+    return String(formatMacro(value, 1)).replace('.', ',');
+}
+
+function buildMealGoalCompactMacro({ title, eaten, target, percent }) {
+    return `
+        <div class="meal-summary-goal-compact-macro">
+            <div class="meal-summary-goal-compact-title">${title}</div>
+            <div class="meal-summary-bar-track meal-summary-goal-compact-track">
+                <div class="meal-summary-bar-fill" style="width:${clampMealPercent(percent)}%;"></div>
+            </div>
+            <div class="meal-summary-goal-compact-eaten">${formatMealCompactValue(eaten)}</div>
+            <div class="meal-summary-goal-compact-target">
+                <span>/</span>
+                <strong>${formatMealCompactValue(target)}</strong>
+            </div>
+        </div>
+    `;
+}
+
+function buildMealGoalCompactCard({
+    eatenCalories,
+    caloriesGoal,
+    caloriesData,
+    proteinData,
+    fatData,
+    carbsData
+}) {
+    return `
+        <div class="meal-summary-goal-compact-card">
+            <div class="meal-summary-goal-compact-energy">
+                <div class="meal-summary-center meal-summary-goal-compact-center">
+                    ${buildMealProgressArc({
+                        eaten: caloriesData.eaten,
+                        target: caloriesData.target
+                    })}
+                    <div class="meal-summary-center-text meal-summary-goal-compact-center-text">
+                        <div class="meal-summary-center-value">${eatenCalories}</div>
+                        <div class="meal-summary-center-label">Ккал</div>
+                    </div>
+                </div>
+                <div class="meal-summary-goal-compact-energy-target">
+                    <span>/</span>
+                    <strong>${Math.round(Number(caloriesGoal || 0))}</strong>
+                </div>
+            </div>
+
+            ${buildMealGoalCompactMacro({
+                title: 'Белки',
+                eaten: proteinData.eaten,
+                target: proteinData.target,
+                percent: proteinData.percent
+            })}
+
+            ${buildMealGoalCompactMacro({
+                title: 'Жиры',
+                eaten: fatData.eaten,
+                target: fatData.target,
+                percent: fatData.percent
+            })}
+
+            ${buildMealGoalCompactMacro({
+                title: 'Углеводы',
+                eaten: carbsData.eaten,
+                target: carbsData.target,
+                percent: carbsData.percent
+            })}
+        </div>
+    `;
+}
+
+function bindMealGoalSummaryToggle(root = document) {
+    const card = root.querySelector?.('.meal-summary-card-goal');
+    if (!card) return;
+
+    const setMode = (enabled) => {
+        mealGoalSummaryCurrentMode = Boolean(enabled);
+        localStorage.setItem(
+            MEAL_GOAL_SUMMARY_VIEW_KEY,
+            mealGoalSummaryCurrentMode ? 'current' : 'arc'
+        );
+        card.classList.toggle('meal-summary-card-goal--current', mealGoalSummaryCurrentMode);
+        card.setAttribute('aria-pressed', mealGoalSummaryCurrentMode ? 'true' : 'false');
+    };
+
+    card.querySelectorAll('.meal-summary-top-goal, .meal-summary-goal-compact-card').forEach((target) => {
+        target.addEventListener('click', () => {
+            setMode(!mealGoalSummaryCurrentMode);
+        });
+    });
+
+    card.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        setMode(!mealGoalSummaryCurrentMode);
+    });
+}
+
 function buildMealGoalBar({ title, eaten, target, percent }) {
     return `
         <div class="meal-summary-bar-item">
@@ -624,7 +1007,13 @@ function renderMealMacrosRow(total = { p: 0, f: 0, c: 0, cal: 0 }) {
         const carbsData = getMealGoalProgress(eatenCarbs, carbsGoal);
 
         row.innerHTML = `
-            <div class="meal-summary-card">
+            <div
+                class="meal-summary-card meal-summary-card-goal ${mealGoalSummaryCurrentMode ? 'meal-summary-card-goal--current' : ''}"
+                role="button"
+                tabindex="0"
+                aria-label="Переключить вид цели питания"
+                aria-pressed="${mealGoalSummaryCurrentMode ? 'true' : 'false'}"
+            >
                 <div class="meal-summary-top meal-summary-top-goal">
                     <div class="meal-summary-side meal-summary-side-left">
                         <div class="meal-summary-side-value">${eatenCalories}</div>
@@ -670,8 +1059,18 @@ function renderMealMacrosRow(total = { p: 0, f: 0, c: 0, cal: 0 }) {
                         percent: carbsData.percent
                     })}
                 </div>
+
+                ${buildMealGoalCompactCard({
+                    eatenCalories,
+                    caloriesGoal,
+                    caloriesData,
+                    proteinData,
+                    fatData,
+                    carbsData
+                })}
             </div>
         `;
+        bindMealGoalSummaryToggle(row);
         return;
     }
 
@@ -686,7 +1085,13 @@ function renderMealMacrosRow(total = { p: 0, f: 0, c: 0, cal: 0 }) {
     const carbsPercent = (carbsKcal / totalFactKcal) * 100;
 
     row.innerHTML = `
-        <div class="meal-summary-card meal-summary-card-no-goal">
+        <div
+            class="meal-summary-card meal-summary-card-no-goal ${mealNoGoalSummaryCurrentMode ? 'meal-summary-card-no-goal--current' : ''}"
+            role="button"
+            tabindex="0"
+            aria-label="Переключить вид БЖУ"
+            aria-pressed="${mealNoGoalSummaryCurrentMode ? 'true' : 'false'}"
+        >
             <div class="meal-summary-top meal-summary-top-no-goal">
                 <div class="meal-summary-center meal-summary-center-no-goal">
                     ${buildMealSplitArc({
@@ -723,8 +1128,20 @@ function renderMealMacrosRow(total = { p: 0, f: 0, c: 0, cal: 0 }) {
                     percent: carbsPercent
                 })}
             </div>
+
+            ${buildMealSummaryCurrentCard({
+                eatenCalories,
+                eatenProtein,
+                eatenFat,
+                eatenCarbs,
+                carbsPercent,
+                fatPercent,
+                proteinPercent
+            })}
         </div>
     `;
+
+    bindMealNoGoalSummaryToggle(row);
 }
 
 
@@ -776,9 +1193,13 @@ async function saveFoodEntity(foodId, payload) {
     const cleanPayload = {
         name: String(payload.name || '').trim(),
         nameLower: normalizeSearchText(payload.name),
+        searchTokens: buildMealSearchTokens(payload.name),
         description: String(payload.description || '').trim(),
         baseAmount: Number(payload.baseAmount || 0),
         baseUnit: String(payload.baseUnit || 'г').trim(),
+        defaultAmount: Number(payload.defaultAmount || payload.baseAmount || 0),
+        nutritionBasis: String(payload.nutritionBasis || payload.baseUnit || 'г').trim(),
+        portionSizeUnit: String(payload.portionSizeUnit || payload.baseUnit || 'г').trim(),
         protein: Number(payload.protein || 0),
         fat: Number(payload.fat || 0),
         carbs: Number(payload.carbs || 0),
@@ -800,6 +1221,165 @@ async function saveFoodEntity(foodId, payload) {
     return cleanPayload;
 }
 
+const FOOD_NUTRITION_BASIS_OPTIONS = ['г', 'мл', 'порция'];
+const FOOD_PORTION_MEASURE_OPTIONS = ['г', 'мл'];
+const FOOD_LOCKED_PORTION_AMOUNT = 100;
+
+function normalizeFoodPortionUnit(unit) {
+    return String(unit || '').trim() === 'мл' ? 'мл' : 'г';
+}
+
+function resolveFoodNutritionBasis(food) {
+    const savedBasis = String(food?.nutritionBasis || '').trim();
+    if (FOOD_NUTRITION_BASIS_OPTIONS.includes(savedBasis)) {
+        return savedBasis;
+    }
+
+    const baseUnit = String(food?.baseUnit || '').trim();
+    if (baseUnit === 'мл') return 'мл';
+    if (baseUnit === 'г') return 'г';
+    return 'порция';
+}
+
+function buildFoodNutritionPayload(selectedBasis, portionValue, portionMeasureUnit) {
+    const nutritionBasis = FOOD_NUTRITION_BASIS_OPTIONS.includes(selectedBasis) ? selectedBasis : 'г';
+    const baseUnit = nutritionBasis === 'порция'
+        ? normalizeFoodPortionUnit(portionMeasureUnit)
+        : (nutritionBasis === 'мл' ? 'мл' : 'г');
+    const baseAmount = nutritionBasis === 'порция'
+        ? Number(portionValue || 0)
+        : FOOD_LOCKED_PORTION_AMOUNT;
+
+    return {
+        nutritionBasis,
+        portionSizeUnit: baseUnit,
+        baseUnit,
+        baseAmount,
+        defaultAmount: baseAmount
+    };
+}
+
+function getFoodGlobalCatalogId(food = {}) {
+    return String(food.sharedGlobalCatalogId || food.globalCatalogSourceId || '').trim();
+}
+
+function isFoodLinkedToGlobalCatalog(food = {}) {
+    return getFoodGlobalCatalogId(food).length > 0 || food.source === 'globalCatalogImport';
+}
+
+function isFoodImportedFromGlobalCatalog(food = {}) {
+    return food.source === 'globalCatalogImport' || Boolean(food.globalCatalogImported);
+}
+
+function getMealSearchSharedBadgeMarkup() {
+    return `
+        <span class="meal-search-shared-badge" title="В общей базе" aria-label="В общей базе">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="currentColor" d="M9.55 18.55 3.8 12.8l1.4-1.4 4.35 4.35 9.25-9.25 1.4 1.4z"/>
+            </svg>
+        </span>
+    `;
+}
+
+function escapeMealHtml(value) {
+    return String(value || '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+}
+
+function buildMealSearchFoodNameMarkup(name, isShared = false) {
+    return `
+        <div class="meal-search-item-name">
+            <span class="meal-search-item-name-text">${escapeMealHtml(name || 'Продукт')}</span>
+            ${isShared ? getMealSearchSharedBadgeMarkup() : ''}
+        </div>
+    `;
+}
+
+function invalidateFoodPreviewCaches() {
+    foodsPreviewCache = null;
+    foodsPreviewCacheKey = null;
+    historyPreviewCache = null;
+    historyPreviewCacheKey = null;
+}
+
+function patchFoodSearchCardSharedBadge(foodId) {
+    if (!mealOverlayEl || !foodId) return;
+    const food = foodsMapCache?.[foodId];
+    if (!food) return;
+
+    mealOverlayEl.querySelectorAll(`.meal-search-item[data-food-id="${foodId}"]`).forEach(card => {
+        const nameEl = card.querySelector('.meal-search-item-name');
+        if (!nameEl) return;
+        nameEl.outerHTML = buildMealSearchFoodNameMarkup(food.name, isFoodLinkedToGlobalCatalog(food));
+    });
+}
+
+async function findLocalFoodIdByGlobalCatalogId(catalogId) {
+    const id = String(catalogId || '').trim();
+    if (!id) return null;
+
+    const foodsMap = await getFoodsMap();
+    const entry = Object.entries(foodsMap || {}).find(([, row]) => getFoodGlobalCatalogId(row) === id);
+    return entry ? entry[0] : null;
+}
+
+function buildGlobalCatalogImportPayload(row = {}, catalogId, defaultAmount = null) {
+    const amount = defaultAmount != null
+        ? Number(defaultAmount)
+        : Number(row.defaultAmount ?? row.baseAmount ?? 100);
+
+    return {
+        name: String(row.name || 'Продукт').trim(),
+        description: String(row.description || '').trim(),
+        baseAmount: Number(row.baseAmount || 100),
+        baseUnit: String(row.baseUnit || 'г'),
+        protein: Number(row.protein || 0),
+        fat: Number(row.fat || 0),
+        carbs: Number(row.carbs || 0),
+        calories: Number(row.calories || 0),
+        defaultAmount: Number(amount || row.baseAmount || 100),
+        source: 'globalCatalogImport',
+        globalCatalogImported: true,
+        globalCatalogSourceId: String(catalogId || '').trim(),
+        sharedGlobalCatalogId: String(catalogId || '').trim(),
+        sharedGlobalImportedAt: Date.now(),
+        globalCatalogCreatedByUid: String(row.createdByUid || '').trim()
+    };
+}
+
+async function ensureGlobalCatalogFoodSaved(row = {}, catalogId, defaultAmount = null) {
+    const existingId = await findLocalFoodIdByGlobalCatalogId(catalogId);
+    if (existingId) return existingId;
+
+    return addFood(buildGlobalCatalogImportPayload(row, catalogId, defaultAmount), { skipGlobalMirror: true });
+}
+
+async function unlinkLocalFoodFromGlobalCatalog(foodId) {
+    const libCol = getMealLibraryFoodsCollection();
+    const id = String(foodId || '').trim();
+    if (!libCol || !id) return;
+
+    const libRef = doc(libCol, id);
+    await updateDoc(libRef, {
+        sharedGlobalCatalogId: deleteField(),
+        sharedGlobalSharedAt: deleteField(),
+        sharedGlobalCreatedByUid: deleteField()
+    });
+
+    if (foodsMapCache && foodsMapLibraryKey === getMealLibraryContextKey() && foodsMapCache[id]) {
+        delete foodsMapCache[id].sharedGlobalCatalogId;
+        delete foodsMapCache[id].sharedGlobalSharedAt;
+        delete foodsMapCache[id].sharedGlobalCreatedByUid;
+    }
+
+    invalidateFoodPreviewCaches();
+    patchFoodSearchCardSharedBadge(id);
+}
+
 async function syncSharedFoodToGlobalCatalogIfNeeded(foodId, patch) {
     try {
         const libCol = getMealLibraryFoodsCollection();
@@ -811,12 +1391,20 @@ async function syncSharedFoodToGlobalCatalogIfNeeded(foodId, patch) {
         const libSnap = await getDoc(libRef);
         if (!libSnap.exists()) return;
         const data = libSnap.data() || {};
-        const sharedId = String(data.sharedGlobalCatalogId || '').trim();
+        if (isFoodImportedFromGlobalCatalog(data)) return;
+
+        const ownerUid = String(data.sharedGlobalCreatedByUid || '').trim();
+        if (ownerUid && ownerUid !== uid) return;
+
+        const sharedId = getFoodGlobalCatalogId(data);
         if (!sharedId) return;
 
         const gRef = doc(gCol, sharedId);
         const upd = { ...(patch || {}) };
-        if (upd.name != null) upd.nameLower = normalizeSearchText(upd.name);
+        if (upd.name != null) {
+            upd.nameLower = normalizeSearchText(upd.name);
+            upd.searchTokens = buildMealSearchTokens(upd.name);
+        }
         if (upd.defaultAmount != null) upd.defaultAmount = Number(upd.defaultAmount || 0);
         await updateDoc(gRef, upd);
     } catch (e) {
@@ -847,6 +1435,59 @@ async function addFoodSnapshotToCurrentMeal(food, grams) {
             calories: Number(food.calories || 0)
         })
     }, { merge: true });
+}
+
+function parseMealDecimalInput(value, fallback = null) {
+    const raw = String(value ?? '').trim().replace(',', '.');
+    if (!raw) return fallback;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+async function addQuickFoodToCurrentMeal(payload = {}) {
+    const cycleRef = getCycleDocRef();
+    if (!cycleRef || !state.currentMealId || !state.selectedDate) return false;
+
+    const name = String(payload.name || '').trim();
+    if (!name) return false;
+
+    const portionSize = parseMealDecimalInput(payload.portionSize, null);
+    const protein = Math.max(0, parseMealDecimalInput(payload.protein, 0) || 0);
+    const fat = Math.max(0, parseMealDecimalInput(payload.fat, 0) || 0);
+    const carbs = Math.max(0, parseMealDecimalInput(payload.carbs, 0) || 0);
+    const manualCalories = parseMealDecimalInput(payload.calories, null);
+    const hasPortionSize = portionSize != null && portionSize > 0;
+    const baseAmount = hasPortionSize ? portionSize : 1;
+    const baseUnit = hasPortionSize ? 'г' : 'порц';
+    const calories = Math.max(
+        0,
+        manualCalories != null
+            ? manualCalories
+            : Number((protein * 4 + fat * 9 + carbs * 4).toFixed(1))
+    );
+
+    const mealRef = doc(cycleRef, 'meals', state.selectedDate);
+
+    await setDoc(mealRef, {
+        [state.currentMealId]: arrayUnion({
+            id: crypto.randomUUID(),
+            isQuickAdded: true,
+            hideWeightDisplay: !hasPortionSize,
+            planned: false,
+            name,
+            description: '',
+            grams: baseAmount,
+            baseAmount,
+            baseUnit,
+            protein,
+            fat,
+            carbs,
+            calories,
+            createdAt: Date.now()
+        })
+    }, { merge: true });
+
+    return true;
 }
 
 async function addRecipeToCurrentMeal(recipe, servings) {
@@ -908,34 +1549,214 @@ async function addRecipeToCurrentMeal(recipe, servings) {
     historyPreviewCacheKey = null;
 }
 
-function addFoodToRecipeDraft(food, grams) {
-    const draft = getRecipeDraft();
-
-    if (!Array.isArray(draft.ingredients)) {
-        draft.ingredients = [];
-    }
-
-    const amountNum = Number(grams || food.defaultAmount || food.baseAmount || 100);
-    const unit = food.baseUnit || 'г';
-
-    draft.ingredients.push({
-        id: crypto.randomUUID(),
-        foodId: state.currentFoodId,
-        grams: amountNum,
-        amount: `${amountNum} ${unit}`,
-
-        name: food.name || '',
-        description: food.description || '',
-        baseAmount: Number(food.baseAmount || 100),
-        baseUnit: unit,
-
-        protein: Number(food.protein || 0),
-        fat: Number(food.fat || 0),
-        carbs: Number(food.carbs || 0),
-        calories: Number(food.calories || 0)
-    });
+function isMealPhotoItem(item = {}) {
+    return item?.isMealPhoto === true && typeof item?.photoUrl === 'string' && item.photoUrl.trim().length > 0;
 }
 
+async function addMealPhotoToCurrentMeal(mealId, photoUrl) {
+    const cycleRef = getCycleDocRef();
+    if (!cycleRef || !mealId || !state.selectedDate || !photoUrl) return;
+
+    const mealRef = doc(cycleRef, 'meals', state.selectedDate);
+
+    await setDoc(mealRef, {
+        [mealId]: arrayUnion({
+            id: crypto.randomUUID(),
+            isMealPhoto: true,
+            photoUrl: String(photoUrl).trim(),
+            name: 'Фото продукта',
+            planned: false,
+            createdAt: Date.now()
+        })
+    }, { merge: true });
+}
+
+function getMealCameraIconMarkup() {
+    return `
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Outline-photo-camera SVG Icon</title><path fill="currentColor" d="m14.12 4l1.83 2H20v12H4V6h4.05l1.83-2zM15 2H9L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17zm-3 7c1.65 0 3 1.35 3 3s-1.35 3-3 3s-3-1.35-3-3s1.35-3 3-3m0-2c-2.76 0-5 2.24-5 5s2.24 5 5 5s5-2.24 5-5s-2.24-5-5-5"/></svg>
+    `;
+}
+
+function getMealQuickAddIconMarkup() {
+    return `
+        <svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" id="РВконка 7" viewBox="0 0 17 12">
+          <g>
+            <path fill="none" fill-rule="evenodd" d="M6.5,12.39 L6.5,12.39 L6.44,12.4 L6.43,12.4 L6.43,12.4 L6.38,12.39 C6.38,12.37 6.38,12.39 6.37,12.39 L6.37,12.39 L6.36,12.64 L6.37,12.65 L6.37,12.65 L6.43,12.7 L6.44,12.7 L6.44,12.7 L6.51,12.65 L6.51,12.65 L6.52,12.64 L6.51,12.39 C6.51,12.39 6.5,12.39 6.5,12.39 M6.65,12.31 L6.65,12.31 L6.53,12.37 L6.53,12.37 L6.53,12.39 L6.53,12.62 L6.54,12.64 L6.54,12.64 L6.66,12.69 C6.68,12.7 6.68,12.7 6.69,12.69 L6.69,12.68 L6.66,12.32 C6.66,12.32 6.66,12.31 6.65,12.31 M6.23,12.31 C6.23,12.31 6.22,12.31 6.22,12.32 L6.22,12.32 L6.19,12.68 C6.19,12.69 6.2,12.69 6.2,12.7 L6.22,12.69 L6.34,12.64 L6.35,12.64 L6.35,12.62 L6.35,12.39 L6.35,12.37 L6.35,12.37 Z"/>
+          </g>
+          <path fill="currentColor" d="M14.26,0C14.61,0,14.83,.25,14.83,.57L14.83,2.03L16.39,2.03C16.75,2.03,17,2.26,17,2.61C17,2.94,16.75,3.18,16.39,3.18L14.83,3.18L14.83,4.65C14.83,4.97,14.61,5.22,14.26,5.22C13.89,5.22,13.65,4.97,13.65,4.65L13.65,3.18L12.1,3.18C11.74,3.18,11.49,2.94,11.49,2.61C11.49,2.26,11.74,2.03,12.1,2.03L13.65,2.03L13.65,.57C13.65,.25,13.89,0,14.26,0"/>
+          <g>
+            <path fill="none" fill-rule="evenodd" d="M6.44,12.09 L6.44,12.09 L6.39,12.1 L6.38,12.1 L6.38,12.1 L6.34,12.09 C6.34,12.08 6.34,12.09 6.31,12.09 L6.31,12.09 L6.3,12.34 L6.31,12.36 L6.31,12.36 L6.38,12.4 L6.39,12.4 L6.39,12.4 L6.46,12.36 L6.46,12.36 L6.47,12.34 L6.46,12.09 C6.46,12.09 6.44,12.09 6.44,12.09 M6.6,12.02 L6.6,12.02 L6.48,12.08 L6.48,12.08 L6.48,12.09 L6.48,12.32 L6.49,12.34 L6.49,12.34 L6.61,12.39 C6.63,12.4 6.63,12.4 6.63,12.39 L6.63,12.38 L6.61,12.03 C6.61,12.03 6.61,12.02 6.6,12.02 M6.18,12.02 C6.18,12.02 6.17,12.02 6.17,12.03 L6.17,12.03 L6.15,12.38 C6.15,12.39 6.16,12.39 6.16,12.4 L6.17,12.39 L6.29,12.34 L6.29,12.34 L6.29,12.32 L6.29,12.09 L6.29,12.08 L6.29,12.08 Z"/>
+            <g>
+              <path fill="none" fill-rule="evenodd" d="M6.35,12.48 L6.35,12.48 L6.29,12.51 L6.28,12.51 L6.28,12.51 L6.24,12.48 C6.24,12.47 6.24,12.48 6.23,12.48 L6.23,12.48 L6.22,12.74 L6.23,12.75 L6.23,12.75 L6.28,12.8 L6.29,12.8 L6.29,12.8 L6.36,12.75 L6.36,12.75 L6.37,12.74 L6.36,12.48 C6.36,12.48 6.35,12.48 6.35,12.48 M6.51,12.41 L6.51,12.41 L6.38,12.47 L6.38,12.47 L6.38,12.48 L6.38,12.73 L6.39,12.74 L6.39,12.74 L6.52,12.79 C6.54,12.8 6.54,12.8 6.55,12.79 L6.55,12.78 L6.52,12.43 C6.52,12.43 6.52,12.41 6.51,12.41 M6.08,12.41 C6.08,12.41 6.06,12.41 6.06,12.43 L6.06,12.43 L6.04,12.78 C6.04,12.79 6.05,12.79 6.05,12.8 L6.06,12.79 L6.18,12.74 L6.2,12.74 L6.2,12.73 L6.2,12.48 L6.2,12.47 L6.2,12.47 Z"/>
+              <path fill="currentColor" fill-rule="evenodd" d="M3.5,1.4L1.5,5.6L3.6,5.6C4,5.6,4.32,5.83,4.2,6.2L3.1,9.3L7.7,4.8L6.1,4.8C5.89,4.8,5.69,4.77,5.58,4.61C5.47,4.44,5.47,4.23,5.56,4.05L7,1.4zM2.6,.65C2.7,.44,2.9,.3,3.15,.3L7.82,.3C8.27,.3,8.56,.74,8.36,1.14L7.04,3.75L9.01,3.75C9.53,3.75,9.81,4.37,9.42,4.73L2.39,11.57C1.96,12.01,1.21,11.56,1.41,10.99L2.91,6.6L.8,6.6C.59,6.6,.4,6.5,.3,6.34C.19,6.18,.17,5.97,.24,5.78z"/>
+            </g>
+          </g>
+        </svg>
+    `;
+}
+
+function getMealAddIconMarkup() {
+    return `
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 14 14"><title>Add-1-solid SVG Icon</title><path fill="currentColor" fill-rule="evenodd" d="M8 1a1 1 0 0 0-2 0v5H1a1 1 0 0 0 0 2h5v5a1 1 0 1 0 2 0V8h5a1 1 0 1 0 0-2H8z" clip-rule="evenodd"/></svg>
+    `;
+}
+
+function openQuickAddForm(backTarget = 'search', mealId = null) {
+    if (mealId) {
+        state.currentMealId = mealId;
+    }
+    state.quickAddBackTarget = backTarget;
+    state.mealView = 'quickAdd';
+    renderMealPage();
+}
+
+function openMealSearchForMeal(mealId) {
+    if (!mealId) return;
+
+    const now = Date.now();
+    if (
+        lastMealSearchOpenFromCardMealId === mealId &&
+        now - lastMealSearchOpenFromCardAt < 380
+    ) {
+        return;
+    }
+
+    lastMealSearchOpenFromCardAt = now;
+    lastMealSearchOpenFromCardMealId = mealId;
+
+    saveMealPageScroll();
+    mealScrollRestorePending = true;
+
+    state.currentMealId = mealId;
+    state.mealView = 'search';
+    renderMealPage();
+    installMealHeaderSearchGhostClickGuard();
+}
+
+function openMealPhotoCaptureFlow(mealId) {
+    if (!mealId) return;
+
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*';
+    fileInput.capture = 'environment';
+    fileInput.style.display = 'none';
+    document.body.append(fileInput);
+
+    let overlay = null;
+    let currentFile = null;
+    let currentPreviewUrl = '';
+
+    const cleanupPreviewUrl = () => {
+        if (currentPreviewUrl) {
+            URL.revokeObjectURL(currentPreviewUrl);
+            currentPreviewUrl = '';
+        }
+    };
+
+    const closeFlow = () => {
+        cleanupPreviewUrl();
+        overlay?.remove();
+        overlay = null;
+        fileInput.remove();
+    };
+
+    const openPicker = () => {
+        fileInput.value = '';
+        fileInput.click();
+    };
+
+    const ensureOverlay = () => {
+        if (overlay) return overlay;
+
+        overlay = createElement('div', 'modal-overlay');
+        const modal = createElement('div', 'modal-content modal-compact');
+        modal.style.maxWidth = '420px';
+        modal.style.width = 'calc(100% - 32px)';
+
+        const title = createElement('h3', null, 'Фото продукта');
+        const hint = createElement('p', 'muted', 'Подтвердите снимок или сделайте новый.');
+
+        const preview = createElement('img');
+        preview.className = 'meal-photo-capture-preview';
+        preview.style.width = '100%';
+        preview.style.maxHeight = '320px';
+        preview.style.objectFit = 'cover';
+        preview.style.borderRadius = '14px';
+        preview.style.display = 'block';
+        preview.style.margin = '0 0 14px 0';
+        preview.style.background = '#f3f4f6';
+
+        const controls = createElement('div', 'modal-controls');
+        const retakeBtn = createElement('button', 'btn btn-outline', 'Сделать новый');
+        const saveBtn = createElement('button', 'btn btn-primary', 'Сохранить');
+        controls.append(retakeBtn, saveBtn);
+
+        retakeBtn.onclick = (e) => {
+            e.stopPropagation();
+            openPicker();
+        };
+
+        saveBtn.onclick = async (e) => {
+            e.stopPropagation();
+            if (!currentFile) return;
+
+            retakeBtn.disabled = true;
+            saveBtn.disabled = true;
+
+            try {
+                const uploadedUrl = await uploadUserMediaFileWithProgress(currentFile, 'meal-photos', (percent) => {
+                    saveBtn.textContent = percent >= 100 ? 'Сохранение...' : `Загрузка ${percent}%`;
+                });
+
+                await addMealPhotoToCurrentMeal(mealId, uploadedUrl);
+                closeFlow();
+                showToast('Фото добавлено в прием');
+            } catch (error) {
+                console.error(error);
+                showToast('Не удалось сохранить фото');
+                retakeBtn.disabled = false;
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Сохранить';
+            }
+        };
+
+        overlay.addEventListener('click', (event) => {
+            if (event.target === overlay) {
+                closeFlow();
+            }
+        });
+        modal.addEventListener('click', (event) => event.stopPropagation());
+
+        modal.append(title, hint, preview, controls);
+        overlay.append(modal);
+        overlay._previewEl = preview;
+        document.body.append(overlay);
+        return overlay;
+    };
+
+    fileInput.addEventListener('change', () => {
+        const file = fileInput.files?.[0];
+        if (!file) {
+            if (!overlay) {
+                closeFlow();
+            }
+            return;
+        }
+
+        currentFile = file;
+        cleanupPreviewUrl();
+        currentPreviewUrl = URL.createObjectURL(file);
+
+        const currentOverlay = ensureOverlay();
+        const previewEl = currentOverlay._previewEl;
+        if (previewEl) {
+            previewEl.src = currentPreviewUrl;
+        }
+    });
+
+    openPicker();
+}
 
 function calcMealsTotalsFast(mealsData = {}, foodsMap = null) {
     const total = { cal: 0, p: 0, f: 0, c: 0 };
@@ -947,6 +1768,8 @@ function calcMealsTotalsFast(mealsData = {}, foodsMap = null) {
         mealTotals[mealId] = { cal: 0, p: 0, f: 0, c: 0 };
 
         (mealsData[mealId] || []).forEach(item => {
+            if (isMealPhotoItem(item)) return;
+
             const snapshotFood = {
                 name: item.name,
                 description: item.description,
@@ -1281,7 +2104,7 @@ async function getMonthMealsPresence(monthDate) {
 
     // чтобы текущий выбранный день сразу был актуален,
     // даже если он еще не совпал с серверным состоянием
-    if (state.selectedDate && state.mealsData) {
+    if (state.selectedDate && mealsDataLoadedDate === state.selectedDate && state.mealsData) {
         const selectedMonthKey = state.selectedDate.slice(0, 7);
         if (selectedMonthKey === monthKey) {
             result[state.selectedDate] = hasAnyFoodInDoc(state.mealsData);
@@ -1290,6 +2113,260 @@ async function getMonthMealsPresence(monthDate) {
 
     monthMealsPresenceCache[monthKey] = result;
     return result;
+}
+
+function buildMonthMealsDailySummaryEntry(dateStr, mealsDoc = {}, foodsMap = null, healthDaily = null) {
+    const { total } = calcMealsTotalsFast(mealsDoc, foodsMap);
+    const hasFood = hasAnyFoodInDoc(mealsDoc);
+    const eatenCalories = Math.round(Number(total.cal || 0));
+    const activeGoal = getActiveMealGoalForDate(dateStr);
+    const goalCalories = Number(activeGoal?.calories || 0);
+    const eatenPercent = hasFood && goalCalories > 0
+        ? Math.max(0, Math.round((eatenCalories / goalCalories) * 100))
+        : null;
+
+    return {
+        date: dateStr,
+        hasFood,
+        eatenCalories,
+        burnedCalories: healthDaily?.totalBurned ?? null,
+        healthDaily,
+        goalCalories,
+        eatenPercent
+    };
+}
+
+function normalizeAppleHealthDailyEntry(dateStr, raw = {}) {
+    const steps = Math.max(0, Math.round(Number(raw?.steps || 0) || 0));
+    const activeKcalRaw = Number(raw?.activeKcal || 0);
+    const activeKcal = Number.isFinite(activeKcalRaw) && activeKcalRaw > 0
+        ? Math.round(activeKcalRaw * 10) / 10
+        : 0;
+    const restingKcalRaw = Number(raw?.restingKcal || 0);
+    const restingKcal = Number.isFinite(restingKcalRaw) && restingKcalRaw > 0
+        ? Math.round(restingKcalRaw * 10) / 10
+        : 0;
+    const exerciseMinutes = Math.max(0, Math.round(Number(raw?.exerciseMinutes || 0) || 0));
+    const distanceKmRaw = Number(raw?.distanceKm || 0);
+    const distanceKm = Number.isFinite(distanceKmRaw) && distanceKmRaw > 0
+        ? Math.round(distanceKmRaw * 100) / 100
+        : 0;
+    const heartRateAvg = Math.max(0, Math.round(Number(raw?.heartRateAvg || 0) || 0));
+    const standHoursRaw = Number(raw?.standHours);
+    const standHours = Number.isFinite(standHoursRaw) && standHoursRaw >= 0
+        ? Math.round(standHoursRaw)
+        : null;
+
+    return {
+        date: dateStr,
+        steps,
+        activeKcal,
+        restingKcal,
+        totalBurned: Math.round((activeKcal + restingKcal) * 10) / 10,
+        exerciseMinutes,
+        distanceKm,
+        heartRateAvg,
+        standHours,
+        updatedAt: raw?.updatedAt || null,
+        source: raw?.source || ''
+    };
+}
+
+async function getAppleHealthDailyForDate(dateStr) {
+    if (state.currentMode !== 'own') return null;
+    const ref = getCurrentUserHealthDailyDocRef(dateStr);
+    if (!ref) return null;
+    const snap = await getDoc(ref);
+    if (!snap.exists()) return null;
+    return normalizeAppleHealthDailyEntry(dateStr, snap.data() || {});
+}
+
+async function getAppleHealthMonthMap(monthDate) {
+    if (state.currentMode !== 'own') return {};
+    const healthCol = getCurrentUserHealthDailyCollection();
+    if (!healthCol) return {};
+
+    const { startStr, endStr } = getMonthDateRange(monthDate);
+    const result = {};
+    const q = query(
+        healthCol,
+        where(documentId(), '>=', startStr),
+        where(documentId(), '<=', endStr)
+    );
+    const snap = await getDocs(q);
+    snap.forEach((docSnap) => {
+        result[docSnap.id] = normalizeAppleHealthDailyEntry(docSnap.id, docSnap.data() || {});
+    });
+    return result;
+}
+
+function getMonthMealsDailySummaryCacheKey(monthDate) {
+    return `${state.selectedCycleId || 'no-cycle'}__${getMealSummaryMonthKey(monthDate)}`;
+}
+
+function updateCachedMonthMealsDailySummaryForDate(dateStr, mealsDoc = {}) {
+    if (!dateStr) return;
+
+    const cycleId = state.selectedCycleId;
+    if (monthMealsDailySummaryCycleId !== cycleId) {
+        monthMealsDailySummaryCache = {};
+        monthMealsDailySummaryCycleId = cycleId;
+        return;
+    }
+
+    const monthDate = getMonthStart(parseLocalDate(dateStr));
+    const cacheKey = getMonthMealsDailySummaryCacheKey(monthDate);
+    if (!monthMealsDailySummaryCache[cacheKey]) return;
+
+    const foodsMap = foodsMapCache && foodsMapLibraryKey === getMealLibraryContextKey()
+        ? foodsMapCache
+        : null;
+    const cachedHealth = monthMealsDailySummaryCache[cacheKey]?.[dateStr]?.healthDaily || null;
+
+    monthMealsDailySummaryCache[cacheKey] = {
+        ...monthMealsDailySummaryCache[cacheKey],
+        [dateStr]: buildMonthMealsDailySummaryEntry(dateStr, mealsDoc, foodsMap, cachedHealth)
+    };
+}
+
+function updateCachedMonthMealsDailySummaryHealthForDate(dateStr, healthDaily = null) {
+    if (!dateStr) return;
+
+    const cycleId = state.selectedCycleId;
+    if (monthMealsDailySummaryCycleId !== cycleId) {
+        monthMealsDailySummaryCache = {};
+        monthMealsDailySummaryCycleId = cycleId;
+        return;
+    }
+
+    const monthDate = getMonthStart(parseLocalDate(dateStr));
+    const cacheKey = getMonthMealsDailySummaryCacheKey(monthDate);
+    const cachedMonthSummary = monthMealsDailySummaryCache[cacheKey];
+    if (!cachedMonthSummary) return;
+
+    const existingEntry = cachedMonthSummary[dateStr] || null;
+    if (existingEntry) {
+        monthMealsDailySummaryCache[cacheKey] = {
+            ...cachedMonthSummary,
+            [dateStr]: {
+                ...existingEntry,
+                burnedCalories: healthDaily?.totalBurned ?? null,
+                healthDaily: healthDaily || null
+            }
+        };
+        return;
+    }
+
+    if (!healthDaily) return;
+
+    const foodsMap = foodsMapCache && foodsMapLibraryKey === getMealLibraryContextKey()
+        ? foodsMapCache
+        : null;
+    const localMealsDoc =
+        state.selectedDate === dateStr &&
+        mealsDataLoadedDate === state.selectedDate &&
+        state.mealsData
+            ? state.mealsData
+            : {};
+
+    monthMealsDailySummaryCache[cacheKey] = {
+        ...cachedMonthSummary,
+        [dateStr]: buildMonthMealsDailySummaryEntry(dateStr, localMealsDoc, foodsMap, healthDaily)
+    };
+}
+
+async function getMonthMealsDailySummary(monthDate) {
+    const cycleId = state.selectedCycleId;
+    const monthKey = getMealSummaryMonthKey(monthDate);
+
+    if (monthMealsDailySummaryCycleId !== cycleId) {
+        monthMealsDailySummaryCache = {};
+        monthMealsDailySummaryCycleId = cycleId;
+    }
+
+    const cacheKey = getMonthMealsDailySummaryCacheKey(monthDate);
+    if (monthMealsDailySummaryCache[cacheKey]) {
+        return monthMealsDailySummaryCache[cacheKey];
+    }
+
+    const cycleRef = getCycleDocRef();
+    if (!cycleRef) return {};
+
+    const [foodsMap, healthMap] = await Promise.all([
+        getFoodsMap(),
+        getAppleHealthMonthMap(monthDate)
+    ]);
+    const mealsCol = collection(cycleRef, 'meals');
+    const { startStr, endStr } = getMonthDateRange(monthDate);
+    const result = {};
+
+    const q = query(
+        mealsCol,
+        where(documentId(), '>=', startStr),
+        where(documentId(), '<=', endStr)
+    );
+
+    const snap = await getDocs(q);
+    snap.forEach(docSnap => {
+        result[docSnap.id] = buildMonthMealsDailySummaryEntry(
+            docSnap.id,
+            docSnap.data(),
+            foodsMap,
+            healthMap[docSnap.id] || null
+        );
+    });
+
+    Object.entries(healthMap).forEach(([dateStr, healthDaily]) => {
+        if (result[dateStr]) return;
+        result[dateStr] = buildMonthMealsDailySummaryEntry(dateStr, {}, foodsMap, healthDaily);
+    });
+
+    if (state.selectedDate && mealsDataLoadedDate === state.selectedDate && state.mealsData) {
+        if (state.selectedDate.slice(0, 7) === monthKey) {
+            result[state.selectedDate] = buildMonthMealsDailySummaryEntry(
+                state.selectedDate,
+                state.mealsData,
+                foodsMap,
+                healthMap[state.selectedDate] || null
+            );
+        }
+    }
+
+    monthMealsDailySummaryCache[cacheKey] = result;
+    return result;
+}
+
+function getMonthMealsDailySummaryStats(monthDate, dailySummary = {}) {
+    let totalEaten = 0;
+    let totalBurned = 0;
+    let eatenDaysCount = 0;
+    let percentSum = 0;
+    let percentCount = 0;
+
+    getMealSummaryMonthDays(monthDate).forEach(dateStr => {
+        const entry = dailySummary[dateStr];
+        if (!entry) return;
+
+        totalEaten += Number(entry.eatenCalories || 0);
+        totalBurned += Number(entry.burnedCalories || 0);
+
+        if (entry.hasFood) {
+            eatenDaysCount += 1;
+        }
+
+        if (Number.isFinite(entry.eatenPercent)) {
+            percentSum += Number(entry.eatenPercent || 0);
+            percentCount += 1;
+        }
+    });
+
+    return {
+        totalEaten: Math.round(totalEaten),
+        averageEaten: eatenDaysCount ? Math.round(totalEaten / eatenDaysCount) : 0,
+        averagePercent: percentCount ? Math.round(percentSum / percentCount) : null,
+        totalBurned: totalBurned > 0 ? Math.round(totalBurned) : null,
+        averageBurned: eatenDaysCount && totalBurned > 0 ? Math.round(totalBurned / eatenDaysCount) : null
+    };
 }
 
 async function getWeekMealsPresence(weekDates) {
@@ -1311,10 +2388,11 @@ async function getWeekMealsPresence(weekDates) {
     });
 
     // чтобы текущий выбранный день сразу был актуален, даже если снапшот еще не дошел
-    if (state.selectedDate && state.mealsData) {
+    if (state.selectedDate && mealsDataLoadedDate === state.selectedDate && state.mealsData) {
         result[state.selectedDate] = hasAnyFoodInDoc(state.mealsData);
     }
 
+    writeWeekMealsPresenceCache(weekDates, result);
     return result;
 }
 
@@ -1332,6 +2410,7 @@ function switchMealDate(newDate) {
 
     // ❗ 2. очищаем старые данные (важно)
     state.mealsData = {};
+    mealsDataLoadedDate = null;
 
     // ❗ 3. перерисовываем экран
     renderMealMainScreen();
@@ -1459,6 +2538,15 @@ function createMealCard(meal) {
 
     const macrosContent = createElement('div', 'meal-macros-content');
     macrosContent.id = `${meal.id}-macros-content`;
+    const photoIndicator = createElement('div', 'meal-photo-indicator');
+    photoIndicator.id = `${meal.id}-photo-indicator`;
+    photoIndicator.style.display = 'none';
+    photoIndicator.innerHTML = `
+        <span class="meal-photo-indicator-icon" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Outline-photo-camera SVG Icon</title><path fill="currentColor" d="m14.12 4l1.83 2H20v12H4V6h4.05l1.83-2zM15 2H9L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17zm-3 7c1.65 0 3 1.35 3 3s-1.35 3-3 3s-3-1.35-3-3s1.35-3 3-3m0-2c-2.76 0-5 2.24-5 5s2.24 5 5 5s5-2.24 5-5s-2.24-5-5-5"/></svg>
+        </span>
+        <span class="meal-photo-indicator-count">0</span>
+    `;
     macrosContent.innerHTML = `
         <div><span>б-</span> 0,</div>
         <div><span>ж-</span> 0,</div>
@@ -1472,7 +2560,7 @@ function createMealCard(meal) {
 
     arrow.id = `${meal.id}-arrow`;
 
-    macros.append(macrosContent, arrow);
+    macros.append(macrosContent, photoIndicator, arrow);
 
     const headerMain = createElement('div', 'meal-card-header-main');
     const title = createElement('div', 'meal-title', meal.name);
@@ -1482,29 +2570,7 @@ function createMealCard(meal) {
 
     const addIconBtn = createElement('div', 'meal-add-icon');
     addIconBtn.setAttribute('aria-label', 'Добавить продукт');
-    addIconBtn.innerHTML = `
-            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 14 14"><title>Add-1-solid SVG Icon</title><path fill="currentColor" fill-rule="evenodd" d="M8 1a1 1 0 0 0-2 0v5H1a1 1 0 0 0 0 2h5v5a1 1 0 1 0 2 0V8h5a1 1 0 1 0 0-2H8z" clip-rule="evenodd"/></svg>
-            `;
-
-    function openMealSearchFromCard() {
-        const now = Date.now();
-        if (
-            lastMealSearchOpenFromCardMealId === meal.id &&
-            now - lastMealSearchOpenFromCardAt < 380
-        ) {
-            return;
-        }
-        lastMealSearchOpenFromCardAt = now;
-        lastMealSearchOpenFromCardMealId = meal.id;
-
-        saveMealPageScroll();
-        mealScrollRestorePending = true;
-
-        state.currentMealId = meal.id;
-        state.mealView = 'search';
-        renderMealPage();
-        installMealHeaderSearchGhostClickGuard();
-    }
+    addIconBtn.innerHTML = getMealAddIconMarkup();
 
     function toggleMealFromHeader(ev) {
         if (ev) {
@@ -1528,7 +2594,7 @@ function createMealCard(meal) {
     addIconBtn.addEventListener('click', e => {
         e.preventDefault();
         e.stopPropagation();
-        openMealSearchFromCard();
+        openMealSearchForMeal(meal.id);
     });
 
     headerMain.append(title, headerKcal);
@@ -1653,66 +2719,12 @@ function rebuildMealsSection() {
             const addMealSectionBtn = createElement('button', 'tab-shape-btn');
             addMealSectionBtn.id = 'add-meal-section-btn';
 
-            addMealSectionBtn.innerHTML = `
-                <svg class="tab-shape" viewBox="0 0 320 76" xmlns="http://www.w3.org/2000/svg">
+            addMealSectionBtn.innerHTML = ` добавить прием `;
 
-                              <defs>
-                                <mask id="bottomMaskAddMealRebuild">
-                                  <rect x="0" y="20" width="320" height="60" fill="white"></rect>
-                                </mask>
-                              </defs>
 
-                              <!-- основной -->
-                              <path d="
-                                  M10 0
-                                  H310
-                                  Q320 0 320 10
-                                  V17
-                                  Q320 27 310 27
-
-                                  H210
-                                  Q190 27 180 36
-                                  Q170 46 160 46
-                                  Q150 46 140 36
-                                  Q130 27 110 27
-
-                                  H10
-                                  Q0 27 0 17
-                                  V10
-                                  Q0 0 10 0
-                                  Z
-                                " fill="white" stroke="#dedede" stroke-width="1"></path>
-
-                              <!-- усиление снизу -->
-                              <path d="
-                                  M10 0
-                                  H310
-                                  Q320 0 320 10
-                                  V17
-                                  Q320 27 310 27
-
-                                  H210
-                                  Q190 27 180 36
-                                  Q170 46 160 46
-                                  Q150 46 140 36
-                                  Q130 27 110 27
-
-                                  H10
-                                  Q0 27 0 17
-                                  V10
-                                  Q0 0 10 0
-                                  Z
-                                " fill="none" stroke="#dedede" stroke-width="2" mask="url(#bottomMaskAddMealRebuild)"></path>
-
-                            </svg>
-                                        `;
-                const addMealSectionBtnSpan = createElement('span');
-                addMealSectionBtnSpan.innerHTML = `
-                                <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24"><title>Plus SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2" d="M12 20v-8m0 0V4m0 8h8m-8 0H4"></path></svg>
-                                                 `;
 
             addMealSectionBtn.onclick = handleAddMealSection;
-            addMealSectionBtn.append(addMealSectionBtnSpan);
+
             addMealWrap.append(addMealSectionBtn);
 
             mealsContainer.insertAdjacentElement('afterend', addMealWrap);
@@ -1725,6 +2737,7 @@ function rebuildMealsSection() {
 
     setTimeout(() => {
         initMealSwipe();
+        scheduleMealRootScrollAvailabilitySync();
     }, 0);
 }
 
@@ -2164,6 +3177,7 @@ function openMealOverlay(content) {
     if (!mealOverlayEl) return;
 
     // Legacy behavior: replace everything.
+    mealOverlayStack.forEach(cleanupMealOverlayNode);
     mealOverlayEl.classList.remove('meal-overlay-layer--search');
     mealOverlayEl.innerHTML = '';
     mealOverlayEl.style.display = 'block';
@@ -2174,6 +3188,7 @@ function openMealOverlay(content) {
 
 function closeMealOverlay() {
     if (!mealOverlayEl) return;
+    mealOverlayStack.forEach(cleanupMealOverlayNode);
     mealOverlayEl.classList.remove('meal-overlay-layer--search');
     mealOverlayEl.innerHTML = '';
     mealOverlayEl.style.display = 'none';
@@ -2181,8 +3196,34 @@ function closeMealOverlay() {
     syncMealOverlayBottomNav();
 }
 
+function attachMealOverlayBottomNavSync(target, syncFn) {
+    if (!target) return;
+    target._mealBottomNavSync = typeof syncFn === 'function' ? syncFn : null;
+}
+
+function cleanupMealOverlayNode(node) {
+    if (typeof node?._mealOverlayCleanup !== 'function') return;
+
+    try {
+        node._mealOverlayCleanup();
+    } catch (_) {}
+
+    node._mealOverlayCleanup = null;
+}
+
 function syncMealOverlayBottomNav() {
     const top = mealOverlayStack.length ? mealOverlayStack[mealOverlayStack.length - 1] : null;
+
+    if (!top) {
+        clearMealBottomNavOverlayMode();
+        return;
+    }
+
+    if (typeof top._mealBottomNavSync === 'function') {
+        top._mealBottomNavSync();
+        return;
+    }
+
     syncMealSearchBottomNavFromOverlay(top);
 }
 
@@ -2231,6 +3272,7 @@ function popMealOverlay() {
     const dur = getMealTransitionMs(isSearch ? '--meal-search-disappear' : '--meal-detail-disappear');
 
     const cleanup = () => {
+        cleanupMealOverlayNode(top);
         try { top?.remove?.(); } catch (_) {}
         if (prev && prev.style) prev.style.display = '';
         if (!prev) {
@@ -2268,6 +3310,7 @@ function setMealBaseTopBarVisible(visible) {
 /** Закрыть оверлей и показать базовый top-bar. */
 function closeMealOverlayAndShowMealMain() {
     state.mealView = null;
+    clearMealBottomNavOverlayMode();
 
     const visible = mealOverlayStack.length
         ? mealOverlayStack[mealOverlayStack.length - 1]
@@ -2284,11 +3327,13 @@ function closeMealOverlayAndShowMealMain() {
         visible.style.opacity = '0';
         setTimeout(() => {
             closeMealOverlay();
+            clearMealBottomNavOverlayMode();
             setMealBaseTopBarVisible(true);
             void renderMealPage();
         }, dur);
     } else {
         closeMealOverlay();
+        clearMealBottomNavOverlayMode();
         setMealBaseTopBarVisible(true);
         void renderMealPage();
     }
@@ -2367,12 +3412,10 @@ function renderMealMainScreen() {
     const weekDates = getWeekDates(state.selectedDate);
     const todayStr = formatLocalDate(new Date());
 
-    const weekPresence = {};
-    weekDates.forEach(date => {
-        weekPresence[date] = false;
-    });
+    const cachedWeekPresence = readWeekMealsPresenceCache(weekDates);
+    const weekPresence = cachedWeekPresence || normalizeWeekPresenceForDates(weekDates);
 
-    if (state.selectedDate && state.mealsData) {
+    if (state.selectedDate && mealsDataLoadedDate === state.selectedDate && state.mealsData) {
         weekPresence[state.selectedDate] = hasAnyFoodInDoc(state.mealsData);
     }
 
@@ -2414,7 +3457,7 @@ function renderMealMainScreen() {
         item.dataset.date = dateStr;
 
         const circle = createElement('div', 'week-day-circle');
-        const check = createElement('div', 'week-day-check', hasFood ? '✓' : '');
+        const check = createElement('div', 'week-day-check', WEEK_DAY_CHECK_MARK);
 
         circle.append(check);
 
@@ -2431,6 +3474,7 @@ function renderMealMainScreen() {
     });
 
     contentContainer.append(weekRow);
+    applyWeekRowPresence(weekPresence, contentContainer);
 
     const macrosRow = createElement('div', 'meal-macros-row');
     macrosRow.id = 'meal-macros-row';
@@ -2468,127 +3512,748 @@ function renderMealMainScreen() {
         const addMealSectionBtn = createElement('button', 'tab-shape-btn');
         addMealSectionBtn.id = 'add-meal-section-btn';
 
-        addMealSectionBtn.innerHTML = `
-            <svg class="tab-shape" viewBox="0 0 320 76" xmlns="http://www.w3.org/2000/svg">
-
-              <defs>
-                <mask id="bottomMaskAddMealMain">
-                  <rect x="0" y="20" width="320" height="60" fill="white"></rect>
-                </mask>
-              </defs>
-
-              <!-- основной -->
-              <path d="
-                  M10 0
-                  H310
-                  Q320 0 320 10
-                  V17
-                  Q320 27 310 27
-
-                  H210
-                  Q190 27 180 36
-                  Q170 46 160 46
-                  Q150 46 140 36
-                  Q130 27 110 27
-
-                  H10
-                  Q0 27 0 17
-                  V10
-                  Q0 0 10 0
-                  Z
-                " fill="white" stroke="#dedede" stroke-width="1"></path>
-
-              <!-- усиление снизу -->
-              <path d="
-                  M10 0
-                  H310
-                  Q320 0 320 10
-                  V17
-                  Q320 27 310 27
-
-                  H210
-                  Q190 27 180 36
-                  Q170 46 160 46
-                  Q150 46 140 36
-                  Q130 27 110 27
-
-                  H10
-                  Q0 27 0 17
-                  V10
-                  Q0 0 10 0
-                  Z
-                " fill="none" stroke="#dedede" stroke-width="2" mask="url(#bottomMaskAddMealMain)"></path>
-
-            </svg>
-
-        `;
-
-        const addMealSectionBtnSpan = createElement('span');
-                        addMealSectionBtnSpan.innerHTML = `
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24"><title>Plus SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2" d="M12 20v-8m0 0V4m0 8h8m-8 0H4"></path></svg>
-                                                         `;
-
-
+        addMealSectionBtn.innerHTML = ` добавить прием`;
 
 
         addMealSectionBtn.onclick = handleAddMealSection;
-        addMealSectionBtn.append(addMealSectionBtnSpan);
         addMealWrap.append(addMealSectionBtn);
         contentContainer.append(addMealWrap);
     }
 
     setTimeout(() => {
         initMealSwipe();
+        scheduleMealRootScrollAvailabilitySync();
     }, 0);
 
     getFoodsMap();
     subscribeMeals();
 
+    const expectedWeekCacheKey = getWeekPresenceCacheKey(weekDates);
     getWeekMealsPresence(weekDates).then((presence) => {
-        mealMainEl?.querySelectorAll('.week-day-item').forEach(btn => {
-            const date = btn.dataset.date;
-            const hasFood = !!presence[date];
-
-            btn.classList.toggle('has-food', hasFood);
-
-            const check = btn.querySelector('.week-day-check');
-            if (check) {
-                check.textContent = hasFood ? '✓' : '';
-            }
-        });
+        const currentWeekDates = getWeekDates(state.selectedDate);
+        if (expectedWeekCacheKey !== getWeekPresenceCacheKey(currentWeekDates)) return;
+        applyWeekRowPresence(presence);
     });
 
     bindMealCalendarButton();
+    scheduleMealRootScrollAvailabilitySync();
 }
 
-const RECIPE_CATEGORIES = [
-    'Завтрак',
-    'Обед',
-    'Стартеры',
-    'Супы',
-    'Салаты',
-    'Основные блюда',
-    'Гарниры',
-    'Хлеб и хлебобулочные изделия',
-    'Соусы для салатов',
-    'Соусы и приправы',
-    'Закуски',
-    'Десерты',
-    'Напитки',
-    'Другое'
-];
+function openMealMainOnDateFromSummary(dateStr) {
+    state.mealView = null;
+    clearMealBottomNavOverlayMode();
+    closeMealOverlay();
+    setMealBaseTopBarVisible(true);
 
+    if (!dateStr || state.selectedDate === dateStr) {
+        void renderMealPage();
+        return;
+    }
+
+    switchMealDate(dateStr);
+}
+
+function renderMealMonthlySummaryPage() {
+    ensureMealShell();
+    setMealBaseTopBarVisible(false);
+
+    let visibleMonth = getMealSummaryVisibleMonth();
+    let monthPickerYear = visibleMonth.getFullYear();
+    let renderToken = 0;
+    let cleanupSticky = null;
+
+    const todayStr = formatLocalDate(new Date());
+    const screen = createElement('div', 'meal-monthly-summary-screen');
+    const sticky = createElement('div', 'meal-monthly-summary-sticky');
+    const title = createElement('h3', 'create-food-sticky-h3 meal-monthly-summary-title', 'Сводка калорий');
+
+    const selector = createElement('div', 'meal-monthly-summary-selector');
+
+    const prevBtn = createElement('button', 'meal-monthly-summary-nav-btn meal-monthly-summary-nav-btn--prev');
+    prevBtn.type = 'button';
+    prevBtn.setAttribute('aria-label', 'Предыдущий месяц');
+    prevBtn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="currentColor" d="m14.06 19.06l-7-7a1.5 1.5 0 0 1 0-2.12l7-7a.75.75 0 1 1 1.06 1.06L8.19 10.94a.75.75 0 0 0 0 1.06L15.12 19a.75.75 0 0 1-1.06 1.06"/>
+        </svg>
+    `;
+
+    const monthBtn = createElement('button', 'meal-monthly-summary-month-btn');
+    monthBtn.type = 'button';
+    monthBtn.setAttribute('aria-label', 'Выбрать месяц');
+
+    const nextBtn = createElement('button', 'meal-monthly-summary-nav-btn meal-monthly-summary-nav-btn--next');
+    nextBtn.type = 'button';
+    nextBtn.setAttribute('aria-label', 'Следующий месяц');
+    nextBtn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="currentColor" d="m9.94 19.06l7-7a1.5 1.5 0 0 0 0-2.12l-7-7a.75.75 0 1 0-1.06 1.06l6.93 6.94a.75.75 0 0 1 0 1.06L8.88 19a.75.75 0 1 0 1.06 1.06"/>
+        </svg>
+    `;
+
+    selector.append(prevBtn, monthBtn, nextBtn);
+
+    const head = createElement('div', 'meal-monthly-summary-head');
+    head.innerHTML = `
+        <div class="meal-monthly-summary-head-spacer"></div>
+        <div class="meal-monthly-summary-head-cell">Съедено</div>
+        <div class="meal-monthly-summary-head-cell">Потрачено</div>
+    `;
+
+    const body = createElement('div', 'meal-monthly-summary-body');
+
+    const monthPickerBackdrop = createElement('button', 'meal-monthly-summary-picker-backdrop');
+    monthPickerBackdrop.type = 'button';
+    monthPickerBackdrop.style.display = 'none';
+
+    const monthPicker = createElement('div', 'meal-monthly-summary-picker');
+    monthPicker.style.display = 'none';
+
+    const monthPickerHead = createElement('div', 'meal-monthly-summary-picker-head');
+    const yearPrevBtn = createElement('button', 'meal-monthly-summary-picker-year-btn');
+    yearPrevBtn.type = 'button';
+    yearPrevBtn.setAttribute('aria-label', 'Предыдущий год');
+    yearPrevBtn.textContent = '−';
+
+    const yearLabel = createElement('div', 'meal-monthly-summary-picker-year');
+
+    const yearNextBtn = createElement('button', 'meal-monthly-summary-picker-year-btn');
+    yearNextBtn.type = 'button';
+    yearNextBtn.setAttribute('aria-label', 'Следующий год');
+    yearNextBtn.textContent = '+';
+
+    monthPickerHead.append(yearPrevBtn, yearLabel, yearNextBtn);
+
+    const monthPickerGrid = createElement('div', 'meal-monthly-summary-picker-grid');
+    monthPicker.append(monthPickerHead, monthPickerGrid);
+
+    sticky.append(title, selector, head);
+    screen.append(sticky, body, monthPickerBackdrop, monthPicker);
+
+    const handleBackToMeal = () => {
+        closeMealOverlayAndShowMealMain();
+    };
+
+    const openBurnedStub = (dateStr) => {
+        state.mealBurnedSummaryDate = dateStr;
+        state.mealView = 'burnedSummary';
+        renderMealPage();
+    };
+
+    function syncMonthButtonLabel() {
+        monthBtn.innerHTML = `
+            <span>${formatMealSummaryMonthLabel(visibleMonth)}</span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="currentColor" d="M12 15.375q-.2 0-.375-.075t-.325-.225l-4.6-4.6a.93.93 0 0 1-.288-.687q0-.4.288-.688a.94.94 0 0 1 .688-.287q.4 0 .687.287L12 13.025L15.925 9.1a.94.94 0 0 1 .688-.287q.4 0 .687.287t.288.688a.93.93 0 0 1-.288.687l-4.6 4.6q-.15.15-.325.225t-.375.075"/>
+            </svg>
+        `;
+    }
+
+    function closeMonthPicker() {
+        monthPicker.classList.remove('open');
+        monthPickerBackdrop.classList.remove('open');
+        monthPicker.style.display = 'none';
+        monthPickerBackdrop.style.display = 'none';
+    }
+
+    function renderMonthPicker() {
+        yearLabel.textContent = String(monthPickerYear);
+        monthPickerGrid.innerHTML = '';
+
+        MEAL_SUMMARY_MONTH_SHORT_NAMES.forEach((label, monthIndex) => {
+            const btn = createElement(
+                'button',
+                `meal-monthly-summary-picker-month${monthPickerYear === visibleMonth.getFullYear() && monthIndex === visibleMonth.getMonth() ? ' active' : ''}`,
+                label
+            );
+            btn.type = 'button';
+            btn.onclick = () => {
+                visibleMonth = new Date(monthPickerYear, monthIndex, 1);
+                setMealSummaryVisibleMonth(visibleMonth);
+                screen.scrollTop = 0;
+                syncMonthButtonLabel();
+                closeMonthPicker();
+                void loadAndRenderMonth();
+            };
+            monthPickerGrid.append(btn);
+        });
+    }
+
+    function openMonthPicker() {
+        monthPickerYear = visibleMonth.getFullYear();
+        renderMonthPicker();
+        monthPickerBackdrop.style.display = 'block';
+        monthPicker.style.display = 'block';
+        requestAnimationFrame(() => {
+            monthPickerBackdrop.classList.add('open');
+            monthPicker.classList.add('open');
+        });
+    }
+
+    function buildEatenCardMarkup(entry) {
+        if (!entry?.hasFood) {
+            return `
+                <span class="meal-monthly-summary-card-icon" aria-hidden="true">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M7 2a1 1 0 0 1 1 1v6.28a2.72 2.72 0 0 1-2 2.62V21a1 1 0 1 1-2 0v-9.1a2.72 2.72 0 0 1-2-2.62V3a1 1 0 1 1 2 0v6.5a.5.5 0 0 0 1 0V3a1 1 0 1 1 2 0v6.5a.5.5 0 0 0 1 0V3a1 1 0 0 1 1-1m9 0a1 1 0 0 1 1 1v18a1 1 0 1 1-2 0v-6h-2a2 2 0 0 1-2-2V8a6 6 0 0 1 5-6"/></svg>
+                </span>
+                <span class="meal-monthly-summary-card-empty">+</span>
+            `;
+        }
+
+        return `
+            <span class="meal-monthly-summary-card-icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M7 2a1 1 0 0 1 1 1v6.28a2.72 2.72 0 0 1-2 2.62V21a1 1 0 1 1-2 0v-9.1a2.72 2.72 0 0 1-2-2.62V3a1 1 0 1 1 2 0v6.5a.5.5 0 0 0 1 0V3a1 1 0 1 1 2 0v6.5a.5.5 0 0 0 1 0V3a1 1 0 0 1 1-1m9 0a1 1 0 0 1 1 1v18a1 1 0 1 1-2 0v-6h-2a2 2 0 0 1-2-2V8a6 6 0 0 1 5-6"/></svg>
+            </span>
+            <span class="meal-monthly-summary-card-main">
+                <strong>${formatNumberWithSpaces(entry.eatenCalories || 0)}</strong>
+                ${Number.isFinite(entry.eatenPercent) ? `<span>(${entry.eatenPercent}%)</span>` : '<span></span>'}
+            </span>
+        `;
+    }
+
+    function buildBurnedCardMarkup(entry) {
+        const burned = Number(entry?.burnedCalories || 0);
+        if (!burned) {
+            return `
+                <span class="meal-monthly-summary-card-icon" aria-hidden="true">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Workout-sport SVG Icon</title><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 4.5a1.5 1.5 0 1 1-3 0a1.5 1.5 0 0 1 3 0Z"/><path stroke-linecap="round" stroke-linejoin="round" d="m5 12l1.476-2.326c.26-.41.391-.616.562-.783c.17-.167.374-.29.782-.534l.922-.553c.862-.518 1.293-.777 1.77-.802s.93.187 1.839.61l1.695.792c.373.174.56.26.723.383q.174.13.318.295c.135.156.24.34.45.708c.37.647.555.97.816 1.199c.184.16.394.285.62.368c.32.118.68.118 1.398.118H19M11.5 7.5L8 14m0 0l1.447 2.026a2 2 0 0 1-.31 2.667L6.5 21M8 14h3.5m5.5 4l-2.4-3.2A2 2 0 0 0 13 14h-1.5m0 0L15 9"/></g></svg>
+                </span>
+                <span class="meal-monthly-summary-card-empty">+</span>
+            `;
+        }
+
+        return `
+            <span class="meal-monthly-summary-card-icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Workout-sport SVG Icon</title><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 4.5a1.5 1.5 0 1 1-3 0a1.5 1.5 0 0 1 3 0Z"/><path stroke-linecap="round" stroke-linejoin="round" d="m5 12l1.476-2.326c.26-.41.391-.616.562-.783c.17-.167.374-.29.782-.534l.922-.553c.862-.518 1.293-.777 1.77-.802s.93.187 1.839.61l1.695.792c.373.174.56.26.723.383q.174.13.318.295c.135.156.24.34.45.708c.37.647.555.97.816 1.199c.184.16.394.285.62.368c.32.118.68.118 1.398.118H19M11.5 7.5L8 14m0 0l1.447 2.026a2 2 0 0 1-.31 2.667L6.5 21M8 14h3.5m5.5 4l-2.4-3.2A2 2 0 0 0 13 14h-1.5m0 0L15 9"/></g></svg>
+            </span>
+            <span class="meal-monthly-summary-card-main">
+                <strong>${formatNumberWithSpaces(burned)}</strong>
+                <span>ккал</span>
+            </span>
+        `;
+    }
+
+    function buildMonthRow(dateStr, dailySummary) {
+        const entry = dailySummary[dateStr] || {
+            date: dateStr,
+            hasFood: false,
+            eatenCalories: 0,
+            burnedCalories: null,
+            goalCalories: 0,
+            eatenPercent: null
+        };
+
+        const date = parseLocalDate(dateStr);
+        const isSelected = dateStr === state.selectedDate;
+        const isToday = dateStr === todayStr;
+
+        const row = createElement('div', 'meal-monthly-summary-row');
+
+        const dateBtn = createElement(
+            'button',
+            `meal-monthly-summary-date${isSelected ? ' is-selected' : ''}${isToday ? ' is-today' : ''}`
+        );
+        dateBtn.type = 'button';
+        dateBtn.innerHTML = `
+            <span class="meal-monthly-summary-date-num">${date.getDate()}</span>
+            <span class="meal-monthly-summary-date-weekday">${MEAL_SUMMARY_WEEKDAY_SHORT_NAMES[date.getDay()]}</span>
+        `;
+        dateBtn.onclick = () => openMealMainOnDateFromSummary(dateStr);
+
+        const eatenBtn = createElement(
+            'button',
+            `meal-monthly-summary-card meal-monthly-summary-card--eaten${isSelected ? ' is-selected' : ''}`
+        );
+        eatenBtn.type = 'button';
+        eatenBtn.innerHTML = buildEatenCardMarkup(entry);
+        eatenBtn.onclick = () => openMealMainOnDateFromSummary(dateStr);
+
+        const burnedBtn = createElement(
+            'button',
+            `meal-monthly-summary-card meal-monthly-summary-card--burned${isSelected ? ' is-selected' : ''}`
+        );
+        burnedBtn.type = 'button';
+        burnedBtn.innerHTML = buildBurnedCardMarkup(entry);
+        burnedBtn.onclick = () => openBurnedStub(dateStr);
+
+        row.append(dateBtn, eatenBtn, burnedBtn);
+        return row;
+    }
+
+    function buildMonthFooter(monthStats) {
+        const footer = createElement('div', 'meal-monthly-summary-footer');
+        footer.innerHTML = `
+            <div class="meal-monthly-summary-footer-title">Сводка за месяц</div>
+            <div class="meal-monthly-summary-footer-head">
+                <span></span>
+                <span>Съедено</span>
+                <span>Потрачено</span>
+            </div>
+            <div class="meal-monthly-summary-footer-row">
+                <strong>Средний</strong>
+                <div class="meal-monthly-summary-footer-value">
+                    <b>${formatNumberWithSpaces(monthStats.averageEaten || 0)}</b>
+                    ${Number.isFinite(monthStats.averagePercent) ? `<span>(${monthStats.averagePercent}%)</span>` : '<span></span>'}
+                </div>
+                <div class="meal-monthly-summary-footer-value">
+                    <b>${monthStats.averageBurned ? formatNumberWithSpaces(monthStats.averageBurned) : '—'}</b>
+                    <span></span>
+                </div>
+            </div>
+            <div class="meal-monthly-summary-footer-row">
+                <strong>Всего</strong>
+                <div class="meal-monthly-summary-footer-value">
+                    <b>${formatNumberWithSpaces(monthStats.totalEaten || 0)}</b>
+                    <span></span>
+                </div>
+                <div class="meal-monthly-summary-footer-value">
+                    <b>${monthStats.totalBurned ? formatNumberWithSpaces(monthStats.totalBurned) : '—'}</b>
+                    <span></span>
+                </div>
+            </div>
+        `;
+        return footer;
+    }
+
+    function renderLoadingState() {
+        body.innerHTML = `
+            <div class="meal-monthly-summary-loading">
+                <div class="meal-monthly-summary-loading-card"></div>
+                <div class="meal-monthly-summary-loading-card"></div>
+                <div class="meal-monthly-summary-loading-card"></div>
+                <div class="meal-monthly-summary-loading-card"></div>
+            </div>
+        `;
+    }
+
+    function renderMonthContent(dailySummary) {
+        body.innerHTML = '';
+
+        const list = createElement('div', 'meal-monthly-summary-list');
+        getMealSummaryMonthDays(visibleMonth)
+            .slice()
+            .reverse()
+            .forEach(dateStr => {
+                list.append(buildMonthRow(dateStr, dailySummary));
+            });
+
+        const monthStats = getMonthMealsDailySummaryStats(visibleMonth, dailySummary);
+        body.append(list, buildMonthFooter(monthStats));
+    }
+
+    async function loadAndRenderMonth() {
+        const currentToken = ++renderToken;
+        syncMonthButtonLabel();
+        renderLoadingState();
+
+        try {
+            const dailySummary = await getMonthMealsDailySummary(visibleMonth);
+            if (currentToken !== renderToken || !screen.isConnected) return;
+            renderMonthContent(dailySummary);
+        } catch (error) {
+            console.error('meal monthly summary load failed', error);
+            if (currentToken !== renderToken || !screen.isConnected) return;
+            body.innerHTML = '<div class="meal-monthly-summary-error">Не удалось загрузить сводку</div>';
+        }
+    }
+
+    function shiftMonth(delta) {
+        visibleMonth = addMonths(visibleMonth, delta);
+        setMealSummaryVisibleMonth(visibleMonth);
+        screen.scrollTop = 0;
+        closeMonthPicker();
+        syncMonthButtonLabel();
+        void loadAndRenderMonth();
+    }
+
+    prevBtn.onclick = () => shiftMonth(-1);
+    nextBtn.onclick = () => shiftMonth(1);
+    monthBtn.onclick = () => {
+        if (monthPicker.classList.contains('open')) {
+            closeMonthPicker();
+            return;
+        }
+        openMonthPicker();
+    };
+    monthPickerBackdrop.onclick = closeMonthPicker;
+    yearPrevBtn.onclick = () => {
+        monthPickerYear -= 1;
+        renderMonthPicker();
+    };
+    yearNextBtn.onclick = () => {
+        monthPickerYear += 1;
+        renderMonthPicker();
+    };
+
+    attachMealOverlayBottomNavSync(screen, () => {
+        setMealBottomNavOverlayMode({
+            visible: true,
+            onBack: handleBackToMeal,
+            actionVisible: false,
+            secondaryActionVisible: false
+        });
+    });
+
+    screen._mealOverlayCleanup = () => {
+        closeMonthPicker();
+        cleanupSticky?.();
+    };
+
+    pushMealOverlay(screen);
+    setupCreateFoodStickyTitleBorder({ titleEl: title, watchEl: selector });
+    cleanupSticky = () => {
+        if (typeof title._cleanupStickyBorder === 'function') {
+            title._cleanupStickyBorder();
+            title._cleanupStickyBorder = null;
+        }
+    };
+    syncMonthButtonLabel();
+    void loadAndRenderMonth();
+}
+
+function formatAppleHealthUpdatedAt(value) {
+    if (!value) return '—';
+    try {
+        const date = typeof value?.toDate === 'function' ? value.toDate() : new Date(value);
+        if (Number.isNaN(date.getTime())) return '—';
+        return new Intl.DateTimeFormat('ru-RU', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        }).format(date);
+    } catch (_) {
+        return '—';
+    }
+}
+
+async function getMealEatenCaloriesForDate(dateStr) {
+    const foodsMap = await getFoodsMap();
+    const localMealsDoc =
+        state.selectedDate === dateStr &&
+        mealsDataLoadedDate === state.selectedDate &&
+        state.mealsData
+            ? state.mealsData
+            : null;
+
+    if (localMealsDoc) {
+        return Math.round(Number(calcMealsTotalsFast(localMealsDoc, foodsMap).total.cal || 0));
+    }
+
+    const cycleRef = getCycleDocRef();
+    if (!cycleRef) return 0;
+    const snap = await getDoc(doc(cycleRef, 'meals', dateStr));
+    if (!snap.exists()) return 0;
+    return Math.round(Number(calcMealsTotalsFast(snap.data(), foodsMap).total.cal || 0));
+}
+
+function renderMealBurnedSummaryStubPage() {
+    ensureMealShell();
+    setMealBaseTopBarVisible(false);
+
+    const dateStr = state.mealBurnedSummaryDate || state.selectedDate || formatLocalDate(new Date());
+    const screen = createElement('div', 'meal-burned-summary-stub-screen meal-apple-health-screen');
+    const title = createElement('h3', 'create-food-sticky-h3 meal-burned-summary-stub-title', 'Потраченные калории');
+    const subtitle = createElement('div', 'meal-burned-summary-stub-date', formatMealSummaryStubDateLabel(dateStr));
+    const actionRow = createElement('div', 'meal-apple-health-action-row');
+    const syncBtn = createElement('button', 'btn btn-primary meal-apple-health-sync-btn', 'Получить данные Apple Watch');
+    syncBtn.type = 'button';
+    const notice = createElement('div', 'meal-apple-health-notice');
+    const iosHint = createElement(
+        'div',
+        'meal-apple-health-hint',
+        'Запуск команды доступен на iPhone или iPad через приложение Команды.'
+    );
+    const content = createElement('div', 'meal-apple-health-content');
+    const watchCard = createElement('div', 'meal-burned-summary-stub-card meal-apple-health-watch-card');
+
+    actionRow.append(syncBtn);
+    screen.append(title, subtitle, actionRow, notice, iosHint, content);
+
+    const pendingSync = state.appleHealthSyncReturn
+        && state.appleHealthSyncReturn.target === 'mealBurned'
+        && (!state.appleHealthSyncReturn.date || state.appleHealthSyncReturn.date === dateStr)
+            ? state.appleHealthSyncReturn
+            : null;
+
+    if (!isAppleShortcutsLaunchSupported()) {
+        iosHint.style.display = '';
+    } else {
+        iosHint.style.display = 'none';
+    }
+
+    function formatNumber(value, maximumFractionDigits = 0) {
+        if (!Number.isFinite(Number(value))) return '—';
+        return new Intl.NumberFormat('ru-RU', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits
+        }).format(Number(value));
+    }
+
+    function setNotice(kind, text) {
+        if (!text) {
+            notice.style.display = 'none';
+            notice.textContent = '';
+            notice.className = 'meal-apple-health-notice';
+            return;
+        }
+        notice.style.display = '';
+        notice.textContent = text;
+        notice.className = `meal-apple-health-notice ${kind ? `meal-apple-health-notice--${kind}` : ''}`.trim();
+    }
+
+    function renderLoading() {
+        content.innerHTML = `
+            <div class="meal-apple-health-loading">
+                <div class="meal-apple-health-loading-card"></div>
+                <div class="meal-apple-health-loading-card meal-apple-health-loading-card--small"></div>
+            </div>
+        `;
+    }
+
+    function renderMessageCard(titleText, bodyText, modifier = '') {
+        watchCard.className = `meal-burned-summary-stub-card meal-apple-health-watch-card ${modifier}`.trim();
+        watchCard.innerHTML = `
+            <div class="meal-burned-summary-stub-icon meal-apple-health-watch-icon" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 24 24">
+                    <path fill="currentColor" d="M7 2.75A2.75 2.75 0 0 1 9.75 0h4.5A2.75 2.75 0 0 1 17 2.75v1.32A3.75 3.75 0 0 1 20.75 7.8v8.4A3.75 3.75 0 0 1 17 19.93v1.32A2.75 2.75 0 0 1 14.25 24h-4.5A2.75 2.75 0 0 1 7 21.25v-1.32a3.75 3.75 0 0 1-3.75-3.73V7.8A3.75 3.75 0 0 1 7 4.07zM8.5 4h7V2.75c0-.69-.56-1.25-1.25-1.25h-4.5c-.69 0-1.25.56-1.25 1.25zm7 16h-7v1.25c0 .69.56 1.25 1.25 1.25h4.5c.69 0 1.25-.56 1.25-1.25zm-8.5-1.57c.08 0 .16 0 .24-.01h9.52c.08.01.16.01.24.01a2.25 2.25 0 0 0 2.25-2.23V7.8A2.25 2.25 0 0 0 17 5.57c-.08 0-.16 0-.24.01H7.24c-.08-.01-.16-.01-.24-.01A2.25 2.25 0 0 0 4.75 7.8v8.4A2.25 2.25 0 0 0 7 18.43"/>
+                </svg>
+            </div>
+            <div class="meal-burned-summary-stub-title-text">${titleText}</div>
+            <div class="meal-burned-summary-stub-text">${bodyText}</div>
+        `;
+        content.replaceChildren(watchCard);
+    }
+
+    function renderHealthCard(healthDaily, eatenKcal) {
+        const totalBurned = Number(healthDaily?.totalBurned || 0);
+        const activeKcal = Number(healthDaily?.activeKcal || 0);
+        const restingKcal = Number(healthDaily?.restingKcal || 0);
+        const exerciseMinutes = Number(healthDaily?.exerciseMinutes || 0);
+        const distanceKm = Number(healthDaily?.distanceKm || 0);
+        const heartRateAvg = Number(healthDaily?.heartRateAvg || 0);
+        const standHours = healthDaily?.standHours;
+        const steps = Number(healthDaily?.steps || 0);
+        const balance = Number(eatenKcal || 0) - totalBurned;
+
+        const wrap = createElement('div', 'meal-apple-health-panel');
+        wrap.innerHTML = `
+            <div class="meal-apple-health-summary-card">
+                <div class="meal-apple-health-summary-kicker">Apple Health / Здоровье</div>
+                <div class="meal-apple-health-summary-main">
+                    <div class="meal-apple-health-summary-value">${formatNumber(totalBurned, 1)} <span>ккал</span></div>
+                    <div class="meal-apple-health-summary-label">Всего расход за день</div>
+                </div>
+            </div>
+            <div class="meal-apple-health-balance-grid">
+                <div class="meal-apple-health-balance-card">
+                    <span>Съедено</span>
+                    <strong>${formatNumber(eatenKcal)} ккал</strong>
+                </div>
+                <div class="meal-apple-health-balance-card">
+                    <span>Потрачено</span>
+                    <strong>${formatNumber(totalBurned, 1)} ккал</strong>
+                </div>
+                <div class="meal-apple-health-balance-card ${balance > 0 ? 'is-positive' : balance < 0 ? 'is-negative' : ''}">
+                    <span>Баланс</span>
+                    <strong>${balance > 0 ? '+' : ''}${formatNumber(balance, 1)} ккал</strong>
+                </div>
+            </div>
+            <div class="meal-apple-health-stats-grid">
+                <div class="meal-apple-health-stat">
+                    <span>Шаги</span>
+                    <strong>${formatNumber(steps)}</strong>
+                </div>
+                <div class="meal-apple-health-stat">
+                    <span>Активные калории</span>
+                    <strong>${formatNumber(activeKcal, 1)} ккал</strong>
+                </div>
+                <div class="meal-apple-health-stat">
+                    <span>Базовый расход</span>
+                    <strong>${formatNumber(restingKcal, 1)} ккал</strong>
+                </div>
+                <div class="meal-apple-health-stat">
+                    <span>Минуты активности</span>
+                    <strong>${formatNumber(exerciseMinutes)} мин</strong>
+                </div>
+                <div class="meal-apple-health-stat">
+                    <span>Дистанция</span>
+                    <strong>${formatNumber(distanceKm, 2)} км</strong>
+                </div>
+                <div class="meal-apple-health-stat">
+                    <span>Средний пульс</span>
+                    <strong>${formatNumber(heartRateAvg)} уд/мин</strong>
+                </div>
+                ${standHours != null ? `
+                    <div class="meal-apple-health-stat">
+                        <span>Часы стояния</span>
+                        <strong>${formatNumber(standHours)} ч</strong>
+                    </div>
+                ` : ''}
+            </div>
+            <div class="meal-apple-health-footer">
+                Последнее обновление: <strong>${formatAppleHealthUpdatedAt(healthDaily?.updatedAt)}</strong>
+            </div>
+        `;
+        content.replaceChildren(wrap);
+    }
+
+    function updateNotice(healthDaily) {
+        if (state.currentMode !== 'own') {
+            setNotice('muted', 'Apple Health доступен только в вашем личном режиме.');
+            return;
+        }
+
+        if (!pendingSync) {
+            setNotice(null, '');
+            return;
+        }
+
+        if (pendingSync.status === 'cancel') {
+            setNotice('muted', 'Запуск команды был отменён.');
+            return;
+        }
+
+        if (pendingSync.status === 'error') {
+            setNotice('error', 'Команда завершилась с ошибкой. Проверьте Shortcut и токен Apple Health.');
+            return;
+        }
+
+        if (healthDaily) {
+            setNotice('success', 'Данные Apple Health обновлены и загружены в приложение.');
+            if (!state.appleHealthSyncToastShown) {
+                showToast('Данные Apple Health обновлены');
+                state.appleHealthSyncToastShown = true;
+            }
+            return;
+        }
+
+        setNotice('muted', 'Команда завершена, но данные за этот день пока не найдены. Проверьте Shortcut и токен.');
+    }
+
+    async function loadDailyHealth() {
+        if (state.currentMode !== 'own') {
+            syncBtn.disabled = true;
+            renderMessageCard(
+                'Apple Health доступен в личном режиме',
+                'Если вы открыли питание как тренер, синхронизация с Apple Watch недоступна. Переключитесь в свой аккаунт.'
+            );
+            updateNotice(null);
+            return;
+        }
+
+        syncBtn.disabled = false;
+        renderLoading();
+
+        try {
+            const [healthDaily, eatenKcal] = await Promise.all([
+                getAppleHealthDailyForDate(dateStr),
+                getMealEatenCaloriesForDate(dateStr)
+            ]);
+
+            updateCachedMonthMealsDailySummaryHealthForDate(dateStr, healthDaily);
+
+            updateNotice(healthDaily);
+
+            if (!healthDaily) {
+                renderMessageCard(
+                    'Нет данных Apple Health',
+                    'Нажмите «Получить данные Apple Watch» или дождитесь автоматической синхронизации из приложения Команды.'
+                );
+                return;
+            }
+
+            renderHealthCard(healthDaily, eatenKcal);
+        } catch (error) {
+            console.error(error);
+            setNotice('error', 'Не удалось загрузить данные Apple Health.');
+            renderMessageCard(
+                'Не удалось загрузить данные',
+                'Попробуйте открыть страницу ещё раз или повторно запустить синхронизацию.'
+            );
+        }
+    }
+
+    syncBtn.onclick = () => {
+        const result = launchAppleHealthShortcut({
+            date: dateStr,
+            target: 'mealBurned'
+        });
+
+        if (!result?.ok) {
+            if (result?.reason === 'unsupported_platform') {
+                showToast('Запуск команды доступен через iPhone или iPad');
+                return;
+            }
+            if (result?.reason === 'missing_uid') {
+                showToast('Не удалось определить пользователя');
+                return;
+            }
+            showToast('Не удалось запустить команду');
+            return;
+        }
+
+        if (isStandalonePwaDisplayMode()) {
+            setNotice('muted', 'После выполнения команды вернитесь в приложение Training Diary. Данные перечитаются автоматически.');
+        }
+    };
+
+    setupCreateFoodStickyTitleBorder({ titleEl: title, watchEl: actionRow });
+    const cleanupSticky = () => {
+        if (typeof title._cleanupStickyBorder === 'function') {
+            title._cleanupStickyBorder();
+            title._cleanupStickyBorder = null;
+        }
+    };
+
+    const handleVisibilityResume = () => {
+        if (document.visibilityState === 'visible') {
+            void loadDailyHealth();
+        }
+    };
+
+    const handleWindowFocus = () => {
+        void loadDailyHealth();
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityResume);
+    window.addEventListener('focus', handleWindowFocus);
+
+    const handleBack = () => {
+        state.mealView = 'monthSummary';
+        if (mealOverlayStack.length > 1) {
+            popMealOverlay();
+            return;
+        }
+        renderMealPage();
+    };
+
+    attachMealOverlayBottomNavSync(screen, () => {
+        setMealBottomNavOverlayMode({
+            visible: true,
+            onBack: handleBack,
+            actionVisible: false,
+            secondaryActionVisible: false
+        });
+    });
+
+    screen._mealOverlayCleanup = () => {
+        document.removeEventListener('visibilitychange', handleVisibilityResume);
+        window.removeEventListener('focus', handleWindowFocus);
+        cleanupSticky?.();
+    };
+
+    pushMealOverlay(screen);
+    void loadDailyHealth();
+}
 
 function createEmptyRecipeDraft() {
     return {
         title: '',
         description: '',
         servings: '',
-        prepMinutes: '',
-        cookMinutes: '',
-        categories: [],
         ingredients: [],
-        steps: ['', '', ''],
         photos: [],
         coverPhotoIndex: 0
     };
@@ -2599,16 +4264,8 @@ function getRecipeDraft() {
         state.recipeDraft = createEmptyRecipeDraft();
     }
 
-    if (!Array.isArray(state.recipeDraft.categories)) {
-        state.recipeDraft.categories = [];
-    }
-
     if (!Array.isArray(state.recipeDraft.ingredients)) {
         state.recipeDraft.ingredients = [];
-    }
-
-    if (!Array.isArray(state.recipeDraft.steps) || state.recipeDraft.steps.length < 3) {
-        state.recipeDraft.steps = ['', '', ''];
     }
 
     if (!Array.isArray(state.recipeDraft.photos)) {
@@ -2616,16 +4273,6 @@ function getRecipeDraft() {
     }
 
     return state.recipeDraft;
-}
-
-function getRecipeCategoryValue(draft) {
-    return Array.isArray(draft.categories) && draft.categories.length
-        ? String(draft.categories[0] || '')
-        : '';
-}
-
-function setRecipeCategoryValue(draft, value) {
-    draft.categories = value ? [value] : [];
 }
 
 function calcRecipeIngredientsTotals(ingredients = []) {
@@ -2643,76 +4290,7 @@ function calcRecipeIngredientsTotals(ingredients = []) {
     });
 }
 
-function openRecipeCategorySheet({ value = '', onSelect }) {
-    const overlay = createElement('div', 'copy-meal-sheet-overlay');
-    const sheet = createElement('div', 'copy-meal-sheet recipe-category-sheet');
 
-    const header = createElement('div', 'copy-meal-sheet-header');
-    const title = createElement('div', 'copy-meal-sheet-title', 'Категория');
-
-    const confirmBtn = createElement('button', 'copy-meal-sheet-confirm', 'Готово');
-    confirmBtn.type = 'button';
-
-    const closeBtn = createElement('button', 'copy-meal-sheet-close');
-    closeBtn.type = 'button';
-    closeBtn.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
-            <path fill="currentColor" d="M18.3 5.71a1 1 0 0 0-1.41 0L12 10.59L7.11 5.7A1 1 0 1 0 5.7 7.11L10.59 12L5.7 16.89a1 1 0 1 0 1.41 1.41L12 13.41l4.89 4.89a1 1 0 0 0 1.41-1.41L13.41 12l4.89-4.89a1 1 0 0 0 0-1.4z"/>
-        </svg>
-    `;
-
-    header.append(closeBtn, title, confirmBtn);
-
-    const listWrap = createElement('div', 'recipe-category-sheet-list');
-    const list = createElement('div', 'recipe-category-sheet-items');
-
-    let selectedValue = value || '';
-
-    RECIPE_CATEGORIES.forEach(category => {
-        const item = createElement('button', 'recipe-category-sheet-item', category);
-        item.type = 'button';
-
-        if (category === selectedValue) {
-            item.classList.add('active');
-        }
-
-        item.onclick = () => {
-            selectedValue = category;
-            list.querySelectorAll('.recipe-category-sheet-item').forEach(el => {
-                el.classList.toggle('active', el.textContent === category);
-            });
-        };
-
-        list.append(item);
-    });
-
-    function closeSheet() {
-        overlay.classList.remove('open');
-        sheet.classList.remove('open');
-        setTimeout(() => overlay.remove(), 240);
-    }
-
-    closeBtn.onclick = closeSheet;
-
-    confirmBtn.onclick = () => {
-        if (onSelect) onSelect(selectedValue);
-        closeSheet();
-    };
-
-    overlay.onclick = (e) => {
-        if (e.target === overlay) closeSheet();
-    };
-
-    listWrap.append(list);
-    sheet.append(header, listWrap);
-    overlay.append(sheet);
-    document.body.append(overlay);
-
-    requestAnimationFrame(() => {
-        overlay.classList.add('open');
-        sheet.classList.add('open');
-    });
-}
 
 
 
@@ -2761,6 +4339,7 @@ export async function renderMealPage() {
         setupTopBarMealBorderObserver();
         closeMealOverlay();
         setMealBaseTopBarVisible(true);
+        scheduleMealRootScrollAvailabilitySync();
         return;
     }
 
@@ -2775,6 +4354,8 @@ export async function renderMealPage() {
     if (state.mealView === 'recipeFoodSearch') return renderRecipeFoodSearch();
     if (state.mealView === 'recipeFoodPreview') return renderRecipeFoodPreview();
     if (state.mealView === 'foodDetails') return renderFoodDetails();
+    if (state.mealView === 'monthSummary') return renderMealMonthlySummaryPage();
+    if (state.mealView === 'burnedSummary') return renderMealBurnedSummaryStubPage();
     if (state.mealView === 'recipeDetails') {
         renderRecipeDetails();
         return;
@@ -3228,12 +4809,34 @@ function getMealGoalSaveValidity() {
 
 function updateMealGoalSaveButtonState() {
     const saveBtn = document.querySelector('.meal-goal-top-btn-save');
-    if (!saveBtn) return;
-
     const valid = getMealGoalSaveValidity();
 
-    saveBtn.disabled = !valid;
-    saveBtn.classList.toggle('disabled', !valid);
+    if (saveBtn) {
+        saveBtn.disabled = !valid;
+        saveBtn.classList.toggle('disabled', !valid);
+    }
+
+    if (state.currentPage === 'meal' && state.mealView === 'goal') {
+        setMealBottomNavOverlayMode({
+            visible: true,
+            onBack: () => closeMealOverlayAndShowMealMain(),
+            actionText: 'Сохранить цель',
+            onAction: async () => {
+                try {
+                    const ok = await saveMealGoalToCycle();
+                    if (!ok) return;
+
+                    showToast('Пресет сохранён');
+                    renderMealGoalPage();
+                    renderMealMainScreen();
+                } catch (e) {
+                    console.error(e);
+                    showToast('Не удалось сохранить');
+                }
+            },
+            actionDisabled: !valid
+        });
+    }
 }
 
 
@@ -3468,46 +5071,6 @@ function renderMealGoalTopBar() {
 
     const topBar = document.createElement('div');
     topBar.className = 'meal-goal-top-bar';
-
-    const leftBtn = document.createElement('button');
-    leftBtn.className = 'meal-goal-top-btn';
-    leftBtn.type = 'button';
-    leftBtn.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Ios-arrow-ltr-24-filled SVG Icon</title><path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"></path></svg>
-    `;
-    leftBtn.onclick = () => {
-        closeMealOverlayAndShowMealMain();
-    };
-
-    const centerWrap = document.createElement('div');
-    centerWrap.className = 'meal-goal-top-actions';
-
-    const saveBtn = document.createElement('button');
-    saveBtn.className = 'meal-goal-top-btn meal-goal-top-btn-save disabled';
-    saveBtn.type = 'button';
-    saveBtn.disabled = true;
-    saveBtn.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 512 512">
-                        <path fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="44" d="M416 128L192 384l-96-96"></path>
-                    </svg>
-    `;
-
-    saveBtn.onclick = async () => {
-        try {
-            const ok = await saveMealGoalToCycle();
-            if (!ok) return;
-
-            showToast('Пресет сохранён');
-            renderMealGoalPage();
-            renderMealMainScreen();
-        } catch (e) {
-            console.error(e);
-            showToast('Не удалось сохранить');
-        }
-    };
-
-    centerWrap.append(saveBtn);
-    topBar.append(leftBtn, centerWrap);
     stickyHeader.append(topBar, title);
     target.prepend(stickyHeader);
     updateMealGoalSaveButtonState();
@@ -4174,7 +5737,7 @@ function renderIntervalGoalBlock(goalState) {
             );
 
         addBtn.innerHTML = `
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"><title>Plus SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2" d="M12 20v-8m0 0V4m0 8h8m-8 0H4"></path></svg>
+                        добавить период
                     `;
         addBtn.type = 'button';
             addBtn.disabled = !isLastComplete;
@@ -4461,6 +6024,7 @@ function renderMealGoalPage() {
     setMealBaseTopBarVisible(false);
 
     const overlayPage = createElement('div', 'meal-goal-overlay-wrap');
+    attachMealOverlayBottomNavSync(overlayPage, updateMealGoalSaveButtonState);
     openMealOverlay(overlayPage);
     renderMealGoalTopBar();
 
@@ -4478,7 +6042,10 @@ function renderMealGoalPage() {
     const weekdayBlock = renderWeekdayGoalBlock(goal);
     const intervalBlock = renderIntervalGoalBlock(goal);
 
-    page.append( presets, dailyBlock, weekdayBlock, intervalBlock);
+    const goalSectionsWrap = createElement('div', 'meal-goal-sections-wrap');
+    goalSectionsWrap.append(dailyBlock, weekdayBlock, intervalBlock);
+
+    page.append(presets, goalSectionsWrap);
     overlayPage.append(page);
 }
 // ==============  обновляет только состояние UI страницы цели
@@ -5050,8 +6617,6 @@ async function renderEditFood() {
 
     const pageTitle = createElement('h3', 'create-food-sticky-h3', 'Редактировать продукт');
 
-    topBar.append(backBtn);
-
     const stickyHeader = createElement('div', 'create-food-sticky-header');
     stickyHeader.append(topBar, pageTitle);
 
@@ -5087,7 +6652,12 @@ async function renderEditFood() {
     description.rows = 3;
     description.value = food.description || '';
 
-    let selectedUnit = food.baseUnit || 'г';
+    let selectedUnit = resolveFoodNutritionBasis(food);
+    let selectedPortionMeasureUnit = normalizeFoodPortionUnit(food.portionSizeUnit || food.baseUnit || 'г');
+    let customPortionValue = selectedUnit === 'порция'
+        ? String(Number(food.baseAmount || 0) || '')
+        : '';
+    let isPortionModeActive = selectedUnit === 'порция';
 
     const unitWrap = createElement('div', 'create-food-picker-wrap');
     unitWrap.style.position = 'relative';
@@ -5109,7 +6679,7 @@ async function renderEditFood() {
     const unitDropdown = createElement('div', 'create-food-unit-dropdown');
     unitDropdown.style.display = 'none';
 
-    ['г', 'мл', 'порция'].forEach(unit => {
+    FOOD_NUTRITION_BASIS_OPTIONS.forEach(unit => {
         const option = createElement('button', 'create-food-unit-dropdown-item', unit);
         option.type = 'button';
 
@@ -5119,6 +6689,7 @@ async function renderEditFood() {
             unitValue.textContent = unit;
             unitDropdown.style.display = 'none';
             unitWrap.classList.remove('open');
+            syncPortionInputState();
             validateForm();
         };
 
@@ -5132,9 +6703,57 @@ async function renderEditFood() {
         unitWrap.classList.toggle('open', !isOpen);
     };
 
+    const portionUnitWrap = createElement('div', 'create-food-picker-wrap create-food-portion-unit-wrap');
+    portionUnitWrap.style.position = 'relative';
+
+    const portionUnitField = createElement('div', 'create-food-input create-food-picker-field');
+    portionUnitField.tabIndex = 0;
+
+    const portionUnitValue = createElement('span', 'create-food-picker-value', selectedPortionMeasureUnit);
+
+    const portionUnitArrow = createElement('span', 'create-food-picker-arrow');
+    portionUnitArrow.innerHTML = `
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+    `;
+
+    portionUnitField.append(portionUnitValue, portionUnitArrow);
+
+    const portionUnitDropdown = createElement('div', 'create-food-unit-dropdown');
+    portionUnitDropdown.style.display = 'none';
+
+    FOOD_PORTION_MEASURE_OPTIONS.forEach(unit => {
+        const option = createElement('button', 'create-food-unit-dropdown-item', unit);
+        option.type = 'button';
+
+        option.onclick = (e) => {
+            e.stopPropagation();
+            selectedPortionMeasureUnit = unit;
+            portionUnitValue.textContent = unit;
+            portionUnitDropdown.style.display = 'none';
+            portionUnitWrap.classList.remove('open');
+            validateForm();
+        };
+
+        portionUnitDropdown.append(option);
+    });
+
+    portionUnitField.onclick = (e) => {
+        e.stopPropagation();
+        if (selectedUnit !== 'порция') return;
+        const isOpen = portionUnitDropdown.style.display === 'block';
+        portionUnitDropdown.style.display = isOpen ? 'none' : 'block';
+        portionUnitWrap.classList.toggle('open', !isOpen);
+    };
+
+    portionUnitWrap.append(portionUnitField, portionUnitDropdown);
+
     document.addEventListener('click', () => {
         unitDropdown.style.display = 'none';
         unitWrap.classList.remove('open');
+        portionUnitDropdown.style.display = 'none';
+        portionUnitWrap.classList.remove('open');
     });
 
     unitWrap.append(unitField, unitDropdown);
@@ -5142,14 +6761,34 @@ async function renderEditFood() {
     const portion = createElement('input', 'create-food-input');
     portion.type = 'number';
     portion.inputMode = 'decimal';
-    portion.placeholder = 'Например 100';
-    portion.value = Number(food.baseAmount || 100);
+    portion.placeholder = '';
 
-    const defaultAmount = createElement('input', 'create-food-input');
-    defaultAmount.type = 'number';
-    defaultAmount.inputMode = 'decimal';
-    defaultAmount.placeholder = 'Например 30';
-    defaultAmount.value = Number(food.defaultAmount || food.baseAmount || 100);
+    const portionControl = createElement('div', 'create-food-portion-control');
+    portionControl.append(portion, portionUnitWrap);
+
+    function syncPortionInputState() {
+        const isPortionMode = selectedUnit === 'порция';
+
+        if (!isPortionMode && isPortionModeActive && String(portion.value || '').trim() !== '') {
+            customPortionValue = String(portion.value).trim();
+        }
+
+        if (isPortionMode) {
+            portion.value = customPortionValue || '';
+            portion.placeholder = '';
+        } else {
+            portion.value = String(FOOD_LOCKED_PORTION_AMOUNT);
+            portion.placeholder = String(FOOD_LOCKED_PORTION_AMOUNT);
+            portionUnitDropdown.style.display = 'none';
+            portionUnitWrap.classList.remove('open');
+        }
+
+        portion.readOnly = !isPortionMode;
+        portion.classList.toggle('is-locked', !isPortionMode);
+        portionUnitWrap.style.display = isPortionMode ? '' : 'none';
+        isPortionModeActive = isPortionMode;
+    }
+
 
     const protein = createElement('input', 'create-food-input');
     protein.type = 'number';
@@ -5175,12 +6814,13 @@ async function renderEditFood() {
     calories.placeholder = '0';
     calories.value = Number(food.calories || 0);
 
+    syncPortionInputState();
+
     const rows = [
         createFormRow('Название', name, true),
         createFormRow('Описание', description, true, 'is-textarea'),
         createFormRow('Ед. изм.', unitWrap, true),
-        createFormRow('Базовый вес', portion, true),
-        createFormRow('Обычная порция', defaultAmount, true),
+        createFormRow('Размер порции', portionControl, true),
         createFormRow('Белки', protein, true),
         createFormRow('Жиры', fat, true),
         createFormRow('Углеводы', carbs, true),
@@ -5189,22 +6829,31 @@ async function renderEditFood() {
 
     rows.forEach(row => formCard.append(row));
 
-    const actions = createElement('div', 'create-food-actions');
-
     const saveBtn = createElement('button', 'save-btn create-food-submit-btn', 'Сохранить');
     saveBtn.disabled = true;
+
+    function syncCreateFoodBottomNav() {
+        setMealBottomNavOverlayMode({
+            visible: true,
+            onBack: () => backBtn.onclick?.(),
+            actionText: 'Сохранить продукт',
+            onAction: () => saveBtn.onclick?.(),
+            actionDisabled: saveBtn.disabled
+        });
+    }
 
     function isFilled(value) {
         return String(value ?? '').trim() !== '';
     }
 
     function validateForm() {
+        const isPortionMode = selectedUnit === 'порция';
         const allFilled =
             isFilled(name.value) &&
             isFilled(description.value) &&
             isFilled(selectedUnit) &&
             isFilled(portion.value) &&
-            isFilled(defaultAmount.value) &&
+            (!isPortionMode || isFilled(selectedPortionMeasureUnit)) &&
             isFilled(protein.value) &&
             isFilled(fat.value) &&
             isFilled(carbs.value) &&
@@ -5212,13 +6861,14 @@ async function renderEditFood() {
 
         saveBtn.disabled = !allFilled;
         saveBtn.classList.toggle('active', allFilled);
+        syncCreateFoodBottomNav();
     }
 
     [
         name,
         description,
         portion,
-        defaultAmount,
+        portionUnitField,
         protein,
         fat,
         carbs,
@@ -5234,12 +6884,18 @@ async function renderEditFood() {
         const foodRef = await getFoodDocumentRef(state.currentFoodId);
         if (!foodRef) return;
 
+        const nutritionPayload = buildFoodNutritionPayload(
+            selectedUnit,
+            portion.value,
+            selectedPortionMeasureUnit
+        );
+
         const updatedFood = {
             name: name.value.trim(),
+            nameLower: normalizeSearchText(name.value),
+            searchTokens: buildMealSearchTokens(name.value),
             description: description.value.trim(),
-            baseUnit: selectedUnit,
-            baseAmount: Number(portion.value),
-            defaultAmount: Number(defaultAmount.value),
+            ...nutritionPayload,
             protein: Number(protein.value),
             fat: Number(fat.value),
             carbs: Number(carbs.value),
@@ -5281,9 +6937,8 @@ async function renderEditFood() {
         renderMealPage();
     };
 
-    actions.append(saveBtn);
-
-    container.append(stickyHeader, formCard, actions);
+    attachMealOverlayBottomNavSync(container, syncCreateFoodBottomNav);
+    container.append(stickyHeader, formCard);
     pushMealOverlay(container);
 
     requestAnimationFrame(() => {
@@ -5343,12 +6998,18 @@ async function renderFoodDetails() {
     const isRecipeFoodsSource = source === 'recipeFoods';
     const isFatSecretSource = source === 'fatsecret';
     const isGlobalCatalogSource = source === 'globalCatalog';
+    const shouldShowSearchMealLabel = isFoodsSource || isFatSecretSource || isGlobalCatalogSource;
 
     let food = null;
     let currentAmount = 0;
     let showEditButton = false;
     let selectedMealId = null;
     let globalCatalogCreatedByUid = null;
+    let isGlobalLinkedFood = false;
+    let isGlobalImportedFood = false;
+    let canEditLibraryFood = false;
+    let canDeleteLibraryFood = false;
+    let canShowShareControls = false;
 
     if (source === 'foods') {
         const fid = String(state.currentFoodId || '').trim();
@@ -5422,7 +7083,17 @@ async function renderFoodDetails() {
         }
 
         currentAmount = Number(food.defaultAmount || food.baseAmount || 100);
-        showEditButton = true;
+        isGlobalLinkedFood = isFoodLinkedToGlobalCatalog(food);
+        isGlobalImportedFood = isFoodImportedFromGlobalCatalog(food);
+        {
+            const currentUid = getCurrentAuthUid();
+            const sharedOwnerUid = String(food.sharedGlobalCreatedByUid || food.globalCatalogCreatedByUid || '').trim();
+            const isOwnLinkedFood = !sharedOwnerUid || (currentUid && sharedOwnerUid === currentUid);
+            canEditLibraryFood = !isGlobalImportedFood && (!isGlobalLinkedFood || isOwnLinkedFood);
+        }
+        canDeleteLibraryFood = true;
+        canShowShareControls = canEditLibraryFood && !isGlobalImportedFood;
+        showEditButton = canEditLibraryFood || canDeleteLibraryFood;
     } else if (isFatSecretSource) {
         const fatId = String(state.fatsecretDetails?.foodId || '').trim();
         if (!fatId) {
@@ -5530,6 +7201,7 @@ async function renderFoodDetails() {
         };
 
         currentAmount = Number(row.defaultAmount ?? row.baseAmount ?? food.baseAmount ?? 100);
+        isGlobalLinkedFood = true;
         showEditButton = false;
     } else {
         const mealId = state.currentMealDetailsId;
@@ -5590,6 +7262,12 @@ async function renderFoodDetails() {
         closeMealOverlayAndShowMealMain();
     };
 
+    if (shouldShowSearchMealLabel) {
+        topBarCreateFood.append(
+            createElement('div', 'food-details-meal-label meal-search-meal-text', `- ${getMealSearchCurrentLabel()} -`)
+        );
+    }
+
     const title = createElement('h3', 'create-food-sticky-h3', food.name || 'Продукт');
 
     const stickyHeader = createElement('div', 'create-food-sticky-header');
@@ -5640,9 +7318,26 @@ async function renderFoodDetails() {
         `;
     }
 
+    const useBottomNavForFoodDetails =
+        isMealSource || isFoodsSource || isFatSecretSource || isGlobalCatalogSource;
+
+    function syncFoodDetailsBottomNav() {
+        if (!useBottomNavForFoodDetails || !saveBtn) {
+            clearMealBottomNavOverlayMode();
+            return;
+        }
+
+        setMealBottomNavOverlayMode({
+            visible: true,
+            onBack: () => backBtn.onclick?.(),
+            actionText: isMealSource ? 'Сохранить' : 'Добавить в прием',
+            onAction: () => saveBtn.onclick?.(),
+            actionDisabled: false
+        });
+    }
+
     BlocksaveBtn.append(saveBtn);
 
-    const deleteBtnWrap = createElement('div', 'block-delete-btn');
     const deleteBtn = createElement('button', 'delete-food-from-meal-btn');
        deleteBtn.innerHTML = `
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><title>Trash-24 SVG Icon</title><path fill="currentColor" d="M16 1.75V3h5.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H8V1.75C8 .784 8.784 0 9.75 0h4.5C15.216 0 16 .784 16 1.75m-6.5 0V3h5V1.75a.25.25 0 0 0-.25-.25h-4.5a.25.25 0 0 0-.25.25M4.997 6.178a.75.75 0 1 0-1.493.144L4.916 20.92a1.75 1.75 0 0 0 1.742 1.58h10.684a1.75 1.75 0 0 0 1.742-1.581l1.413-14.597a.75.75 0 0 0-1.494-.144l-1.412 14.596a.25.25 0 0 1-.249.226H6.658a.25.25 0 0 1-.249-.226z"></path><path fill="currentColor" d="M9.206 7.501a.75.75 0 0 1 .793.705l.5 8.5A.75.75 0 1 1 9 16.794l-.5-8.5a.75.75 0 0 1 .705-.793Zm6.293.793A.75.75 0 1 0 14 8.206l-.5 8.5a.75.75 0 0 0 1.498.088l.5-8.5Z"></path></svg>
@@ -5763,17 +7458,24 @@ async function renderFoodDetails() {
 
        saveBtn.disabled = true;
 
-       try {
-           if (isFoodsSource) {
-               await updateFoodDefaultAmount(state.currentFoodId, newAmount);
+        try {
+            if (isFoodsSource) {
+                if (!isGlobalImportedFood) {
+                    await updateFoodDefaultAmount(state.currentFoodId, newAmount);
+                }
 
-               const foodsMap = await getFoodsMap();
-               const updatedFood = foodsMap[state.currentFoodId];
+                const foodsMap = await getFoodsMap(!isGlobalImportedFood);
+                const updatedFood = {
+                    ...(foodsMap[state.currentFoodId] || food || {}),
+                    defaultAmount: isGlobalImportedFood
+                        ? Number(food?.defaultAmount || food?.baseAmount || 100)
+                        : Number(newAmount)
+                };
 
-               if (!updatedFood) {
-                   showToast('Продукт не найден');
-                   return;
-               }
+                if (!updatedFood) {
+                    showToast('Продукт не найден');
+                    return;
+                }
 
                await addFoodSnapshotToCurrentMeal(updatedFood, newAmount);
 
@@ -5851,20 +7553,16 @@ async function renderFoodDetails() {
 
            if (isGlobalCatalogSource) {
                const catalogFoodId = String(state.currentFoodId || '').trim();
-               const payload = {
-                   name: String(food?.name || 'Продукт').trim(),
-                   description: String(food?.description || '').trim(),
-                   baseAmount: Number(food?.baseAmount || 100),
-                   baseUnit: String(food?.baseUnit || 'г'),
-                   protein: Number(food?.protein || 0),
-                   fat: Number(food?.fat || 0),
-                   carbs: Number(food?.carbs || 0),
-                   calories: Number(food?.calories || 0),
-                   defaultAmount: Number(newAmount),
-                   source: 'globalCatalogImport',
-                   globalCatalogSourceId: catalogFoodId
-               };
-               const foodId = await addFood(payload, { skipGlobalMirror: true });
+               const payload = buildGlobalCatalogImportPayload(
+                   { ...food, createdByUid: globalCatalogCreatedByUid },
+                   catalogFoodId,
+                   newAmount
+               );
+               const foodId = await ensureGlobalCatalogFoodSaved(
+                   { ...food, createdByUid: globalCatalogCreatedByUid },
+                   catalogFoodId,
+                   newAmount
+               );
                if (!foodId) return;
                state.currentFoodId = foodId;
                await getFoodsMap(true);
@@ -6067,13 +7765,10 @@ async function renderFoodDetails() {
 
 
 
-    deleteBtnWrap.append(deleteBtn);
     BlocksaveBtn.append(saveBtn);
-        if (source === 'meal') {
-            topBarCreateFood.append(backBtn, deleteBtnWrap, BlocksaveBtn);
-        } else {
-            topBarCreateFood.append(backBtn, BlocksaveBtn);
-        }
+    if (isRecipeFoodsSource) {
+        topBarCreateFood.append(backBtn, BlocksaveBtn);
+    }
     amountRow.append(plusMinusIcon, amountInput);
     unitRow.append(listIcon, unitInput);
     mealRow.append(mealIcon, mealValueBtn, mealDropdown);
@@ -6093,6 +7788,25 @@ async function renderFoodDetails() {
         passportBlock
     );
 
+    if (isMealSource) {
+        const deleteMealFoodBtn = createElement('button', 'edit-meal-search-main-action meal-food-delete-action');
+        deleteMealFoodBtn.type = 'button';
+        deleteMealFoodBtn.innerHTML = `
+            <span class="btn-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24">
+                    <path fill="currentColor" d="M16 1.75V3h5.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H8V1.75C8 .784 8.784 0 9.75 0h4.5C15.216 0 16 .784 16 1.75m-6.5 0V3h5V1.75a.25.25 0 0 0-.25-.25h-4.5a.25.25 0 0 0-.25.25M4.997 6.178a.75.75 0 1 0-1.493.144L4.916 20.92a1.75 1.75 0 0 0 1.742 1.58h10.684a1.75 1.75 0 0 0 1.742-1.581l1.413-14.597a.75.75 0 0 0-1.494-.144l-1.412 14.596a.25.25 0 0 1-.249.226H6.658a.25.25 0 0 1-.249-.226z"></path>
+                    <path fill="currentColor" d="M9.206 7.501a.75.75 0 0 1 .793.705l.5 8.5A.75.75 0 1 1 9 16.794l-.5-8.5a.75.75 0 0 1 .705-.793Zm6.293.793A.75.75 0 1 0 14 8.206l-.5 8.5a.75.75 0 0 0 1.498.088l.5-8.5Z"></path>
+                </svg>
+            </span>
+            <span class="btn-text">Удалить из приема</span>
+        `;
+        deleteMealFoodBtn.onclick = () => deleteBtn.onclick?.();
+
+        const actionsBlock = createElement('div', 'food-details-actions-block food-details-actions-block--meal-food-delete');
+        actionsBlock.append(deleteMealFoodBtn);
+        container.append(actionsBlock);
+    }
+
     if (showEditButton) {
         const isLibraryFoodSource = isFoodsSource; // только "мои продукты" (library) — можно делиться
 
@@ -6111,6 +7825,7 @@ async function renderFoodDetails() {
                 <p>Удалить продукт «${esc(title)}»?</p>
                 <div class="modal-controls" style="display:flex;flex-direction:column;gap:10px;">
                     <button class="btn btn-danger delete-local-btn">Удалить у себя</button>
+                    <button class="btn btn-danger delete-global-btn">Удалить только из общей базы</button>
                     <button class="btn btn-danger delete-both-btn">Удалить у себя и в общей базе</button>
                     <button class="btn btn-secondary cancel-btn">Отмена</button>
                 </div>
@@ -6127,6 +7842,7 @@ async function renderFoodDetails() {
 
             const cancelBtn = modal.querySelector('.cancel-btn');
             const localBtn = modal.querySelector('.delete-local-btn');
+            const globalBtn = modal.querySelector('.delete-global-btn');
             const bothBtn = modal.querySelector('.delete-both-btn');
 
             cancelBtn?.addEventListener('click', close);
@@ -6136,15 +7852,19 @@ async function renderFoodDetails() {
                 if (handlers?.local) await handlers.local();
                 close();
             });
+            globalBtn?.addEventListener('click', async () => {
+                if (handlers?.global) await handlers.global();
+                close();
+            });
             bothBtn?.addEventListener('click', async () => {
                 if (handlers?.both) await handlers.both();
                 close();
             });
 
-            return { modal, bothBtn };
+            return { modal, globalBtn, bothBtn };
         }
 
-        const deleteProductBtn = createElement('button', 'edit-meal-search-main-action');
+        const deleteProductBtn = createElement('button', 'edit-meal-search-main-action food-details-action-btn food-details-action-delete');
         deleteProductBtn.type = 'button';
         deleteProductBtn.innerHTML = `
             <span class="btn-icon">
@@ -6160,15 +7880,33 @@ async function renderFoodDetails() {
             const currentId = String(state.currentFoodId || '').trim();
             const currentName = String(food?.name || 'Без названия');
 
-            const { bothBtn } = openDeleteFoodOptionsModal(currentName, {
+            const getCurrentSharedId = async () => {
+                const libCol = getMealLibraryFoodsCollection();
+                if (!libCol || !currentId) return '';
+
+                const libSnap = await getDoc(doc(libCol, currentId));
+                return libSnap.exists() ? getFoodGlobalCatalogId(libSnap.data() || {}) : '';
+            };
+
+            const returnToFoodSearchAfterDelete = () => {
+                if (state.mealSearchReturnTab) {
+                    state.mealSearchTab = state.mealSearchReturnTab;
+                    state._mealSearchRestoreNoIndicatorAnim = true;
+                    state._mealSearchRestoreSkipCarouselSyncOnce = true;
+                }
+                if (hasUnderlyingMealSearch()) {
+                    popMealOverlay();
+                    patchFoodSearchCardSharedBadge(currentId);
+                } else {
+                    state.mealView = 'search';
+                    renderMealSearch();
+                }
+            };
+
+            const { globalBtn, bothBtn } = openDeleteFoodOptionsModal(currentName, {
                 local: async () => {
                     await deleteFood(currentId);
                     showToast('Продукт удалён');
-                    if (state.mealSearchReturnTab) {
-                        state.mealSearchTab = state.mealSearchReturnTab;
-                        state._mealSearchRestoreNoIndicatorAnim = true;
-                        state._mealSearchRestoreSkipCarouselSyncOnce = true;
-                    }
                     if (hasUnderlyingMealSearch()) {
                         popMealOverlay();
                         removeFoodCardFromSearchDOM(currentId);
@@ -6177,19 +7915,32 @@ async function renderFoodDetails() {
                         renderMealSearch();
                     }
                 },
-                both: async () => {
-                    const libCol = getMealLibraryFoodsCollection();
+                global: async () => {
                     const gCol = getGlobalFoodCatalogCollection();
-                    const uid = getCurrentAuthUid();
-                    if (!libCol || !gCol || !uid) {
+                    const sharedId = await getCurrentSharedId();
+                    if (!gCol || !sharedId || !canEditLibraryFood) {
+                        showToast('Удалить из общей базы может только автор продукта');
+                        return;
+                    }
+
+                    try {
+                        await deleteDoc(doc(gCol, sharedId));
+                        await unlinkLocalFoodFromGlobalCatalog(currentId);
+                        showToast('Удалено из общей базы');
+                        returnToFoodSearchAfterDelete();
+                    } catch (e) {
+                        console.error(e);
+                        showToast('Не удалось удалить из общей базы');
+                    }
+                },
+                both: async () => {
+                    const gCol = getGlobalFoodCatalogCollection();
+                    if (!gCol || !canEditLibraryFood) {
                         showToast('Не удалось удалить из общей базы');
                         return;
                     }
 
-                    // узнаём, был ли продукт расшарен, и какой id в globalFoodCatalog
-                    const libRef = doc(libCol, currentId);
-                    const libSnap = await getDoc(libRef);
-                    const sharedId = libSnap.exists() ? String((libSnap.data() || {}).sharedGlobalCatalogId || '').trim() : '';
+                    const sharedId = await getCurrentSharedId();
 
                     if (!sharedId) {
                         showToast('Продукт ещё не добавлен в общую базу');
@@ -6210,15 +7961,14 @@ async function renderFoodDetails() {
                         return;
                     }
 
-                    // Сначала пробуем удалить из общей базы (разрешено только создателю по rules).
                     try {
                         await deleteDoc(doc(gCol, sharedId));
                     } catch (e) {
                         console.error(e);
                         showToast('Нет прав удалить из общей базы (доступно только создателю)');
+                        return;
                     }
 
-                    // Потом удаляем у себя
                     await deleteFood(currentId);
                     showToast('Продукт удалён');
                     if (state.mealSearchReturnTab) {
@@ -6236,16 +7986,13 @@ async function renderFoodDetails() {
                 }
             });
 
-            // Если продукт не из библиотеки, или не расшарен — кнопку "оба" отключаем.
-            if (!isLibraryFoodSource || !bothBtn) return;
-            // async: проверим sharedGlobalCatalogId
+            if (!globalBtn || !bothBtn) return;
             (async () => {
                 try {
-                    const libCol = getMealLibraryFoodsCollection();
-                    if (!libCol) return;
-                    const snap = await getDoc(doc(libCol, currentId));
-                    const sharedId = snap.exists() ? String((snap.data() || {}).sharedGlobalCatalogId || '').trim() : '';
-                    if (!sharedId) {
+                    const sharedId = await getCurrentSharedId();
+                    if (!sharedId || !canEditLibraryFood) {
+                        globalBtn.disabled = true;
+                        globalBtn.classList.add('disabled');
                         bothBtn.disabled = true;
                         bothBtn.classList.add('disabled');
                     }
@@ -6253,14 +8000,14 @@ async function renderFoodDetails() {
             })();
         };
 
-        const editBtn = createElement('button', 'edit-meal-search-main-action');
+        const editBtn = createElement('button', 'edit-meal-search-main-action food-details-action-btn food-details-action-edit');
         editBtn.innerHTML = `
             <span class="btn-icon">
                 <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24">
                     <path fill="currentColor" d="M3.548 20.938h16.9a.5.5 0 0 0 0-1h-16.9a.5.5 0 0 0 0 1M9.71 17.18a2.587 2.587 0 0 0 1.12-.65l9.54-9.54a1.75 1.75 0 0 0 0-2.47l-.94-.93a1.788 1.788 0 0 0-2.47 0l-9.54 9.53a2.473 2.473 0 0 0-.64 1.12L6.04 17a.737.737 0 0 0 .19.72a.767.767 0 0 0 .53.22Zm.41-1.36a1.468 1.468 0 0 1-.67.39l-.97.26l-1-1l.26-.97a1.521 1.521 0 0 1 .39-.67l.38-.37l1.99 1.99Zm1.09-1.08l-1.99-1.99l6.73-6.73l1.99 1.99Zm8.45-8.45L18.65 7.3l-1.99-1.99l1.01-1.02a.748.748 0 0 1 1.06 0l.93.94a.754.754 0 0 1 0 1.06"></path>
                 </svg>
             </span>
-            <span class="btn-text">Изменить пищевую ценность</span>
+            <span class="btn-text">Изменить продукт</span>
         `;
 
         editBtn.onclick = () => {
@@ -6268,11 +8015,28 @@ async function renderFoodDetails() {
             renderEditFood();
         };
 
-        const actionsBlock = createElement('div', 'food-details-actions-block');
-        actionsBlock.append(deleteProductBtn, editBtn);
+        const actionsBlock = createElement('div', 'food-details-actions-block food-details-actions-block--product');
+        const mainActionsRow = createElement('div', 'food-details-main-actions-row');
+        if (canEditLibraryFood) {
+            mainActionsRow.append(editBtn);
+        }
+        if (canDeleteLibraryFood) {
+            mainActionsRow.append(deleteProductBtn);
+        }
+        mainActionsRow.classList.toggle('food-details-main-actions-row--single', mainActionsRow.children.length === 1);
+        actionsBlock.append(mainActionsRow);
         container.append(actionsBlock);
 
-        if (isLibraryFoodSource) {
+        const sharedStatus = createElement('div', 'meal-share-status meal-share-status--global');
+        if (isGlobalImportedFood) {
+            sharedStatus.textContent = 'Продукт добавлен из общей базы. Редактирование доступно только автору.';
+            actionsBlock.insertBefore(sharedStatus, mainActionsRow);
+        } else if (isGlobalLinkedFood) {
+            sharedStatus.textContent = 'Продукт добавлен в общую базу';
+            actionsBlock.insertBefore(sharedStatus, mainActionsRow);
+        }
+
+        if (isLibraryFoodSource && canShowShareControls && !isGlobalLinkedFood) {
             const shareRow = createElement('div', 'meal-share-row');
 
             const shareBtn = createElement('button', 'edit-meal-search-main-action');
@@ -6327,11 +8091,10 @@ async function renderFoodDetails() {
                     if (!libCol) return;
                     const libSnap = await getDoc(doc(libCol, state.currentFoodId));
                     const d = libSnap.exists() ? (libSnap.data() || {}) : {};
-                    const sharedId = String(d.sharedGlobalCatalogId || '').trim();
+                    const sharedId = getFoodGlobalCatalogId(d);
                     if (sharedId) {
-                        shareBtn.disabled = true;
-                        shareBtn.classList.add('disabled');
                         status.textContent = 'Продукт добавлен в общую базу';
+                        shareRow.remove();
                     } else {
                         shareBtn.disabled = false;
                         shareBtn.classList.remove('disabled');
@@ -6361,7 +8124,7 @@ async function renderFoodDetails() {
                     }
 
                     const row = libSnap.data() || {};
-                    if (row.sharedGlobalCatalogId) {
+                    if (getFoodGlobalCatalogId(row)) {
                         await refreshShareUi();
                         return;
                     }
@@ -6369,6 +8132,7 @@ async function renderFoodDetails() {
                     const payload = {
                         name: String(row.name || '').trim(),
                         nameLower: normalizeSearchText(row.name),
+                        searchTokens: buildMealSearchTokens(row.name),
                         description: String(row.description || '').trim(),
                         baseAmount: Number(row.baseAmount || 100),
                         baseUnit: String(row.baseUnit || 'г'),
@@ -6385,7 +8149,18 @@ async function renderFoodDetails() {
 
                     // Используем стабильный id = id продукта в библиотеке, чтобы потом легко синхронизировать изменения.
                     await setDoc(doc(gCol, fid), payload, { merge: true });
-                    await updateDoc(libRef, { sharedGlobalCatalogId: fid, sharedGlobalSharedAt: Date.now() });
+                    await updateDoc(libRef, {
+                        sharedGlobalCatalogId: fid,
+                        sharedGlobalSharedAt: Date.now(),
+                        sharedGlobalCreatedByUid: uid
+                    });
+                    if (foodsMapCache && foodsMapLibraryKey === getMealLibraryContextKey() && foodsMapCache[fid]) {
+                        foodsMapCache[fid].sharedGlobalCatalogId = fid;
+                        foodsMapCache[fid].sharedGlobalSharedAt = Date.now();
+                        foodsMapCache[fid].sharedGlobalCreatedByUid = uid;
+                    }
+                    invalidateFoodPreviewCaches();
+                    patchFoodSearchCardSharedBadge(fid);
 
                     showToast('Добавлено в общую базу');
                     await refreshShareUi();
@@ -6402,8 +8177,15 @@ async function renderFoodDetails() {
             void refreshShareUi();
 
             shareRow.append(shareBtn, infoBtn);
-            actionsBlock.append(shareRow, status);
+            actionsBlock.insertBefore(status, mainActionsRow);
+            actionsBlock.insertBefore(shareRow, mainActionsRow);
         }
+    }
+
+    if (isGlobalCatalogSource) {
+        container.append(
+            createElement('div', 'meal-share-status meal-share-status--global', 'Продукт находится в общей базе')
+        );
     }
 
     if (isGlobalCatalogSource) {
@@ -6427,6 +8209,10 @@ async function renderFoodDetails() {
                 openConfirmModal('Удалить эту запись из общей базы для всех пользователей?', async () => {
                     try {
                         await deleteDoc(doc(gCol, gid));
+                        const localFoodId = await findLocalFoodIdByGlobalCatalogId(gid);
+                        if (localFoodId) {
+                            await unlinkLocalFoodFromGlobalCatalog(localFoodId);
+                        }
                         showToast('Удалено из общей базы');
                         if (hasUnderlyingMealSearch()) popMealOverlay();
                         else {
@@ -6445,6 +8231,9 @@ async function renderFoodDetails() {
         }
     }
 
+    if (useBottomNavForFoodDetails) {
+        attachMealOverlayBottomNavSync(container, syncFoodDetailsBottomNav);
+    }
     pushMealOverlay(container);
 
     requestAnimationFrame(() => {
@@ -6473,8 +8262,7 @@ async function renderRecipeDetails() {
             title: mealSnap.name || '',
             description: mealSnap.description || '',
             servings: String(mealSnap.baseServings || mealSnap.servings || 1),
-            ingredients: Array.isArray(mealSnap.ingredients) ? mealSnap.ingredients : [],
-            steps: []
+            ingredients: Array.isArray(mealSnap.ingredients) ? mealSnap.ingredients : []
         };
     } else {
         recipeRef = await getRecipeDocumentRef(state.currentRecipeId);
@@ -6571,6 +8359,12 @@ async function renderRecipeDetails() {
         }
     };
 
+    if (!isMealSource) {
+        topBarCreateFood.append(
+            createElement('div', 'food-details-meal-label meal-search-meal-text', `- ${getMealSearchCurrentLabel()} -`)
+        );
+    }
+
     const title = createElement('h3', 'create-food-sticky-h3', recipe.title || 'Рецепт');
 
     const stickyHeader = createElement('div', 'create-food-sticky-header');
@@ -6596,6 +8390,23 @@ async function renderRecipeDetails() {
     const unitInput = createElement('input', 'input');
     unitInput.value = 'порц';
     unitInput.disabled = true;
+
+    let topBarActionBtn = null;
+
+    function syncRecipeDetailsBottomNav() {
+        if (!topBarActionBtn) {
+            clearMealBottomNavOverlayMode();
+            return;
+        }
+
+        setMealBottomNavOverlayMode({
+            visible: true,
+            onBack: () => backBtn.onclick?.(),
+            actionText: isMealSource ? 'Сохранить' : 'Добавить в прием',
+            onAction: () => topBarActionBtn.onclick?.(),
+            actionDisabled: Boolean(topBarActionBtn.disabled)
+        });
+    }
 
     if (!isMealSource) {
         const BlocksaveBtn = createElement('div', 'block-save-btn active');
@@ -6644,8 +8455,8 @@ async function renderRecipeDetails() {
             }
         };
 
+        topBarActionBtn = saveBtn;
         BlocksaveBtn.append(saveBtn);
-        topBarCreateFood.append(backBtn, BlocksaveBtn);
     } else {
         const BlocksaveBtn = createElement('div', 'block-save-btn active');
         const saveBtn = createElement('button', 'save-btn active');
@@ -6739,8 +8550,8 @@ async function renderRecipeDetails() {
             }
         };
 
+        topBarActionBtn = saveBtn;
         BlocksaveBtn.append(saveBtn);
-        topBarCreateFood.append(backBtn, BlocksaveBtn);
     }
 
     const currentValuesWrap = createElement('div', 'food-current-card');
@@ -6901,7 +8712,6 @@ async function renderRecipeDetails() {
     }
 
     const passportBlock = createElement('div', 'food-passport-block food-passport-block--recipe');
-    const stepsBlock = createElement('div', 'food-passport-block food-passport-block--recipe recipe-steps-block');
 
     function renderPassportBlock() {
         const baseServings = Math.max(0.1, Number(recipe.servings || 1));
@@ -6946,36 +8756,6 @@ async function renderRecipeDetails() {
 
         const bottomBar = createElement('div', 'food-passport-bar food-passport-bar-bottom food-passport-bar--recipe');
         passportBlock.append(bottomBar);
-    }
-
-    function renderStepsBlock() {
-        const steps = Array.isArray(recipe.steps)
-            ? recipe.steps.map(s => String(s || '').trim()).filter(Boolean)
-            : [];
-
-        if (!steps.length) {
-            stepsBlock.style.display = 'none';
-            stepsBlock.innerHTML = '';
-            return;
-        }
-
-        stepsBlock.style.display = '';
-        stepsBlock.innerHTML = `
-            <div class="food-passport-title">Способ приготовления</div>
-            <div class="food-passport-divider"></div>
-        `;
-
-        steps.forEach((step, idx) => {
-            const row = createElement('div', `food-passport-row ${idx === steps.length - 1 ? 'food-passport-row-last' : ''}`);
-            row.innerHTML = `
-                <div class="food-passport-name">Шаг ${idx + 1}</div>
-                <div class="food-passport-value recipe-step-text">${step}</div>
-            `;
-            stepsBlock.append(row);
-        });
-
-        const bottomBar = createElement('div', 'food-passport-bar food-passport-bar-bottom');
-        stepsBlock.append(bottomBar);
     }
 
     const amountRow = createElement('div', 'food-input-row');
@@ -7060,19 +8840,17 @@ async function renderRecipeDetails() {
 
     renderCurrentValuesBlock();
     renderPassportBlock();
-    renderStepsBlock();
 
     container.append(
         stickyHeader,
         ...(titleDesc ? [titleDesc] : []),
         topBlockCreateFood,
         currentValuesWrap,
-        passportBlock,
-        stepsBlock
+        passportBlock
     );
 
     if (isMealSource) {
-        const deleteMealRecipeBtn = createElement('button', 'edit-meal-search-main-action');
+        const deleteMealRecipeBtn = createElement('button', 'edit-meal-search-main-action meal-recipe-delete-action');
         deleteMealRecipeBtn.type = 'button';
         deleteMealRecipeBtn.innerHTML = `
             <span class="btn-icon">
@@ -7111,11 +8889,11 @@ async function renderRecipeDetails() {
             });
         };
 
-        const actionsBlock = createElement('div', 'food-details-actions-block');
+        const actionsBlock = createElement('div', 'food-details-actions-block food-details-actions-block--meal-recipe-delete');
         actionsBlock.append(deleteMealRecipeBtn);
         container.append(actionsBlock);
     } else {
-        const editBtn = createElement('button', 'edit-meal-search-main-action');
+        const editBtn = createElement('button', 'edit-meal-search-main-action recipe-details-action-edit');
         editBtn.type = 'button';
         editBtn.innerHTML = `
             <span class="btn-icon">
@@ -7123,7 +8901,7 @@ async function renderRecipeDetails() {
                     <path fill="currentColor" d="M3.548 20.938h16.9a.5.5 0 0 0 0-1h-16.9a.5.5 0 0 0 0 1M9.71 17.18a2.587 2.587 0 0 0 1.12-.65l9.54-9.54a1.75 1.75 0 0 0 0-2.47l-.94-.93a1.788 1.788 0 0 0-2.47 0l-9.54 9.53a2.473 2.473 0 0 0-.64 1.12L6.04 17a.737.737 0 0 0 .19.72a.767.767 0 0 0 .53.22Zm.41-1.36a1.468 1.468 0 0 1-.67.39l-.97.26l-1-1l.26-.97a1.521 1.521 0 0 1 .39-.67l.38-.37l1.99 1.99Zm1.09-1.08l-1.99-1.99l6.73-6.73l1.99 1.99Zm8.45-8.45L18.65 7.3l-1.99-1.99l1.01-1.02a.748.748 0 0 1 1.06 0l.93.94a.754.754 0 0 1 0 1.06"></path>
                 </svg>
             </span>
-            <span class="btn-text">Редактировать рецепт</span>
+            <span class="btn-text">Изменить рецепт</span>
         `;
 
         editBtn.onclick = () => {
@@ -7133,7 +8911,7 @@ async function renderRecipeDetails() {
             renderMealPage();
         };
 
-        const deleteRecipeBtn = createElement('button', 'edit-meal-search-main-action');
+        const deleteRecipeBtn = createElement('button', 'edit-meal-search-main-action recipe-details-action-delete');
         deleteRecipeBtn.type = 'button';
         deleteRecipeBtn.innerHTML = `
             <span class="btn-icon">
@@ -7162,11 +8940,12 @@ async function renderRecipeDetails() {
             });
         };
 
-        const actionsBlock = createElement('div', 'food-details-actions-block');
+        const actionsBlock = createElement('div', 'food-details-actions-block food-details-actions-block--recipe-search');
         actionsBlock.append(deleteRecipeBtn, editBtn);
         container.append(actionsBlock);
     }
 
+    attachMealOverlayBottomNavSync(container, syncRecipeDetailsBottomNav);
     pushMealOverlay(container);
 
     requestAnimationFrame(() => {
@@ -7982,6 +9761,10 @@ async function removeFoodFromMeal(mealId, index){
     const data = snap.data();
 
     const updated = [...(data[mealId] || [])];
+    const removed = updated[index];
+    if (removed && isMealPhotoItem(removed)) {
+        await deleteUserFirebaseStorageFileByDownloadUrl(removed.photoUrl);
+    }
     updated.splice(index, 1);
 
     if (updated.length) {
@@ -8464,8 +10247,8 @@ function renderMealSearch() {
     historyPreviewCache = null;
     historyPreviewCacheKey = null;
 
-    // Backfill index fields (nameLower/titleLower) once per cycle so Firestore prefix-search works.
-    void ensureMealSearchIndexFieldsOnce();
+    // Backfill search fields once per library so word-token search works for old products/recipes.
+    const mealSearchIndexReadyPromise = ensureMealSearchIndexFieldsOnce();
 
     // Поиск по вкладкам: каждую вкладку очищаем при уходе с неё.
     if (!state.mealSearchQueryByTab || typeof state.mealSearchQueryByTab !== 'object') {
@@ -8518,15 +10301,17 @@ function renderMealSearch() {
     const topRow = createElement('div', 'meal-search-topbar');
     topRow.classList.add('meal-search-topbar--bottom-nav-mode');
 
-    setMealSearchNavBackHandler(() => {
+    const handleMealSearchBack = () => {
         state.mealSearchTab = 'all';
         state.mealSearchScrollByTab = { all: 0, products: 0, recipes: 0, base: 0 };
         closeMealOverlayAndShowMealMain();
-    });
+    };
 
 const titleWrap = createElement('div', 'meal-search-meal-picker');
 const titleBtn = createElement('button', 'meal-search-meal-trigger');
 titleBtn.type = 'button';
+titleBtn.setAttribute('aria-haspopup', 'true');
+titleBtn.setAttribute('aria-expanded', 'false');
 
 const titleText = createElement('span', 'meal-search-meal-text', getMealSearchCurrentLabel());
 const titleArrow = createElement('span', 'meal-search-meal-arrow');
@@ -8543,17 +10328,82 @@ const menuBackdrop = createElement('button', 'meal-search-picker-backdrop');
 menuBackdrop.type = 'button';
 
 const dropdown = createElement('div', 'meal-search-picker-menu');
+dropdown.setAttribute('aria-hidden', 'true');
+
+const dropdownLabel = createElement('div', 'meal-search-picker-section-label', 'приёмы дня');
+const dropdownList = createElement('div', 'meal-search-picker-list');
+dropdown.append(dropdownLabel, dropdownList);
+
+function syncMealPickerState(isOpen) {
+    titleWrap.classList.toggle('open', isOpen);
+    dropdown.classList.toggle('open', isOpen);
+    titleBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    dropdown.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+}
+
+function positionMealPickerDropdown() {
+    const pad = 12;
+    const rect = titleBtn.getBoundingClientRect();
+    const vw = window.innerWidth || document.documentElement.clientWidth || 320;
+
+    dropdown.style.top = `${Math.round(rect.bottom + 8)}px`;
+    dropdown.style.left = `${Math.round(rect.left + rect.width / 2)}px`;
+    dropdown.style.transform = 'translateX(-50%)';
+    dropdown.style.maxWidth = `calc(${vw}px - 24px)`;
+
+    if (!dropdown.isConnected) {
+        screen.append(dropdown);
+    }
+
+    void dropdown.offsetWidth;
+
+    const menuWidth = dropdown.getBoundingClientRect().width || dropdown.offsetWidth || 150;
+    const halfWidth = menuWidth / 2;
+    const minLeft = pad + halfWidth;
+    const maxLeft = vw - pad - halfWidth;
+    const nextLeft = Math.min(maxLeft, Math.max(minLeft, rect.left + rect.width / 2));
+
+    if (minLeft > maxLeft) {
+        dropdown.style.left = `${pad}px`;
+        dropdown.style.transform = 'none';
+        dropdown.style.maxWidth = `${Math.max(120, vw - pad * 2)}px`;
+        return;
+    }
+
+    dropdown.style.left = `${Math.round(nextLeft)}px`;
+    dropdown.style.transform = 'translateX(-50%)';
+    dropdown.style.maxWidth = `calc(${vw}px - 24px)`;
+}
+
+function updateMealPickerSelection(mealId) {
+    const nextOption = mealOptions.find(opt => opt.id === mealId);
+    if (!nextOption) return;
+
+    state.currentMealId = nextOption.id;
+    titleText.textContent = nextOption.label;
+    titleWrap.dataset.currentMealId = nextOption.id;
+    titleBtn.dataset.currentMealId = nextOption.id;
+    titleBtn.classList.add('active');
+    titleText.classList.add('active');
+
+    dropdownList.querySelectorAll('.meal-search-picker-item').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.mealId === nextOption.id);
+        btn.setAttribute('aria-pressed', btn.dataset.mealId === nextOption.id ? 'true' : 'false');
+    });
+}
 
 function closeMealPicker() {
-    titleWrap.classList.remove('open');
-    dropdown.classList.remove('open');
+    syncMealPickerState(false);
     menuBackdrop.remove();
+    dropdown.remove();
 }
 
 function openMealPicker() {
-    titleWrap.classList.add('open');
-    dropdown.classList.add('open');
-    screen.append(menuBackdrop);
+    positionMealPickerDropdown();
+    if (!menuBackdrop.isConnected) {
+        screen.append(menuBackdrop);
+    }
+    syncMealPickerState(true);
 }
 
 menuBackdrop.onclick = closeMealPicker;
@@ -8566,29 +10416,34 @@ titleBtn.onclick = () => {
     }
 };
 
+function selectMealFromPicker(mealId, event) {
+    if (!mealId) return;
+
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation?.();
+    }
+
+    updateMealPickerSelection(mealId);
+    closeMealPicker();
+}
+
 mealOptions.forEach(opt => {
     const item = createElement('button', 'meal-search-picker-item', opt.label);
     item.type = 'button';
+    item.dataset.mealId = opt.id;
+    item.classList.toggle('active', opt.id === state.currentMealId);
+    item.setAttribute('aria-pressed', opt.id === state.currentMealId ? 'true' : 'false');
 
-    if (opt.id === state.currentMealId) {
-        item.classList.add('active');
-    }
-
-    item.onclick = () => {
-        state.currentMealId = opt.id;
-        titleText.textContent = opt.label;
-
-        dropdown.querySelectorAll('.meal-search-picker-item').forEach(btn => {
-            btn.classList.toggle('active', btn === item);
-        });
-
-        closeMealPicker();
+    item.onclick = (event) => {
+        selectMealFromPicker(opt.id, event);
     };
 
-    dropdown.append(item);
+    dropdownList.append(item);
 });
 
-titleWrap.append(dropdown);
+updateMealPickerSelection(state.currentMealId);
 
 topRow.append(titleWrap);
 
@@ -8893,16 +10748,11 @@ topRow.append(titleWrap);
     }
 
     function getFoodsSearchQuery(searchText, foodsCol, afterDoc = null) {
-        const qText = normalizeSearchText(searchText);
-        const start = qText;
-        const end = `${qText}\uf8ff`;
-        // Диапазон через where + orderBy + startAfter (startAt/endAt + startAfter часто ломают запрос / требуют лишний индекс).
+        const token = getMealSearchPrimaryToken(searchText);
         const constraints = [
             foodsCol,
-            where('nameLower', '>=', start),
-            where('nameLower', '<=', end),
-            orderBy('nameLower', 'asc'),
-            limit(localPageSize)
+            where('searchTokens', 'array-contains', token),
+            limit(Math.max(localPageSize, 80))
         ];
         if (afterDoc) {
             constraints.splice(constraints.length - 1, 0, startAfter(afterDoc));
@@ -8923,15 +10773,11 @@ topRow.append(titleWrap);
     }
 
     function getRecipesSearchQuery(searchText, recipesCol, afterDoc = null) {
-        const qText = normalizeSearchText(searchText);
-        const start = qText;
-        const end = `${qText}\uf8ff`;
+        const token = getMealSearchPrimaryToken(searchText);
         const constraints = [
             recipesCol,
-            where('titleLower', '>=', start),
-            where('titleLower', '<=', end),
-            orderBy('titleLower', 'asc'),
-            limit(localPageSize)
+            where('searchTokens', 'array-contains', token),
+            limit(Math.max(localPageSize, 80))
         ];
         if (afterDoc) {
             constraints.splice(constraints.length - 1, 0, startAfter(afterDoc));
@@ -8958,7 +10804,7 @@ topRow.append(titleWrap);
                     pager.exhausted = true;
                     return;
                 }
-                const hasSearch = normalizeSearchText(pager.query).length >= 2;
+                const hasSearch = getMealSearchPrimaryToken(pager.query).length >= 2;
                 const qRef = hasSearch
                     ? getFoodsSearchQuery(pager.query, foodsCol, afterDoc)
                     : getFoodsSortQuery(pager.sortId, foodsCol, afterDoc);
@@ -8977,21 +10823,24 @@ topRow.append(titleWrap);
                 }
                 if (requestId !== loadRequestId) return;
                 const docs = snap.docs || [];
-                const items = docs.map(d => ({ id: d.id, ...d.data() }));
+                const rawItems = docs.map(d => ({ id: d.id, ...d.data() }));
+                const items = hasSearch
+                    ? filterMealSearchRowsByText(rawItems, pager.query, item => item.name || '')
+                    : rawItems;
                 pager.pages.push({
                     type: 'foods',
                     items,
                     firstDoc: docs[0] || null,
                     lastDoc: docs[docs.length - 1] || null
                 });
-                pager.exhausted = items.length < localPageSize;
+                pager.exhausted = docs.length < Math.max(localPageSize, hasSearch ? 80 : localPageSize);
             } else {
                 if (!recipesCol) {
                     pager.pages.push({ type: 'recipes', items: [], firstDoc: null, lastDoc: null });
                     pager.exhausted = true;
                     return;
                 }
-                const hasSearch = normalizeSearchText(pager.query).length >= 2;
+                const hasSearch = getMealSearchPrimaryToken(pager.query).length >= 2;
                 const qRef = hasSearch
                     ? getRecipesSearchQuery(pager.query, recipesCol, afterDoc)
                     : getRecipesSortQuery(pager.sortId, recipesCol, afterDoc);
@@ -9010,14 +10859,17 @@ topRow.append(titleWrap);
                 }
                 if (requestId !== loadRequestId) return;
                 const docs = snap.docs || [];
-                const items = docs.map(d => ({ id: d.id, ...d.data() }));
+                const rawItems = docs.map(d => ({ id: d.id, ...d.data() }));
+                const items = hasSearch
+                    ? filterMealSearchRowsByText(rawItems, pager.query, item => item.title || '')
+                    : rawItems;
                 pager.pages.push({
                     type: 'recipes',
                     items,
                     firstDoc: docs[0] || null,
                     lastDoc: docs[docs.length - 1] || null
                 });
-                pager.exhausted = items.length < localPageSize;
+                pager.exhausted = docs.length < Math.max(localPageSize, hasSearch ? 80 : localPageSize);
             }
         } finally {
             pager.loading = false;
@@ -9377,30 +11229,36 @@ topRow.append(titleWrap);
 
 
 
-    tabAll.onclick = (e) => {
+    function handleMealSearchTabClick(e, tabKey) {
         e.stopPropagation();
-    };
 
-    tabProducts.onclick = (e) => {
-        e.stopPropagation();
-        if (state.mealSearchTab !== 'products') return;
-        if (activeTabSortOwner === tabProducts) closeTabSortDropdown();
-        else openTabSortDropdown('products');
-    };
+        if (state.mealSearchTab !== tabKey) {
+            goToTab(tabKey);
+            return;
+        }
 
-    tabRecipes.onclick = (e) => {
-        e.stopPropagation();
-        if (state.mealSearchTab !== 'recipes') return;
-        if (activeTabSortOwner === tabRecipes) closeTabSortDropdown();
-        else openTabSortDropdown('recipes');
-    };
+        if (tabKey === 'products') {
+            if (activeTabSortOwner === tabProducts) closeTabSortDropdown();
+            else openTabSortDropdown('products');
+            return;
+        }
 
-    tabBase.onclick = (e) => {
-        e.stopPropagation();
-        if (state.mealSearchTab !== 'base') return;
-        if (activeTabSortOwner === tabBase) closeTabSortDropdown();
-        else openMealSearchBaseSourceDropdown();
-    };
+        if (tabKey === 'recipes') {
+            if (activeTabSortOwner === tabRecipes) closeTabSortDropdown();
+            else openTabSortDropdown('recipes');
+            return;
+        }
+
+        if (tabKey === 'base') {
+            if (activeTabSortOwner === tabBase) closeTabSortDropdown();
+            else openMealSearchBaseSourceDropdown();
+        }
+    }
+
+    tabAll.onclick = (e) => handleMealSearchTabClick(e, 'all');
+    tabProducts.onclick = (e) => handleMealSearchTabClick(e, 'products');
+    tabRecipes.onclick = (e) => handleMealSearchTabClick(e, 'recipes');
+    tabBase.onclick = (e) => handleMealSearchTabClick(e, 'base');
 
     const tabsSpacerLeft = createElement('div', 'meal-search-tabs-spacer');
     const tabsSpacerRight = createElement('div', 'meal-search-tabs-spacer');
@@ -9458,52 +11316,66 @@ topRow.append(titleWrap);
     wireMealSearchListScroll(listRecipes, 'recipes');
     wireMealSearchListScroll(listBase, 'base');
 
-    function syncMealSearchBottomNavActionForTab(tab) {
-        if (tab === 'all') {
-            updateMealSearchBottomNavAction({
+    function buildMealSearchBottomNavConfig(tab) {
+        const currentTab = tab || state.mealSearchTab || 'all';
+
+        if (currentTab === 'all') {
+            return {
                 visible: true,
-                text: 'Быстрое добавление',
-                onClick: () => {
-                    state.mealView = 'quickAdd';
-                    renderMealPage();
+                onBack: handleMealSearchBack,
+                secondaryActionHtml: getMealCameraIconMarkup(),
+                secondaryActionLabel: 'Сделать фото',
+                secondaryActionVisible: true,
+                secondaryActionIcon: true,
+                onSecondaryAction: () => openMealPhotoCaptureFlow(state.currentMealId),
+                actionHtml: getMealQuickAddIconMarkup(),
+                actionLabel: 'Быстрое добавление',
+                actionIcon: true,
+                onAction: () => {
+                    openQuickAddForm('search');
                 }
-            });
-            return;
+            };
         }
 
-        if (tab === 'base') {
-            updateMealSearchBottomNavAction({ visible: false, text: '', onClick: null });
-            return;
-        }
-
-        if (tab === 'products') {
-            updateMealSearchBottomNavAction({
+        if (currentTab === 'base') {
+            return {
                 visible: true,
-                text: 'Новый продукт',
-                onClick: () => {
+                onBack: handleMealSearchBack,
+                actionVisible: false
+            };
+        }
+
+        if (currentTab === 'products') {
+            return {
+                visible: true,
+                onBack: handleMealSearchBack,
+                actionText: 'Добавить продукт',
+                onAction: () => {
                     state.mealSearchReturnTab = state.mealSearchTab || 'products';
                     state.createFoodBackTarget = 'search';
                     state.mealView = 'create';
                     renderMealPage();
                 }
-            });
-            return;
+            };
         }
 
-        if (tab === 'recipes') {
-            updateMealSearchBottomNavAction({
-                visible: true,
-                text: 'Новый рецепт',
-                onClick: () => {
-                    saveMealPageScroll();
-                    mealScrollRestorePending = true;
-                    state.mealSearchReturnTab = state.mealSearchTab || 'recipes';
-                    state.recipeDraft = createEmptyRecipeDraft();
-                    state.mealView = 'recipe';
-                    renderMealPage();
-                }
-            });
-        }
+        return {
+            visible: true,
+            onBack: handleMealSearchBack,
+            actionText: 'Добавить рецепт',
+            onAction: () => {
+                saveMealPageScroll();
+                mealScrollRestorePending = true;
+                state.mealSearchReturnTab = state.mealSearchTab || 'recipes';
+                state.recipeDraft = createEmptyRecipeDraft();
+                state.mealView = 'recipe';
+                renderMealPage();
+            }
+        };
+    }
+
+    function syncMealSearchBottomNavActionForTab(tab) {
+        setMealBottomNavOverlayMode(buildMealSearchBottomNavConfig(tab));
     }
 
     function renderActionsForTab(tab) {
@@ -9599,7 +11471,7 @@ topRow.append(titleWrap);
         { passive: true }
     );
 
-    /** Позиция карусели — источник правды для вкладки до debounce input (иначе поиск «базы» не стартует). */
+    /** Позиция карусели — источник правды для вкладки до debounce input (иначе поиск В«базы» не стартует). */
     function syncMealSearchTabFromCarouselScroll() {
         if (state._mealSearchRestoreSkipCarouselSyncOnce) return;
         const n = mealSearchTabsOrder.length;
@@ -9626,6 +11498,8 @@ topRow.append(titleWrap);
         const qProducts = String(state.mealSearchQueryByTab?.products || '').toLowerCase().trim();
         const qRecipes = String(state.mealSearchQueryByTab?.recipes || '').toLowerCase().trim();
         const qBase = String(state.mealSearchQueryByTab?.base || '').toLowerCase().trim();
+        const hasProductsTokenSearch = getMealSearchPrimaryToken(qProducts).length >= 2;
+        const hasRecipesTokenSearch = getMealSearchPrimaryToken(qRecipes).length >= 2;
 
         renderActionsForTab(state.mealSearchTab);
 
@@ -9647,7 +11521,12 @@ topRow.append(titleWrap);
         if (requestId !== loadRequestId) return;
         renderMixedFoodAndRecipes(listAll, historyPreview?.foods || [], historyPreview?.recipes || [], loadAndRender);
 
-        // Продукты / рецепты: постранично по 20 (по сортировке) + prefix-поиск через nameLower/titleLower.
+        if (hasProductsTokenSearch || hasRecipesTokenSearch) {
+            await mealSearchIndexReadyPromise;
+            if (requestId !== loadRequestId) return;
+        }
+
+        // Продукты / рецепты: постранично по сортировке + поиск по searchTokens любого слова.
         const sortProducts = state.mealSearchSortByTab?.products || 'new';
         const sortRecipes = state.mealSearchSortByTab?.recipes || 'new';
 
@@ -9850,7 +11729,7 @@ topRow.append(titleWrap);
         const docs = snap.docs || [];
         if (!docs.length) {
             if (!append) {
-                listBase.innerHTML = `<div class="meal-search-empty">Ничего не найдено в общем каталоге. Сюда попадают только продукты, сохранённые в вашу библиотеку (не FatSecret). Если записей ещё нет — добавьте свой продукт во вкладке «продукты».</div>`;
+                listBase.innerHTML = `<div class="meal-search-empty">Ничего не найдено в общем каталоге. Сюда попадают только продукты, сохранённые в вашу библиотеку (не FatSecret). Если записей ещё нет — добавьте свой продукт во вкладке В«продукты».</div>`;
             }
             basePager.exhausted = true;
             return;
@@ -9888,7 +11767,7 @@ topRow.append(titleWrap);
             const _gM = calcFoodMacrosByAmount(pseudoFood, _gAmt);
 
             info.innerHTML = `
-                <div class="meal-search-item-name">${escapeHtml(pseudoFood.name)}</div>
+                ${buildMealSearchFoodNameMarkup(pseudoFood.name, true)}
                 ${pseudoFood.description ? `<div class="meal-search-item-desc">${escapeHtml(pseudoFood.description)}</div>` : ''}
                 <div class="meal-search-item-macros"><span class="meal-search-item-weight">${_gAmt}${_gUnit}</span>Б ${formatMacro(_gM.protein, 1)} · Ж ${formatMacro(_gM.fat, 1)} · У ${formatMacro(_gM.carbs, 1)} · ${Math.round(_gM.calories)} ккал</div>
             `;
@@ -9918,20 +11797,7 @@ topRow.append(titleWrap);
                         return;
                     }
                     const d = snapRow.data() || {};
-                    const payload = {
-                        name: String(d.name || 'Продукт').trim(),
-                        description: String(d.description || '').trim(),
-                        baseAmount: Number(d.baseAmount || 100),
-                        baseUnit: String(d.baseUnit || 'г'),
-                        protein: Number(d.protein || 0),
-                        fat: Number(d.fat || 0),
-                        carbs: Number(d.carbs || 0),
-                        calories: Number(d.calories || 0),
-                        defaultAmount: Number(d.defaultAmount ?? d.baseAmount ?? 100),
-                        source: 'globalCatalogImport',
-                        globalCatalogSourceId: catalogId
-                    };
-                    const foodId = await addFood(payload, { skipGlobalMirror: true });
+                    const foodId = await ensureGlobalCatalogFoodSaved(d, catalogId);
                     if (!foodId) return;
                     await getFoodsMap(true);
                     await addFoodToMeal(foodId);
@@ -10284,6 +12150,9 @@ topRow.append(titleWrap);
 
     body.append(carousel);
     screen.append(topRow, controlsStrip, body);
+    attachMealOverlayBottomNavSync(screen, () => {
+        setMealBottomNavOverlayMode(buildMealSearchBottomNavConfig(state.mealSearchTab || 'all'));
+    });
     pushMealOverlay(screen, { isSearch: true });
 
     scheduleMealSearchCarouselFrame();
@@ -10308,52 +12177,28 @@ async function renderRecipeFoodSearch() {
         state.recipeFoodSearchQuery = '';
     }
 
-    const screen = createElement('div', 'meal-search-screen recipe-food-search-screen');
+    const screen = createElement('div', 'meal-search-screen recipe-food-search-screen meal-search-screen--fill');
     const sticky = createElement('div', 'meal-search-sticky');
     const body = createElement('div', 'meal-search-body');
 
-    // ===== Верхняя строка
-    const topRow = createElement('div', 'meal-search-topbar');
+    const handleBack = () => {
+        state.recipeIngredientEditIndex = null;
+        state.mealView = state.createRecipeBackTarget === 'editRecipe' ? 'editRecipe' : 'recipe';
 
-    const backBtn = createElement('button', 'meal-search-back-btn');
-    backBtn.type = 'button';
-    backBtn.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
-            <path fill="currentColor" d="M10.733 19.79a.75.75 0 0 1-1.056-.074l-6-7a.75.75 0 0 1 0-.977l6-7a.75.75 0 1 1 1.14.977L5.255 12l5.562 6.487a.75.75 0 0 1-.074 1.056"/>
-            <path fill="currentColor" d="M4.75 12a.75.75 0 0 1 .75-.75h14a.75.75 0 0 1 0 1.5h-14a.75.75 0 0 1-.75-.75"/>
-        </svg>
-    `;
-
-    backBtn.onclick = () => {
-        if (state.createRecipeBackTarget === 'editRecipe') {
-            state.mealView = 'editRecipe';
-            renderMealPage();
+        if (hasUnderlyingMealSearch()) {
+            popMealOverlay();
             return;
         }
 
-        state.mealView = 'recipe';
         renderMealPage();
     };
 
-    const title = createElement('div', 'meal-search-title', 'Добавить ингредиент');
+    const topRow = createElement('div', 'meal-search-topbar meal-search-topbar--bottom-nav-mode recipe-food-search-topbar');
+    const title = createElement('h3', 'create-food-sticky-h3 recipe-food-search-title', 'Продукты для рецепта');
+    topRow.append(title);
 
-    const addProductBtn = createElement('button', 'meal-search-back-btn');
-    addProductBtn.type = 'button';
-    addProductBtn.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 14 14">
-            <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5" d="M7 1v12M1 7h12"/>
-        </svg>
-    `;
-    addProductBtn.onclick = () => {
-        state.createFoodBackTarget = 'recipeFoodSearch';
-        state.mealView = 'create';
-        renderMealPage();
-    };
-
-    topRow.append(backBtn, title, addProductBtn);
-
-    // ===== Поиск
-    const searchWrap = createElement('div', 'meal-search-input-wrap');
+    const searchControls = createElement('div', 'recipe-food-search-controls');
+    const searchWrap = createElement('div', 'meal-search-box recipe-food-search-input-wrap');
 
     const searchInput = createElement('input', 'meal-search-input');
     searchInput.type = 'text';
@@ -10362,7 +12207,7 @@ async function renderRecipeFoodSearch() {
     searchInput.autocomplete = 'off';
     searchInput.spellcheck = false;
 
-    const searchIcon = createElement('div', 'meal-search-input-icon');
+    const searchIcon = createElement('div', 'meal-search-icon recipe-food-search-input-icon');
     searchIcon.innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24">
             <path fill="currentColor" d="m21.53 20.47l-4.694-4.694a8 8 0 1 0-1.06 1.06l4.694 4.694a.75.75 0 1 0 1.06-1.06M4.5 10.5a6 6 0 1 1 12 0a6 6 0 0 1-12 0"/>
@@ -10376,6 +12221,84 @@ async function renderRecipeFoodSearch() {
             <path fill="currentColor" d="M6.225 4.811a1 1 0 0 0-1.414 1.414L10.586 12l-5.775 5.775a1 1 0 1 0 1.414 1.414L12 13.414l5.775 5.775a1 1 0 0 0 1.414-1.414L13.414 12l5.775-5.775a1 1 0 0 0-1.414-1.414L12 10.586z"/>
         </svg>
     `;
+
+    const sortBtn = createElement('button', 'recipe-food-search-sort-btn');
+    sortBtn.type = 'button';
+    sortBtn.setAttribute('aria-label', 'Сортировка');
+    sortBtn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="21" height="21" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 7h10m-6 5h12m-9 5h6"/>
+        </svg>
+    `;
+
+    const sortBackdrop = createElement('button', 'meal-search-tab-sort-backdrop');
+    sortBackdrop.type = 'button';
+
+    let activeSortDropdown = null;
+
+    function closeSortDropdown() {
+        activeSortDropdown?.remove();
+        activeSortDropdown = null;
+        sortBtn.classList.remove('open');
+        sortBackdrop.remove();
+    }
+
+    function positionSortDropdown(dropdown) {
+        const pad = 12;
+        const rect = sortBtn.getBoundingClientRect();
+        dropdown.style.position = 'fixed';
+        dropdown.style.top = `${rect.bottom + 8}px`;
+        dropdown.style.zIndex = '90';
+        screen.append(dropdown);
+        void dropdown.offsetWidth;
+
+        const vw = window.innerWidth || document.documentElement.clientWidth || 320;
+        const menuW = dropdown.getBoundingClientRect().width || dropdown.offsetWidth || 220;
+        const halfW = menuW / 2;
+        let centerX = rect.left + rect.width / 2;
+        centerX = Math.min(vw - pad - halfW, Math.max(pad + halfW, centerX));
+        dropdown.style.left = `${Math.round(centerX)}px`;
+        dropdown.style.transform = 'translateX(-50%)';
+    }
+
+    function buildSortDropdown() {
+        const dropdown = createElement('div', 'meal-search-tab-sort-menu');
+        const currentSort = getMealSearchSortForTab('products');
+
+        getMealSearchSortOptionsByTab('products').forEach(option => {
+            const item = createElement(
+                'button',
+                `meal-search-tab-sort-item${option.id === currentSort ? ' active' : ''}`,
+                option.label
+            );
+            item.type = 'button';
+            item.onclick = async (e) => {
+                e.stopPropagation();
+                setMealSearchCurrentSort(option.id, 'products');
+                closeSortDropdown();
+                await loadAndRenderFoods();
+            };
+            dropdown.append(item);
+        });
+
+        return dropdown;
+    }
+
+    sortBtn.onclick = (e) => {
+        e.stopPropagation();
+        if (activeSortDropdown) {
+            closeSortDropdown();
+            return;
+        }
+
+        const dropdown = buildSortDropdown();
+        activeSortDropdown = dropdown;
+        sortBtn.classList.add('open');
+        positionSortDropdown(dropdown);
+        screen.append(sortBackdrop);
+    };
+
+    sortBackdrop.onclick = closeSortDropdown;
 
     function updateRecipeSearchClearBtn() {
         const hasValue = String(searchInput.value || '').trim().length > 0;
@@ -10391,20 +12314,22 @@ async function renderRecipeFoodSearch() {
     };
 
     searchWrap.append(searchIcon, searchInput, clearBtn);
+    searchControls.append(searchWrap, sortBtn);
     updateRecipeSearchClearBtn();
 
-    // ===== Список
-    const list = createElement('div', 'food-list meal-search-list');
+    const list = createElement('div', 'food-list meal-search-list recipe-food-search-list');
 
     async function loadAndRenderFoods() {
         const query = (state.recipeFoodSearchQuery || '').trim();
-        const foods = await getFoods(query);
+        const foods = sortFoodsForMealSearch(await getFoods(query), {
+            tab: 'products',
+            sort: getMealSearchSortForTab('products')
+        });
 
         list.innerHTML = '';
 
         if (!foods.length) {
-            const empty = createElement('div', 'meal-search-empty', 'Ничего не найдено');
-            list.append(empty);
+            list.append(createElement('div', 'meal-search-empty', 'Ничего не найдено'));
             return;
         }
 
@@ -10422,14 +12347,22 @@ async function renderRecipeFoodSearch() {
         }, 180);
     };
 
-    sticky.append(topRow, searchWrap);
+    sticky.append(topRow, searchControls);
     body.append(list);
     screen.append(sticky, body);
 
-    openMealOverlay(screen);
+    attachMealOverlayBottomNavSync(screen, () => {
+        setMealBottomNavOverlayMode({
+            visible: true,
+            onBack: handleBack,
+            actionVisible: false,
+            secondaryActionVisible: false
+        });
+    });
+
+    pushMealOverlay(screen, { isSearch: true });
     await loadAndRenderFoods();
 }
-
 async function renderRecipeFoodPreview() {
     ensureMealShell();
     setMealBaseTopBarVisible(false);
@@ -10439,7 +12372,6 @@ async function renderRecipeFoodPreview() {
 
     if (!food) {
         const container = createElement('div', 'create-food');
-        const topBarCreateFood = createElement('div', 'topBar-create-food');
         const backBtn = createElement('button', 'back-btn');
         backBtn.innerHTML = `
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
@@ -10449,28 +12381,56 @@ async function renderRecipeFoodPreview() {
         `;
 
         backBtn.onclick = () => {
+            state.mealView = state.recipeFoodPreviewBackTarget === 'recipeForm'
+                ? (state.createRecipeBackTarget === 'editRecipe' ? 'editRecipe' : 'recipe')
+                : 'recipeFoodSearch';
             if (hasUnderlyingMealSearch()) {
                 popMealOverlay();
                 return;
             }
-            state.mealView = 'recipeFoodSearch';
             renderMealPage();
         };
 
-        topBarCreateFood.append(backBtn);
         container.append(
-            topBarCreateFood,
             createElement('h3', null, 'Продукт не найден')
         );
+
+        attachMealOverlayBottomNavSync(container, () => {
+            setMealBottomNavOverlayMode({
+                visible: true,
+                onBack: () => backBtn.onclick?.(),
+                actionVisible: false,
+                secondaryActionVisible: false
+            });
+        });
 
         pushMealOverlay(container);
         return;
     }
 
-    let currentAmount = Number(food.defaultAmount || food.baseAmount || 100);
+    const draft = getRecipeDraft();
+    const editIndex = Number.isInteger(state.recipeIngredientEditIndex)
+        ? state.recipeIngredientEditIndex
+        : -1;
+    const editingIngredient = editIndex >= 0 && Array.isArray(draft.ingredients)
+        ? draft.ingredients[editIndex]
+        : null;
+    const foodId = String(state.recipeSelectedFoodId || '').trim();
+    const foodWithId = { id: foodId, ...food };
+    let currentAmount = Number(
+        editingIngredient?.selectedAmount ||
+        parseFloat(editingIngredient?.amount) ||
+        food.defaultAmount ||
+        food.baseAmount ||
+        100
+    );
+    const getPreviewReturnView = () => (
+        state.recipeFoodPreviewBackTarget === 'recipeForm'
+            ? (state.createRecipeBackTarget === 'editRecipe' ? 'editRecipe' : 'recipe')
+            : 'recipeFoodSearch'
+    );
 
     const container = createElement('div', 'create-food');
-    const topBarCreateFood = createElement('div', 'topBar-create-food');
 
     const backBtn = createElement('button', 'back-btn');
     backBtn.innerHTML = `
@@ -10481,27 +12441,30 @@ async function renderRecipeFoodPreview() {
     `;
 
     backBtn.onclick = () => {
+        state.recipeIngredientEditIndex = null;
+        state.mealView = getPreviewReturnView();
         if (hasUnderlyingMealSearch()) {
             popMealOverlay();
             return;
         }
-        state.mealView = 'recipeFoodSearch';
         renderMealPage();
     };
+
+    const isRecipeSearchPreview = getPreviewReturnView() === 'recipeFoodSearch';
+    const topBarCreateFood = isRecipeSearchPreview
+        ? createElement('div', 'topBar-create-food recipe-food-preview-topbar')
+        : null;
 
     const title = createElement('h3', 'create-food-sticky-h3', food.name || 'Продукт');
 
     const stickyHeader = createElement('div', 'create-food-sticky-header');
-    stickyHeader.append(topBarCreateFood, title);
+    stickyHeader.append(...(topBarCreateFood ? [topBarCreateFood] : []), title);
 
     const titleDesc = food.description?.trim()
         ? createElement('div', 'food-title-description', food.description)
         : null;
 
     const topBlockCreateFood = createElement('div', 'topBlock-create-food');
-    const inlineSaveBtn = createElement('button', 'food-inline-save-btn');
-    inlineSaveBtn.type = 'button';
-    inlineSaveBtn.textContent = 'Сохранить';
     const amountInput = createElement('input', 'input');
     amountInput.type = 'number';
     amountInput.placeholder = 'Порция';
@@ -10511,7 +12474,6 @@ async function renderRecipeFoodPreview() {
     unitInput.value = food.baseUnit || 'г';
     unitInput.disabled = true;
 
-    const BlocksaveBtn = createElement('div', 'block-save-btn active');
     const saveBtn = createElement('button', 'food-add-btn meal-search-add-btn');
     saveBtn.type = 'button';
     saveBtn.innerHTML = `
@@ -10522,29 +12484,6 @@ async function renderRecipeFoodPreview() {
     `;
 
     const currentValuesWrap = createElement('div', 'food-current-card');
-    function addCurrentFoodToRecipeDraft(selectedAmount) {
-        const scaled = getScaledFoodValues(food, selectedAmount);
-        const draft = getRecipeDraft();
-
-        if (!Array.isArray(draft.ingredients)) {
-            draft.ingredients = [];
-        }
-
-        draft.ingredients.push({
-            id: crypto.randomUUID(),
-            foodId: state.recipeSelectedFoodId,
-            name: food.name || '',
-            description: food.description || '',
-            amount: `${selectedAmount} ${food.baseUnit || 'г'}`,
-            baseAmount: Number(food.baseAmount || 100) || 100,
-            baseUnit: food.baseUnit || 'г',
-            selectedAmount,
-            protein: Number(scaled.protein || 0),
-            fat: Number(scaled.fat || 0),
-            carbs: Number(scaled.carbs || 0),
-            calories: Number(scaled.calories || 0)
-        });
-    }
     function renderCurrentValuesBlock() {
         const currentValues = getScaledFoodValues(
             food,
@@ -10636,18 +12575,15 @@ async function renderRecipeFoodPreview() {
         try {
             saveBtn.disabled = true;
 
-            await updateFoodDefaultAmount(state.recipeSelectedFoodId, newAmount);
+            addFoodToRecipeDraft(foodWithId, newAmount, editIndex);
+            state.recipeIngredientEditIndex = null;
+            state.mealView = getPreviewReturnView();
 
-            food.defaultAmount = newAmount;
-
-            addCurrentFoodToRecipeDraft(newAmount);
-
-            showToast('Ингредиент добавлен в рецепт');
+            showToast(editIndex >= 0 ? 'Ингредиент обновлен' : 'Ингредиент добавлен в рецепт');
 
             if (hasUnderlyingMealSearch()) {
                 popMealOverlay();
             } else {
-                state.mealView = 'recipeFoodSearch';
                 renderMealPage();
             }
         } catch (error) {
@@ -10655,32 +12591,6 @@ async function renderRecipeFoodPreview() {
             showToast('Ошибка при добавлении');
         } finally {
             saveBtn.disabled = false;
-        }
-    };
-
-    inlineSaveBtn.onclick = async () => {
-        const newAmount = Number(amountInput.value || 0);
-
-        if (!newAmount || newAmount <= 0) {
-            showToast('Введите корректное количество');
-            return;
-        }
-
-        try {
-            inlineSaveBtn.disabled = true;
-
-            await updateFoodDefaultAmount(state.recipeSelectedFoodId, newAmount);
-
-            food.defaultAmount = newAmount;
-            currentAmount = newAmount;
-
-            showToast('Порция сохранена');
-            renderCurrentValuesBlock();
-        } catch (error) {
-            console.error(error);
-            showToast('Ошибка при сохранении');
-        } finally {
-            inlineSaveBtn.disabled = false;
         }
     };
 
@@ -10750,12 +12660,9 @@ async function renderRecipeFoodPreview() {
         </svg>
     `;
 
-    BlocksaveBtn.append(saveBtn);
-    topBarCreateFood.append(backBtn, BlocksaveBtn);
-
     amountRow.append(plusMinusIcon, amountInput);
     unitRow.append(listIcon, unitInput);
-    topBlockCreateFood.append(amountRow, unitRow, inlineSaveBtn);
+    topBlockCreateFood.append(amountRow, unitRow);
 
     container.append(
         stickyHeader,
@@ -10765,26 +12672,15 @@ async function renderRecipeFoodPreview() {
         passportBlock
     );
 
-    const editBtn = createElement('button', 'edit-meal-search-main-action');
-    editBtn.innerHTML = `
-        <span class="btn-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24">
-                <path fill="currentColor" d="M3.548 20.938h16.9a.5.5 0 0 0 0-1h-16.9a.5.5 0 0 0 0 1M9.71 17.18a2.587 2.587 0 0 0 1.12-.65l9.54-9.54a1.75 1.75 0 0 0 0-2.47l-.94-.93a1.788 1.788 0 0 0-2.47 0l-9.54 9.53a2.473 2.473 0 0 0-.64 1.12L6.04 17a.737.737 0 0 0 .19.72a.767.767 0 0 0 .53.22Zm.41-1.36a1.468 1.468 0 0 1-.67.39l-.97.26l-1-1l.26-.97a1.521 1.521 0 0 1 .39-.67l.38-.37l1.99 1.99Zm1.09-1.08l-1.99-1.99l6.73-6.73l1.99 1.99Zm8.45-8.45L18.65 7.3l-1.99-1.99l1.01-1.02a.748.748 0 0 1 1.06 0l.93.94a.754.754 0 0 1 0 1.06"></path>
-            </svg>
-        </span>
-        <span class="btn-text">Изменить пищевую ценность</span>
-    `;
-
-    editBtn.onclick = () => {
-        state.currentFoodId = state.recipeSelectedFoodId;
-        state.editFoodBackTarget = 'recipeFoodPreview';
-        state.mealView = 'editFood';
-        renderEditFood();
-    };
-
-    const actionsBlock = createElement('div', 'food-details-actions-block');
-    actionsBlock.append(editBtn);
-    container.append(actionsBlock);
+    attachMealOverlayBottomNavSync(container, () => {
+        setMealBottomNavOverlayMode({
+            visible: true,
+            onBack: () => backBtn.onclick?.(),
+            actionText: 'Добавить в рецепт',
+            onAction: () => saveBtn.onclick?.(),
+            actionDisabled: false
+        });
+    });
 
     pushMealOverlay(container);
 
@@ -10797,13 +12693,13 @@ async function renderRecipeFoodPreview() {
 }
 
 // =================================================================
-// ⚡ Быстрое добавление (заглушка)
+// ⚡ Быстрое добавление
 // =================================================================
 function renderQuickAddStub() {
     ensureMealShell();
     setMealBaseTopBarVisible(false);
 
-    const container = createElement('div', 'create-food create-food-form-page meal-quick-add-stub-page');
+    const container = createElement('div', 'create-food create-food-form-page meal-quick-add-page');
 
     const topBar = createElement('div', 'create-food-topbar');
 
@@ -10815,6 +12711,14 @@ function renderQuickAddStub() {
         </svg>
     `;
     backBtn.onclick = () => {
+        const target = state.quickAddBackTarget || (hasUnderlyingMealSearch() ? 'search' : 'main');
+
+        if (target === 'main') {
+            state.quickAddBackTarget = null;
+            closeMealOverlayAndShowMealMain();
+            return;
+        }
+
         if (state.mealSearchReturnTab) {
             state.mealSearchTab = state.mealSearchReturnTab;
             state._mealSearchRestoreNoIndicatorAnim = true;
@@ -10825,26 +12729,166 @@ function renderQuickAddStub() {
             return;
         }
         state.mealView = 'search';
-        renderMealPage();
+        renderMealSearch();
     };
-
-    topBar.append(backBtn);
 
     const pageTitle = createElement('h3', 'create-food-sticky-h3', 'Быстрое добавление');
 
     const stickyHeader = createElement('div', 'create-food-sticky-header');
     stickyHeader.append(topBar, pageTitle);
 
-    const stubCard = createElement('div', 'create-food-form-card meal-quick-add-stub-card');
-    const stubText = createElement(
-        'p',
-        'meal-quick-add-stub-text',
-        'Страница в разработке. Позже здесь будет быстрый ввод приёма пищи.'
-    );
+    const formCard = createElement('div', 'create-food-form-card meal-quick-add-form-card');
 
-    stubCard.append(stubText);
-    container.append(stickyHeader, stubCard);
+    function createFormRow(labelText, controlEl, required = false, extraClass = '') {
+        const row = createElement('div', `create-food-row ${extraClass}`.trim());
+        const labelWrap = createElement('div', 'create-food-row-label-wrap');
+        const left = createElement('div', 'create-food-row-label-left');
+        const label = createElement('div', 'create-food-row-label', labelText);
+        const hint = createElement(
+            'div',
+            'create-food-row-hint',
+            required ? 'обязательно' : 'необязательно'
+        );
+
+        left.append(label, hint);
+        labelWrap.append(left);
+
+        const controlWrap = createElement('div', 'create-food-row-control');
+        controlWrap.append(controlEl);
+
+        row.append(labelWrap, controlWrap);
+        return row;
+    }
+
+    const name = createElement('input', 'create-food-input');
+    name.placeholder = 'Введите название';
+
+    const portion = createElement('input', 'create-food-input');
+    portion.type = 'number';
+    portion.inputMode = 'decimal';
+    portion.placeholder = 'Например 250';
+
+    const protein = createElement('input', 'create-food-input');
+    protein.type = 'number';
+    protein.inputMode = 'decimal';
+    protein.placeholder = '0';
+
+    const fat = createElement('input', 'create-food-input');
+    fat.type = 'number';
+    fat.inputMode = 'decimal';
+    fat.placeholder = '0';
+
+    const carbs = createElement('input', 'create-food-input');
+    carbs.type = 'number';
+    carbs.inputMode = 'decimal';
+    carbs.placeholder = '0';
+
+    const calories = createElement('input', 'create-food-input');
+    calories.type = 'number';
+    calories.inputMode = 'decimal';
+    calories.placeholder = '0';
+
+    const rows = [
+        createFormRow('Название', name, true),
+        createFormRow('Размер порции', portion, false),
+        createFormRow('Белки', protein, false),
+        createFormRow('Жиры', fat, false),
+        createFormRow('Углеводы', carbs, false),
+        createFormRow('Калории', calories, false)
+    ];
+
+    rows.forEach((row) => formCard.append(row));
+
+    const saveBtn = createElement('button', 'save-btn create-food-submit-btn', 'Сохранить');
+    saveBtn.disabled = true;
+
+    function syncQuickAddBottomNav() {
+        setMealBottomNavOverlayMode({
+            visible: true,
+            onBack: () => backBtn.onclick?.(),
+            actionText: 'Сохранить',
+            onAction: () => saveBtn.onclick?.(),
+            actionDisabled: saveBtn.disabled
+        });
+    }
+
+    function validateForm() {
+        const canSave = String(name.value || '').trim().length > 0;
+        saveBtn.disabled = !canSave;
+        saveBtn.classList.toggle('active', canSave);
+        syncQuickAddBottomNav();
+    }
+
+    [name, portion, protein, fat, carbs, calories].forEach((el) => {
+        el.addEventListener('input', validateForm);
+        el.addEventListener('change', validateForm);
+    });
+
+    saveBtn.onclick = async () => {
+        if (saveBtn.disabled) return;
+
+        try {
+            saveBtn.disabled = true;
+
+            const saved = await addQuickFoodToCurrentMeal({
+                name: name.value,
+                portionSize: portion.value,
+                protein: protein.value,
+                fat: fat.value,
+                carbs: carbs.value,
+                calories: calories.value
+            });
+
+            if (!saved) {
+                showToast('Не удалось сохранить продукт в прием');
+                return;
+            }
+
+            showToast('Продукт добавлен в прием');
+
+            const target = state.quickAddBackTarget || (hasUnderlyingMealSearch() ? 'search' : 'main');
+
+            if (target === 'main') {
+                state.quickAddBackTarget = null;
+                closeMealOverlayAndShowMealMain();
+                return;
+            }
+
+            if (state.mealSearchReturnTab) {
+                state.mealSearchTab = state.mealSearchReturnTab;
+                state._mealSearchRestoreNoIndicatorAnim = true;
+                state._mealSearchRestoreSkipCarouselSyncOnce = true;
+            }
+
+            if (hasUnderlyingMealSearch()) {
+                popMealOverlay();
+            } else {
+                state.mealView = 'search';
+                renderMealSearch();
+            }
+        } catch (error) {
+            console.error(error);
+            showToast('Не удалось сохранить продукт в прием');
+        } finally {
+            if (container.isConnected) {
+                saveBtn.disabled = false;
+                validateForm();
+            }
+        }
+    };
+
+    attachMealOverlayBottomNavSync(container, syncQuickAddBottomNav);
+    container.append(stickyHeader, formCard);
     pushMealOverlay(container);
+
+    requestAnimationFrame(() => {
+        setupCreateFoodStickyTitleBorder({
+            titleEl: pageTitle,
+            watchEl: formCard
+        });
+    });
+
+    validateForm();
 }
 
 // =================================================================
@@ -10898,8 +12942,6 @@ function renderCreateFood() {
 
     const pageTitle = createElement('h3', 'create-food-sticky-h3', 'Новый продукт');
 
-    topBar.append(backBtn);
-
     const stickyHeader = createElement('div', 'create-food-sticky-header');
     stickyHeader.append(topBar, pageTitle);
 
@@ -10945,6 +12987,9 @@ function renderCreateFood() {
     description.rows = 3;
 
     let selectedUnit = 'г';
+    let selectedPortionMeasureUnit = 'г';
+    let customPortionValue = '';
+    let isPortionModeActive = false;
 
     const unitWrap = createElement('div', 'create-food-picker-wrap');
     unitWrap.style.position = 'relative';
@@ -10966,7 +13011,7 @@ function renderCreateFood() {
     const unitDropdown = createElement('div', 'create-food-unit-dropdown');
     unitDropdown.style.display = 'none';
 
-    ['г', 'мл', 'порция'].forEach(unit => {
+    FOOD_NUTRITION_BASIS_OPTIONS.forEach(unit => {
         const option = createElement('button', 'create-food-unit-dropdown-item', unit);
         option.type = 'button';
 
@@ -10976,6 +13021,7 @@ function renderCreateFood() {
             unitValue.textContent = unit;
             unitDropdown.style.display = 'none';
             unitWrap.classList.remove('open');
+            syncPortionInputState();
             validateForm();
         };
 
@@ -10989,9 +13035,57 @@ function renderCreateFood() {
         unitWrap.classList.toggle('open', !isOpen);
     };
 
+    const portionUnitWrap = createElement('div', 'create-food-picker-wrap create-food-portion-unit-wrap');
+    portionUnitWrap.style.position = 'relative';
+
+    const portionUnitField = createElement('div', 'create-food-input create-food-picker-field');
+    portionUnitField.tabIndex = 0;
+
+    const portionUnitValue = createElement('span', 'create-food-picker-value', selectedPortionMeasureUnit);
+
+    const portionUnitArrow = createElement('span', 'create-food-picker-arrow');
+    portionUnitArrow.innerHTML = `
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+    `;
+
+    portionUnitField.append(portionUnitValue, portionUnitArrow);
+
+    const portionUnitDropdown = createElement('div', 'create-food-unit-dropdown');
+    portionUnitDropdown.style.display = 'none';
+
+    FOOD_PORTION_MEASURE_OPTIONS.forEach(unit => {
+        const option = createElement('button', 'create-food-unit-dropdown-item', unit);
+        option.type = 'button';
+
+        option.onclick = (e) => {
+            e.stopPropagation();
+            selectedPortionMeasureUnit = unit;
+            portionUnitValue.textContent = unit;
+            portionUnitDropdown.style.display = 'none';
+            portionUnitWrap.classList.remove('open');
+            validateForm();
+        };
+
+        portionUnitDropdown.append(option);
+    });
+
+    portionUnitField.onclick = (e) => {
+        e.stopPropagation();
+        if (selectedUnit !== 'порция') return;
+        const isOpen = portionUnitDropdown.style.display === 'block';
+        portionUnitDropdown.style.display = isOpen ? 'none' : 'block';
+        portionUnitWrap.classList.toggle('open', !isOpen);
+    };
+
+    portionUnitWrap.append(portionUnitField, portionUnitDropdown);
+
     document.addEventListener('click', () => {
         unitDropdown.style.display = 'none';
         unitWrap.classList.remove('open');
+        portionUnitDropdown.style.display = 'none';
+        portionUnitWrap.classList.remove('open');
     });
 
     unitWrap.append(unitField, unitDropdown);
@@ -10999,12 +13093,33 @@ function renderCreateFood() {
     const portion = createElement('input', 'create-food-input');
     portion.type = 'number';
     portion.inputMode = 'decimal';
-    portion.placeholder = 'Например 100';
+    portion.placeholder = '';
 
-    const defaultAmount = createElement('input', 'create-food-input');
-    defaultAmount.type = 'number';
-    defaultAmount.inputMode = 'decimal';
-    defaultAmount.placeholder = 'Например 30';
+    const portionControl = createElement('div', 'create-food-portion-control');
+    portionControl.append(portion, portionUnitWrap);
+
+    function syncPortionInputState() {
+        const isPortionMode = selectedUnit === 'порция';
+
+        if (!isPortionMode && isPortionModeActive && String(portion.value || '').trim() !== '') {
+            customPortionValue = String(portion.value).trim();
+        }
+
+        if (isPortionMode) {
+            portion.value = customPortionValue || '';
+            portion.placeholder = '';
+        } else {
+            portion.value = String(FOOD_LOCKED_PORTION_AMOUNT);
+            portion.placeholder = String(FOOD_LOCKED_PORTION_AMOUNT);
+            portionUnitDropdown.style.display = 'none';
+            portionUnitWrap.classList.remove('open');
+        }
+
+        portion.readOnly = !isPortionMode;
+        portion.classList.toggle('is-locked', !isPortionMode);
+        portionUnitWrap.style.display = isPortionMode ? '' : 'none';
+        isPortionModeActive = isPortionMode;
+    }
 
     const protein = createElement('input', 'create-food-input');
     protein.type = 'number';
@@ -11026,12 +13141,13 @@ function renderCreateFood() {
     calories.inputMode = 'decimal';
     calories.placeholder = '0';
 
+    syncPortionInputState();
+
     const rows = [
         createFormRow('Название', name, true),
         createFormRow('Описание', description, true, 'is-textarea'),
         createFormRow('Ед. изм.', unitWrap, true),
-        createFormRow('Базовый вес', portion, true),
-        createFormRow('Размер порции', defaultAmount, true),
+        createFormRow('Размер порции', portionControl, true),
         createFormRow('Белки', protein, true),
         createFormRow('Жиры', fat, true),
         createFormRow('Углеводы', carbs, true),
@@ -11040,22 +13156,31 @@ function renderCreateFood() {
 
     rows.forEach(row => formCard.append(row));
 
-    const actions = createElement('div', 'create-food-actions');
-
-    const saveBtn = createElement('button', 'save-btn create-food-submit-btn', 'Добавить');
+    const saveBtn = createElement('button', 'save-btn create-food-submit-btn', 'Сохранить продукт');
     saveBtn.disabled = true;
+
+    function syncCreateFoodBottomNav() {
+        setMealBottomNavOverlayMode({
+            visible: true,
+            onBack: () => backBtn.onclick?.(),
+            actionText: 'Сохранить продукт',
+            onAction: () => saveBtn.onclick?.(),
+            actionDisabled: saveBtn.disabled
+        });
+    }
 
     function isFilled(value) {
         return String(value ?? '').trim() !== '';
     }
 
     function validateForm() {
+        const isPortionMode = selectedUnit === 'порция';
         const allFilled =
             isFilled(name.value) &&
             isFilled(description.value) &&
             isFilled(selectedUnit) &&
             isFilled(portion.value) &&
-            isFilled(defaultAmount.value) &&
+            (!isPortionMode || isFilled(selectedPortionMeasureUnit)) &&
             isFilled(protein.value) &&
             isFilled(fat.value) &&
             isFilled(carbs.value) &&
@@ -11063,6 +13188,7 @@ function renderCreateFood() {
 
         saveBtn.disabled = !allFilled;
         saveBtn.classList.toggle('active', allFilled);
+        syncCreateFoodBottomNav();
     }
 
     [
@@ -11070,7 +13196,7 @@ function renderCreateFood() {
         description,
         unitField,
         portion,
-        defaultAmount,
+        portionUnitField,
         protein,
         fat,
         carbs,
@@ -11085,16 +13211,19 @@ function renderCreateFood() {
 
         try {
             saveBtn.disabled = true;
+            const nutritionPayload = buildFoodNutritionPayload(
+                selectedUnit,
+                portion.value,
+                selectedPortionMeasureUnit
+            );
             const foodId = await addFood({
                 name: name.value.trim(),
                 description: description.value.trim(),
-                baseUnit: selectedUnit,
-                baseAmount: Number(portion.value),
+                ...nutritionPayload,
                 protein: Number(protein.value),
                 fat: Number(fat.value),
                 carbs: Number(carbs.value),
-                calories: Number(calories.value),
-                defaultAmount: Number(defaultAmount.value)
+                calories: Number(calories.value)
             });
 
             if (!foodId) {
@@ -11111,13 +13240,11 @@ function renderCreateFood() {
                 id: foodId,
                 name: name.value.trim(),
                 description: description.value.trim(),
-                baseUnit: selectedUnit,
-                baseAmount: Number(portion.value),
+                ...nutritionPayload,
                 protein: Number(protein.value),
                 fat: Number(fat.value),
                 carbs: Number(carbs.value),
-                calories: Number(calories.value),
-                defaultAmount: Number(defaultAmount.value)
+                calories: Number(calories.value)
             };
 
             const target = state.createFoodBackTarget || 'search';
@@ -11159,9 +13286,8 @@ function renderCreateFood() {
         }
     };
 
-    actions.append(saveBtn);
-
-    container.append(stickyHeader, formCard, actions);
+    attachMealOverlayBottomNavSync(container, syncCreateFoodBottomNav);
+    container.append(stickyHeader, formCard);
     pushMealOverlay(container);
 
     requestAnimationFrame(() => {
@@ -11186,28 +13312,18 @@ function isRecipeDraftValid() {
     const draft = getRecipeDraft();
 
     const hasTitle = isRecipeFilled(draft.title);
-    const hasDescription = isRecipeFilled(draft.description);
     const hasServings = Number(draft.servings || 0) > 0;
-    const hasPrep = Number(draft.prepMinutes || 0) > 0;
-    const hasCook = Number(draft.cookMinutes || 0) > 0;
-    const hasCategory = Array.isArray(draft.categories) && draft.categories.length >= 1;
 
     const filledIngredients = (draft.ingredients || []).filter(item =>
         isRecipeFilled(item?.name) && isRecipeFilled(item?.amount)
     );
 
-    const filledSteps = (draft.steps || []).filter(step => isRecipeFilled(step));
     const hasPhoto = Array.isArray(draft.photos) && draft.photos.length >= 1;
 
     return (
         hasTitle &&
-        hasDescription &&
         hasServings &&
-        hasPrep &&
-        hasCook &&
-        hasCategory &&
         filledIngredients.length >= 3 &&
-        filledSteps.length >= 3 &&
         hasPhoto
     );
 }
@@ -11262,18 +13378,26 @@ function renderCreateRecipe() {
         }
     };
 
-    const saveBtn = createElement('button', 'save-btn create-food-submit-btn disabled', 'Сохранить');
-    saveBtn.type = 'button';
+    const saveBtn = createElement('button', 'save-btn create-food-submit-btn recipe-create-save-btn', 'Сохранить рецепт');
     saveBtn.disabled = true;
 
-    topBar.append(backBtn, saveBtn);
+    function syncCreateRecipeBottomNav() {
+        setMealBottomNavOverlayMode({
+            visible: true,
+            onBack: () => backBtn.onclick?.(),
+            actionText: 'Сохранить рецепт',
+            onAction: () => saveBtn.onclick?.(),
+            actionDisabled: saveBtn.disabled
+        });
+    }
+
 
     const pageTitle = createElement('h3', 'create-food-sticky-h3', 'Новый рецепт');
 
     const stickyHeader = createElement('div', 'create-food-sticky-header');
     stickyHeader.append(topBar, pageTitle);
 
-    const formCard = createElement('div', 'create-food-form-card');
+    const formCard = createElement('div', 'create-food-form-card create-food-form-card--new-recipe');
 
     function createFormRow(labelText, controlEl, required = true, extraClass = '', rightActionEl = null) {
         const row = createElement('div', `create-food-row ${extraClass}`.trim());
@@ -11321,40 +13445,17 @@ function renderCreateRecipe() {
     servingsInput.value = draft.servings || '';
     servingsInput.autocomplete = 'off';
 
-    const prepWrap = createElement('div', 'input-with-suffix');
-    const prepInput = createElement('input', 'create-food-input');
-    prepInput.type = 'number';
-    prepInput.inputMode = 'decimal';
-    prepInput.placeholder = '30';
-    prepInput.value = draft.prepMinutes || '';
-    prepInput.autocomplete = 'off';
-    const suffix = createElement('div', 'input-suffix', 'мин.');
-
-    prepWrap.append(prepInput, suffix);
-
-    const categoryBtn = createElement('button', 'create-food-input create-food-picker-field recipe-category-field');
-    categoryBtn.type = 'button';
-
-    const categoryValue = createElement('span', 'create-food-picker-value', getRecipeCategoryValue(draft) || 'Выбрать категорию');
-
-    const categoryArrow = createElement('span', 'create-food-picker-arrow');
-    categoryArrow.innerHTML = `
-        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-            <path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-    `;
-
-    categoryBtn.append(categoryValue, categoryArrow);
-
     const ingredientsWrap = createElement('div', 'recipe-form-ingredients-wrap');
     const ingredientsControl = createElement('div', 'recipe-ingredients-control');
 
     const addIngredientBtn = createElement('button', 'meal-search-main-action recipe-add-ingredient-btn');
     addIngredientBtn.type = 'button';
     addIngredientBtn.innerHTML = `
-                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"><title>Plus SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2" d="M12 20v-8m0 0V4m0 8h8m-8 0H4"></path></svg>
+                             добаваить
                          `;
     addIngredientBtn.onclick = () => {
+        state.recipeDraft = draft;
+        state.recipeIngredientEditIndex = null;
         state.mealView = 'recipeFoodSearch';
         renderMealPage();
     };
@@ -11363,85 +13464,6 @@ function renderCreateRecipe() {
     const ingredientsTotals = createElement('div', 'recipe-form-ingredients-totals');
     ingredientsWrap.append(ingredientsList, ingredientsTotals);
     ingredientsControl.append(ingredientsWrap);
-
-    const stepsWrap = createElement('div', 'recipe-form-steps-wrap');
-    const addStepBtnWrap = createElement('div', 'add-Step-Btn-Wrap');
-
-    const addStepBtn = createElement('button', 'meal-search-main-action recipe-add-step-btn');
-    addStepBtn.type = 'button';
-    addStepBtn.innerHTML = `
-                            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"><title>Plus SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2" d="M12 20v-8m0 0V4m0 8h8m-8 0H4"></path></svg>
-                                        `;
-
-    function ensureDraftSteps() {
-        if (!Array.isArray(draft.steps) || draft.steps.length < 3) {
-            draft.steps = ['', '', ''];
-        }
-    }
-
-    function renderSteps() {
-        ensureDraftSteps();
-        stepsWrap.innerHTML = '';
-
-        draft.steps.forEach((value, index) => {
-            const row = createElement('div', 'recipe-step-row');
-
-            const input = document.createElement('textarea');
-            input.className = 'create-food-input create-food-textarea recipe-step-input';
-            input.rows = 3;
-            input.placeholder = `Шаг ${index + 1}`;
-            input.value = value || '';
-
-            input.oninput = () => {
-                draft.steps[index] = input.value;
-                validateRecipeForm();
-            };
-
-            const head = createElement('div', 'recipe-step-head');
-            const blockRemove = createElement('div', 'block-remove');
-            const label = createElement('div', 'recipe-step-label', `Шаг ${index + 1}`);
-
-            head.append(label);
-
-            // Удалять можно только шаги после первых трех
-            if (index >= 3) {
-                const removeBtn = createElement('button', 'recipe-step-remove-btn');
-
-                removeBtn.innerHTML = ` <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
-                                    <path fill="currentColor" d="M16 1.75V3h5.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H8V1.75C8 .784 8.784 0 9.75 0h4.5C15.216 0 16 .784 16 1.75m-6.5 0V3h5V1.75a.25.25 0 0 0-.25-.25h-4.5a.25.25 0 0 0-.25.25M4.997 6.178a.75.75 0 1 0-1.493.144L4.916 20.92a1.75 1.75 0 0 0 1.742 1.58h10.684a1.75 1.75 0 0 0 1.742-1.581l1.413-14.597a.75.75 0 0 0-1.494-.144l-1.412 14.596a.25.25 0 0 1-.249.226H6.658a.25.25 0 0 1-.249-.226z"></path>
-                                    <path fill="currentColor" d="M9.206 7.501a.75.75 0 0 1 .793.705l.5 8.5A.75.75 0 1 1 9 16.794l-.5-8.5a.75.75 0 0 1 .705-.793Zm6.293.793A.75.75 0 1 0 14 8.206l-.5 8.5a.75.75 0 0 0 1.498.088l.5-8.5Z"></path>
-                                </svg> `;
-                removeBtn.type = 'button';
-                removeBtn.onclick = () => {
-                    draft.steps.splice(index, 1);
-
-                    // на всякий случай не даем уйти ниже 3
-                    if (draft.steps.length < 3) {
-                        draft.steps = ['', '', ''];
-                    }
-
-                    renderSteps();
-                    validateRecipeForm();
-                };
-
-                blockRemove.append(removeBtn);
-            }
-
-            row.append( blockRemove, head, input);
-            stepsWrap.append(row);
-        });
-
-        // максимум 7 шагов
-        addStepBtn.style.display = draft.steps.length >= 7 ? 'none' : 'inline-flex';
-    }
-
-    addStepBtn.onclick = () => {
-        ensureDraftSteps();
-        draft.steps.push('');
-        renderSteps();
-        validateRecipeForm();
-    };
-
     function renderIngredientsBlock() {
         const ingredients = Array.isArray(draft.ingredients) ? draft.ingredients : [];
         ingredientsList.innerHTML = '';
@@ -11472,10 +13494,21 @@ function renderCreateRecipe() {
             const removeBtn = createElement('button', 'recipe-ingredient-remove-btn');
             removeBtn.type = 'button';
             removeBtn.textContent = 'Удалить';
-            removeBtn.onclick = () => {
+            removeBtn.onclick = (e) => {
+                e.stopPropagation();
                 draft.ingredients.splice(index, 1);
                 renderIngredientsBlock();
                 validateRecipeForm();
+            };
+
+            row.onclick = () => {
+                if (!item.foodId) return;
+                state.recipeDraft = draft;
+                state.recipeIngredientEditIndex = index;
+                state.recipeSelectedFoodId = item.foodId;
+                state.recipeFoodPreviewBackTarget = 'recipeForm';
+                state.mealView = 'recipeFoodPreview';
+                renderMealPage();
             };
 
             row.append(left, removeBtn);
@@ -11494,17 +13527,6 @@ function renderCreateRecipe() {
         `;
     }
 
-    categoryBtn.onclick = () => {
-        openRecipeCategorySheet({
-            value: getRecipeCategoryValue(draft),
-            onSelect: (selected) => {
-                setRecipeCategoryValue(draft, selected);
-                categoryValue.textContent = selected || 'Выбрать категорию';
-                validateRecipeForm();
-            }
-        });
-    };
-
     titleInput.oninput = () => {
         draft.title = titleInput.value;
         validateRecipeForm();
@@ -11520,32 +13542,31 @@ function renderCreateRecipe() {
         validateRecipeForm();
     };
 
-    prepInput.oninput = () => {
-        draft.prepMinutes = prepInput.value;
-        validateRecipeForm();
-    };
-
     formCard.append(
         createFormRow('Название рецепта', titleInput, true),
-        createFormRow('Описание', descriptionInput, true, 'is-textarea'),
+        createFormRow('Описание', descriptionInput, false, 'is-textarea'),
         createFormRow('Кол-во порций', servingsInput, true),
-        createFormRow('Время приготовления', prepWrap, false),
-        createFormRow('Категория', categoryBtn, true),
         createFormRow(
             'Ингредиенты',
             ingredientsControl,
             true,
             'recipe-row-ingredients',
             addIngredientBtn
-        ),
-        createFormRow('Способ приготовления', stepsWrap, false, 'recipe-row-steps')
+        )
     );
-
-
-addStepBtnWrap.append(addStepBtn);
     renderIngredientsBlock();
-    renderSteps();
-    stepsWrap.after(addStepBtnWrap);
+
+    const syncRecipeDraftIngredients = () => {
+        if (state.recipeDraft && state.recipeDraft !== draft && Array.isArray(state.recipeDraft.ingredients)) {
+            draft.ingredients = state.recipeDraft.ingredients;
+        }
+        renderIngredientsBlock();
+        validateRecipeForm();
+    };
+    window.addEventListener('recipeDraftIngredientsChanged', syncRecipeDraftIngredients);
+    container._mealOverlayCleanup = () => {
+        window.removeEventListener('recipeDraftIngredientsChanged', syncRecipeDraftIngredients);
+    };
 
     function isFilled(value) {
         return String(value ?? '').trim() !== '';
@@ -11553,21 +13574,20 @@ addStepBtnWrap.append(addStepBtn);
 
     function validateRecipeForm() {
         const hasRequiredTitle = isFilled(draft.title);
-        const hasRequiredDescription = isFilled(draft.description);
         const hasRequiredServings = isFilled(draft.servings);
-        const hasCategory = isFilled(getRecipeCategoryValue(draft));
         const hasEnoughIngredients = Array.isArray(draft.ingredients) && draft.ingredients.length >= 3;
 
         const isValid =
             hasRequiredTitle &&
-            hasRequiredDescription &&
             hasRequiredServings &&
-            hasCategory &&
             hasEnoughIngredients;
 
         saveBtn.disabled = !isValid;
         saveBtn.classList.toggle('active', isValid);
         saveBtn.classList.toggle('disabled', !isValid);
+        if (mealOverlayStack[mealOverlayStack.length - 1] === container) {
+            syncCreateRecipeBottomNav();
+        }
     }
 
     saveBtn.onclick = async () => {
@@ -11582,15 +13602,10 @@ addStepBtnWrap.append(addStepBtn);
         const recipePayload = {
             title: String(draft.title || '').trim(),
             titleLower: normalizeSearchText(draft.title),
+            searchTokens: buildMealSearchTokens(draft.title),
             description: String(draft.description || '').trim(),
             servings: String(draft.servings || '').trim(),
-            prepMinutes: String(draft.prepMinutes || '').trim(),
-            cookMinutes: String(draft.cookMinutes || '').trim(),
-            categories: Array.isArray(draft.categories) ? draft.categories : [],
             ingredients: Array.isArray(draft.ingredients) ? draft.ingredients : [],
-            steps: Array.isArray(draft.steps)
-                ? draft.steps.map(step => String(step || '').trim()).filter(Boolean)
-                : [],
             createdAt: Date.now(),
             usageCount: 0,
             lastUsedAt: 0
@@ -11637,6 +13652,7 @@ addStepBtnWrap.append(addStepBtn);
         }
     };
 
+    attachMealOverlayBottomNavSync(container, syncCreateRecipeBottomNav);
     container.append(stickyHeader, formCard);
     pushMealOverlay(container);
 
@@ -11675,22 +13691,21 @@ async function renderEditRecipe() {
         ...recipeSnap.data()
     };
 
-    const draft = {
+    const savedEditDraft = state.createRecipeBackTarget === 'editRecipe' && state.recipeDraft
+        ? state.recipeDraft
+        : null;
+
+    const draft = savedEditDraft ? {
+        title: String(savedEditDraft.title || ''),
+        description: String(savedEditDraft.description || ''),
+        servings: String(savedEditDraft.servings || ''),
+        ingredients: Array.isArray(savedEditDraft.ingredients) ? savedEditDraft.ingredients.map(item => ({ ...item })) : []
+    } : {
         title: String(recipe.title || ''),
         description: String(recipe.description || ''),
         servings: String(recipe.servings || ''),
-        prepMinutes: String(recipe.prepMinutes || ''),
-        cookMinutes: String(recipe.cookMinutes || ''),
-        categories: Array.isArray(recipe.categories) ? [...recipe.categories] : [],
-        ingredients: Array.isArray(recipe.ingredients) ? recipe.ingredients.map(item => ({ ...item })) : [],
-        steps: Array.isArray(recipe.steps) && recipe.steps.length
-            ? recipe.steps.map(step => String(step || ''))
-            : ['', '', '']
+        ingredients: Array.isArray(recipe.ingredients) ? recipe.ingredients.map(item => ({ ...item })) : []
     };
-
-    while (draft.steps.length < 3) {
-        draft.steps.push('');
-    }
 
     const container = createElement('div', 'create-food create-food-form-page recipe-create-page');
 
@@ -11711,11 +13726,18 @@ async function renderEditRecipe() {
         renderMealPage();
     };
 
-    const saveBtn = createElement('button', 'save-btn create-food-submit-btn disabled', 'Сохранить изменения');
-    saveBtn.type = 'button';
+    const saveBtn = createElement('button', 'save-btn create-food-submit-btn recipe-create-save-btn', 'Сохранить рецепт');
     saveBtn.disabled = true;
 
-    topBar.append(backBtn, saveBtn);
+    function syncCreateRecipeBottomNav() {
+        setMealBottomNavOverlayMode({
+            visible: true,
+            onBack: () => backBtn.onclick?.(),
+            actionText: 'Сохранить рецепт',
+            onAction: () => saveBtn.onclick?.(),
+            actionDisabled: saveBtn.disabled
+        });
+    }
 
     const pageTitle = createElement('h3', 'create-food-sticky-h3', 'Редактировать рецепт');
 
@@ -11770,37 +13792,6 @@ async function renderEditRecipe() {
     servingsInput.value = draft.servings || '';
     servingsInput.autocomplete = 'off';
 
-    const prepWrap = createElement('div', 'input-with-suffix');
-
-    const prepInput = createElement('input', 'create-food-input');
-    prepInput.type = 'number';
-    prepInput.inputMode = 'decimal';
-    prepInput.placeholder = 'Например 30';
-    prepInput.value = draft.prepMinutes || '';
-    prepInput.autocomplete = 'off';
-
-    const prepSuffix = createElement('div', 'input-suffix', 'мин.');
-
-    prepWrap.append(prepInput, prepSuffix);
-
-    const categoryBtn = createElement('button', 'create-food-input create-food-picker-field recipe-category-field');
-    categoryBtn.type = 'button';
-
-    const categoryValue = createElement(
-        'span',
-        'create-food-picker-value',
-        getRecipeCategoryValue(draft) || 'Выбрать категорию'
-    );
-
-    const categoryArrow = createElement('span', 'create-food-picker-arrow');
-    categoryArrow.innerHTML = `
-        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-            <path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-    `;
-
-    categoryBtn.append(categoryValue, categoryArrow);
-
     const ingredientsWrap = createElement('div', 'recipe-form-ingredients-wrap');
     const ingredientsControl = createElement('div', 'recipe-ingredients-control');
 
@@ -11810,12 +13801,8 @@ async function renderEditRecipe() {
                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"><title>Plus SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2" d="M12 20v-8m0 0V4m0 8h8m-8 0H4"></path></svg>
                          `;
     addIngredientBtn.onclick = () => {
-        state.recipeDraft = {
-            ...draft,
-            categories: [...draft.categories],
-            ingredients: draft.ingredients.map(item => ({ ...item })),
-            steps: [...draft.steps]
-        };
+        state.recipeDraft = draft;
+        state.recipeIngredientEditIndex = null;
         state.createRecipeBackTarget = 'editRecipe';
         state.mealView = 'recipeFoodSearch';
         renderMealPage();
@@ -11826,25 +13813,6 @@ async function renderEditRecipe() {
 
     ingredientsWrap.append(ingredientsList, ingredientsTotals);
     ingredientsControl.append(ingredientsWrap);
-
-    const stepsWrap = createElement('div', 'recipe-form-steps-wrap');
-    const addStepBtnWrap = createElement('div', 'add-Step-Btn-Wrap');
-
-    const addStepBtn = createElement('button', 'meal-search-main-action recipe-add-step-btn');
-    addStepBtn.type = 'button';
-    addStepBtn.innerHTML = `
-                             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"><title>Plus SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2" d="M12 20v-8m0 0V4m0 8h8m-8 0H4"></path></svg>
-                             `;
-
-    const MIN_RECIPE_STEPS = 3;
-    const MAX_RECIPE_STEPS = 7;
-
-    function ensureDraftSteps() {
-        if (!Array.isArray(draft.steps) || draft.steps.length < MIN_RECIPE_STEPS) {
-            draft.steps = Array(MIN_RECIPE_STEPS).fill('');
-        }
-    }
-
     function renderIngredientsBlock() {
         const ingredients = Array.isArray(draft.ingredients) ? draft.ingredients : [];
         ingredientsList.innerHTML = '';
@@ -11883,10 +13851,21 @@ async function renderEditRecipe() {
                                      <path fill="currentColor" d="M16 1.75V3h5.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H8V1.75C8 .784 8.784 0 9.75 0h4.5C15.216 0 16 .784 16 1.75m-6.5 0V3h5V1.75a.25.25 0 0 0-.25-.25h-4.5a.25.25 0 0 0-.25.25M4.997 6.178a.75.75 0 1 0-1.493.144L4.916 20.92a1.75 1.75 0 0 0 1.742 1.58h10.684a1.75 1.75 0 0 0 1.742-1.581l1.413-14.597a.75.75 0 0 0-1.494-.144l-1.412 14.596a.25.25 0 0 1-.249.226H6.658a.25.25 0 0 1-.249-.226z"></path>
                                      <path fill="currentColor" d="M9.206 7.501a.75.75 0 0 1 .793.705l.5 8.5A.75.75 0 1 1 9 16.794l-.5-8.5a.75.75 0 0 1 .705-.793Zm6.293.793A.75.75 0 1 0 14 8.206l-.5 8.5a.75.75 0 0 0 1.498.088l.5-8.5Z"></path>
                                  </svg>`;
-            removeBtn.onclick = () => {
+            removeBtn.onclick = (e) => {
+                e.stopPropagation();
                 draft.ingredients.splice(index, 1);
                 renderIngredientsBlock();
                 validateRecipeForm();
+            };
+
+            row.onclick = () => {
+                if (!item.foodId) return;
+                state.recipeDraft = draft;
+                state.recipeIngredientEditIndex = index;
+                state.recipeSelectedFoodId = item.foodId;
+                state.recipeFoodPreviewBackTarget = 'recipeForm';
+                state.mealView = 'recipeFoodPreview';
+                renderMealPage();
             };
 
             row.append(left, removeBtn);
@@ -11905,82 +13884,6 @@ async function renderEditRecipe() {
         `;
     }
 
-    function renderSteps() {
-        ensureDraftSteps();
-        stepsWrap.innerHTML = '';
-
-        draft.steps.forEach((value, index) => {
-            const row = createElement('div', 'recipe-step-row');
-
-            const input = document.createElement('textarea');
-            input.className = 'create-food-input create-food-textarea recipe-step-input';
-            input.rows = 1;
-            input.placeholder = `Шаг ${index + 1}`;
-            input.value = value || '';
-
-            input.oninput = () => {
-                draft.steps[index] = input.value;
-                validateRecipeForm();
-            };
-
-            const head = createElement('div', 'recipe-step-head');
-            const blockRemove = createElement('div', 'block-remove');
-            const label = createElement('div', 'recipe-step-label', `Шаг ${index + 1}`);
-
-            head.append(label);
-
-            if (index >= MIN_RECIPE_STEPS) {
-                const removeBtn = createElement('button', 'recipe-step-remove-btn');
-                removeBtn.innerHTML = `
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
-                                           <path fill="currentColor" d="M16 1.75V3h5.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H8V1.75C8 .784 8.784 0 9.75 0h4.5C15.216 0 16 .784 16 1.75m-6.5 0V3h5V1.75a.25.25 0 0 0-.25-.25h-4.5a.25.25 0 0 0-.25.25M4.997 6.178a.75.75 0 1 0-1.493.144L4.916 20.92a1.75 1.75 0 0 0 1.742 1.58h10.684a1.75 1.75 0 0 0 1.742-1.581l1.413-14.597a.75.75 0 0 0-1.494-.144l-1.412 14.596a.25.25 0 0 1-.249.226H6.658a.25.25 0 0 1-.249-.226z"></path>
-                                           <path fill="currentColor" d="M9.206 7.501a.75.75 0 0 1 .793.705l.5 8.5A.75.75 0 1 1 9 16.794l-.5-8.5a.75.75 0 0 1 .705-.793Zm6.293.793A.75.75 0 1 0 14 8.206l-.5 8.5a.75.75 0 0 0 1.498.088l.5-8.5Z"></path>
-                                       </svg>`;
-
-
-                removeBtn.type = 'button';
-                removeBtn.onclick = () => {
-                    draft.steps.splice(index, 1);
-
-                    if (draft.steps.length < MIN_RECIPE_STEPS) {
-                        draft.steps = Array(MIN_RECIPE_STEPS).fill('');
-                    }
-
-                    renderSteps();
-                    validateRecipeForm();
-                };
-
-                blockRemove.append(removeBtn);
-            }
-
-            row.append(blockRemove, head, input);
-            stepsWrap.append(row);
-        });
-
-        addStepBtn.style.display = draft.steps.length >= MAX_RECIPE_STEPS ? 'none' : 'inline-flex';
-    }
-
-    addStepBtn.onclick = () => {
-        ensureDraftSteps();
-
-        if (draft.steps.length >= MAX_RECIPE_STEPS) return;
-
-        draft.steps.push('');
-        renderSteps();
-        validateRecipeForm();
-    };
-
-    categoryBtn.onclick = () => {
-        openRecipeCategorySheet({
-            value: getRecipeCategoryValue(draft),
-            onSelect: (selected) => {
-                setRecipeCategoryValue(draft, selected);
-                categoryValue.textContent = selected || 'Выбрать категорию';
-                validateRecipeForm();
-            }
-        });
-    };
-
     titleInput.oninput = () => {
         draft.title = titleInput.value;
         validateRecipeForm();
@@ -11996,28 +13899,18 @@ async function renderEditRecipe() {
         validateRecipeForm();
     };
 
-    prepInput.oninput = () => {
-        draft.prepMinutes = prepInput.value;
-        validateRecipeForm();
-    };
-
     formCard.append(
         createFormRow('Название рецепта', titleInput, true),
-        createFormRow('Описание', descriptionInput, true, 'is-textarea'),
+        createFormRow('Описание', descriptionInput, false, 'is-textarea'),
         createFormRow('Кол-во порций', servingsInput, true),
-        createFormRow('Время приготовления', prepWrap, false),
-        createFormRow('Категория', categoryBtn, true),
         createFormRow(
             'Ингредиенты',
             ingredientsControl,
             true,
             'recipe-row-ingredients',
             addIngredientBtn
-        ),
-        createFormRow('Способ приготовления', stepsWrap, false, 'recipe-row-steps')
+        )
     );
-    addStepBtnWrap.append(addStepBtn);
-    stepsWrap.after(addStepBtnWrap);
 
     function isFilled(value) {
         return String(value ?? '').trim() !== '';
@@ -12025,21 +13918,20 @@ async function renderEditRecipe() {
 
     function validateRecipeForm() {
         const hasRequiredTitle = isFilled(draft.title);
-        const hasRequiredDescription = isFilled(draft.description);
         const hasRequiredServings = isFilled(draft.servings);
-        const hasCategory = isFilled(getRecipeCategoryValue(draft));
         const hasEnoughIngredients = Array.isArray(draft.ingredients) && draft.ingredients.length >= 3;
 
         const isValid =
             hasRequiredTitle &&
-            hasRequiredDescription &&
             hasRequiredServings &&
-            hasCategory &&
             hasEnoughIngredients;
 
         saveBtn.disabled = !isValid;
         saveBtn.classList.toggle('active', isValid);
         saveBtn.classList.toggle('disabled', !isValid);
+        if (mealOverlayStack[mealOverlayStack.length - 1] === container) {
+            syncCreateRecipeBottomNav();
+        }
     }
 
     saveBtn.onclick = async () => {
@@ -12048,15 +13940,13 @@ async function renderEditRecipe() {
         const updatedRecipePayload = {
             title: String(draft.title || '').trim(),
             titleLower: normalizeSearchText(draft.title),
+            searchTokens: buildMealSearchTokens(draft.title),
             description: String(draft.description || '').trim(),
             servings: String(draft.servings || '').trim(),
-            prepMinutes: String(draft.prepMinutes || '').trim(),
-            cookMinutes: String(draft.cookMinutes || '').trim(),
-            categories: Array.isArray(draft.categories) ? draft.categories : [],
-            ingredients: Array.isArray(draft.ingredients) ? draft.ingredients : [],
-            steps: Array.isArray(draft.steps)
-                ? draft.steps.map(step => String(step || '').trim()).filter(Boolean)
-                : []
+            prepMinutes: deleteField(),
+            cookMinutes: deleteField(),
+            categories: deleteField(),
+            ingredients: Array.isArray(draft.ingredients) ? draft.ingredients : []
         };
 
         const recipeWriteRef = await getRecipeDocumentRef(recipe.id);
@@ -12090,8 +13980,20 @@ async function renderEditRecipe() {
     };
 
     renderIngredientsBlock();
-    renderSteps();
 
+    const syncRecipeDraftIngredients = () => {
+        if (state.recipeDraft && state.recipeDraft !== draft && Array.isArray(state.recipeDraft.ingredients)) {
+            draft.ingredients = state.recipeDraft.ingredients;
+        }
+        renderIngredientsBlock();
+        validateRecipeForm();
+    };
+    window.addEventListener('recipeDraftIngredientsChanged', syncRecipeDraftIngredients);
+    container._mealOverlayCleanup = () => {
+        window.removeEventListener('recipeDraftIngredientsChanged', syncRecipeDraftIngredients);
+    };
+
+    attachMealOverlayBottomNavSync(container, syncCreateRecipeBottomNav);
     container.append(stickyHeader, formCard);
     pushMealOverlay(container);
 
@@ -12143,14 +14045,10 @@ async function getRecipes(query = '') {
             .filter(recipe => {
                 const title = String(recipe.title || '').toLowerCase();
                 const description = String(recipe.description || '').toLowerCase();
-                const category = Array.isArray(recipe.categories)
-                    ? recipe.categories.join(' ').toLowerCase()
-                    : '';
 
                 return !q ||
                     title.includes(q) ||
-                    description.includes(q) ||
-                    category.includes(q);
+                    description.includes(q);
             })
             .sort((a, b) => {
                 const aTitle = String(a.title || '');
@@ -12187,14 +14085,10 @@ async function getRecipes(query = '') {
         .filter(recipe => {
             const title = String(recipe.title || '').toLowerCase();
             const description = String(recipe.description || '').toLowerCase();
-            const category = Array.isArray(recipe.categories)
-                ? recipe.categories.join(' ').toLowerCase()
-                : '';
 
             return !q ||
                 title.includes(q) ||
-                description.includes(q) ||
-                category.includes(q);
+                description.includes(q);
         })
         .sort((a, b) => {
             const aTitle = String(a.title || '');
@@ -12214,7 +14108,7 @@ function createFoodSearchSwipeItem(food, onDeleted) {
     const _unit = food.baseUnit || 'г';
     const _m = calcFoodMacrosByAmount(food, _amt);
     info.innerHTML = `
-        <div class="meal-search-item-name">${food.name}</div>
+        ${buildMealSearchFoodNameMarkup(food.name, isFoodLinkedToGlobalCatalog(food))}
         ${food.description?.trim() ? `<div class="meal-search-item-desc">${food.description}</div>` : ''}
         <div class="meal-search-item-macros"><span class="meal-search-item-weight">${_amt}${_unit}</span>Б ${formatMacro(_m.protein, 1)} · Ж ${formatMacro(_m.fat, 1)} · У ${formatMacro(_m.carbs, 1)} · ${Math.round(_m.calories)} ккал</div>
     `;
@@ -12298,6 +14192,56 @@ function getScaledRecipeValues(recipe, servings) {
         carbs: totals.carbs,
         calories: totals.calories
     };
+}
+
+function buildRecipeIngredientFromFood(food, foodId, selectedAmount, existing = null) {
+    const scaled = calcFoodMacrosByAmount(food, selectedAmount);
+    return {
+        ...(existing || {}),
+        id: existing?.id || crypto.randomUUID(),
+        foodId,
+        name: food.name || '',
+        description: food.description || '',
+        amount: `${selectedAmount} ${food.baseUnit || 'г'}`,
+        selectedAmount,
+        baseAmount: Number(food.baseAmount || 100) || 100,
+        baseUnit: food.baseUnit || 'г',
+        protein: Number(scaled.protein || 0),
+        fat: Number(scaled.fat || 0),
+        carbs: Number(scaled.carbs || 0),
+        calories: Number(scaled.calories || 0)
+    };
+}
+
+function addFoodToRecipeDraft(food, selectedAmount, editIndex = null) {
+    const draft = getRecipeDraft();
+    if (!Array.isArray(draft.ingredients)) {
+        draft.ingredients = [];
+    }
+
+    const foodId = String(food?.id || state.recipeSelectedFoodId || state.currentFoodId || '').trim();
+    const safeAmount = Number(selectedAmount || food?.defaultAmount || food?.baseAmount || 100) || 100;
+    const existingIndex = Number.isInteger(editIndex) ? editIndex : -1;
+
+    if (existingIndex >= 0 && existingIndex < draft.ingredients.length) {
+        draft.ingredients[existingIndex] = buildRecipeIngredientFromFood(
+            food,
+            foodId,
+            safeAmount,
+            draft.ingredients[existingIndex]
+        );
+        notifyRecipeDraftIngredientsChanged();
+        return draft.ingredients[existingIndex];
+    }
+
+    const item = buildRecipeIngredientFromFood(food, foodId, safeAmount);
+    draft.ingredients.push(item);
+    notifyRecipeDraftIngredientsChanged();
+    return item;
+}
+
+function notifyRecipeDraftIngredientsChanged() {
+    window.dispatchEvent(new CustomEvent('recipeDraftIngredientsChanged'));
 }
 
 function createRecipeSearchSwipeItem(recipe, onDeleted = null) {
@@ -12388,6 +14332,10 @@ function createMealFoodSwipeItem({ item, index, mealId, food }) {
         displayAmount = formatMacro(item.grams, 1);
     }
 
+    const weightLabel = item.isQuickAdded && item.hideWeightDisplay
+        ? '-'
+        : `${displayAmount} ${food.baseUnit || 'г'}`;
+
     text.style.cursor = 'pointer';
     text.innerHTML = `
         <div class="meal-food-top">
@@ -12395,7 +14343,7 @@ function createMealFoodSwipeItem({ item, index, mealId, food }) {
 
         </div>
         <div class="meal-food-grams">
-            <span class="meal-food-grams-amount">${displayAmount} ${food.baseUnit || 'г'}</span>
+            <span class="meal-food-grams-amount">${weightLabel}</span>
             <span class="meal-food-grams-kcal"><span></span> ${Math.round(cal)}</span>
         </div>
         <div class="meal-food-macros">
@@ -12468,6 +14416,12 @@ function createMealFoodSwipeItem({ item, index, mealId, food }) {
     };
     deleteSlot.append(deleteBtn);
 
+    const actionsStrip = createElement('div', 'food-swipe-meal-actions');
+
+    const mealPlanUnplannedIconHtml = `<span class="action-plan-text" role="img" aria-label="Запланировать"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><title>Round-more-time SVG Icon</title><path fill="currentColor" d="M10.75 8c-.41 0-.75.34-.75.75v4.69c0 .35.18.67.47.85l3.64 2.24a.713.713 0 1 0 .74-1.22L11.5 13.3V8.75c0-.41-.34-.75-.75-.75"/><path fill="currentColor" d="M17.92 12A6.957 6.957 0 0 1 11 20c-3.9 0-7-3.1-7-7s3.1-7 7-7c.7 0 1.37.1 2 .29V4.23c-.64-.15-1.31-.23-2-.23c-5 0-9 4-9 9s4 9 9 9a8.963 8.963 0 0 0 8.94-10z"/><path fill="currentColor" d="M22 5h-2V3c0-.55-.45-1-1-1s-1 .45-1 1v2h-2c-.55 0-1 .45-1 1s.45 1 1 1h2v2c0 .55.45 1 1 1s1-.45 1-1V7h2c.55 0 1-.45 1-1s-.45-1-1-1"/></svg></span>`;
+
+    const mealPlanPlannedIconHtml = `<span class="action-plan-text" role="img" aria-label="Съедено"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><title>Round-more-time-check SVG Icon</title><path fill="currentColor" d="M10.75 8c-.41 0-.75.34-.75.75v4.69c0 .35.18.67.47.85l3.64 2.24a.713.713 0 1 0 .74-1.22L11.5 13.3V8.75c0-.41-.34-.75-.75-.75"/><path fill="currentColor" d="M17.92 12A6.957 6.957 0 0 1 11 20c-3.9 0-7-3.1-7-7s3.1-7 7-7c.7 0 1.37.1 2 .29V4.23c-.64-.15-1.31-.23-2-.23c-5 0-9 4-9 9s4 9 9 9a8.963 8.963 0 0 0 8.94-10z"/><path fill="currentColor" d="M17.3 9.8a1 1 0 0 1-.7-.29L15 7.91a1 1 0 1 1 1.41-1.41l.89.89l2.69-2.69A1 1 0 1 1 21.41 6l-3.4 3.4a1 1 0 0 1-.71.4"/></svg></span>`;
+
     const planSlot = createElement('div', 'food-swipe-plan-slot');
     const planBtn = createElement('button', 'action-btn action-plan');
     planBtn.type = 'button';
@@ -12480,7 +14434,10 @@ function createMealFoodSwipeItem({ item, index, mealId, food }) {
         e.stopPropagation();
 
         const cycleRef = getCycleDocRef();
-        if (!cycleRef) return;
+        if (!cycleRef) {
+            showToast('Не выбран цикл — нельзя сохранить приём');
+            return;
+        }
 
         const nextPlanned = !isPlanned;
 
@@ -12507,12 +14464,13 @@ function createMealFoodSwipeItem({ item, index, mealId, food }) {
                 header.classList.add('food-header--planned');
                 if (!planOverlay.parentNode) header.append(planOverlay);
                 planSlot.classList.add('food-swipe-plan-slot--planned');
-                planBtn.innerHTML = `<span class="action-plan-text">Съедено</span>`;
+                planBtn.innerHTML = mealPlanPlannedIconHtml;
             } else {
                 header.classList.remove('food-header--planned');
                 planOverlay.remove();
                 planSlot.classList.remove('food-swipe-plan-slot--planned');
-                planBtn.innerHTML = `<span class="action-plan-text">Запланировать</span>`;
+                planBtn.innerHTML = mealPlanUnplannedIconHtml;
+
             }
 
             closeSwipeRowVisual(swipeWrap);
@@ -12530,11 +14488,147 @@ function createMealFoodSwipeItem({ item, index, mealId, food }) {
     if (isPlanned) {
         header.append(planOverlay);
         planSlot.classList.add('food-swipe-plan-slot--planned');
-        planBtn.innerHTML = `<span class="action-plan-text">Съедено</span>`;
+        planBtn.innerHTML = mealPlanPlannedIconHtml;
     } else {
-        planBtn.innerHTML = `<span class="action-plan-text">Запланировать</span>`;
+        planBtn.innerHTML = mealPlanUnplannedIconHtml;
     }
-    content.append(planSlot, header, deleteSlot);
+    actionsStrip.append(planSlot, deleteSlot);
+    content.append(header, actionsStrip);
+    row.append(content);
+    swipeWrap.append(row);
+
+    return swipeWrap;
+}
+
+function createMealPhotoSwipeItem({ item, index, mealId }) {
+    const swipeWrap = createElement('div', 'food-swipe food-swipe--meal-item food-swipe--meal-photo-item');
+    swipeWrap.dataset.mealId = mealId;
+    swipeWrap.dataset.itemIndex = String(index);
+
+    const row = createElement('div', 'meal-food-item');
+    const content = createElement('div', 'food-info-header-content');
+    const header = createElement('div', 'food-info-header');
+
+    const text = createElement('div', 'meal-food-text meal-food-text--photo');
+    text.style.cursor = 'pointer';
+    const preview = createElement('img', 'meal-photo-thumb');
+    preview.src = item.photoUrl;
+    preview.alt = item.name || 'Фото продукта';
+
+    const meta = createElement('div', 'meal-photo-meta');
+    const title = createElement('div', 'meal-food-photo-title', item.name || 'Фото продукта');
+    const subtitle = createElement('div', 'meal-food-photo-subtitle', 'Открыть фото');
+    meta.append(title, subtitle);
+    text.append(preview, meta);
+
+    const openArrow = createElement('div', 'meal-food-open-arrow meal-food-open-arrow--photo');
+    openArrow.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Arrow-drop-right-line SVG Icon</title><path fill="currentColor" d="M12.172 12L9.343 9.173l1.415-1.414L15 12l-4.242 4.242l-1.415-1.414z"></path></svg>
+    `;
+
+    const openPhoto = (e) => {
+        e.stopPropagation();
+        openMediaFullScreen(item.photoUrl, 'photo');
+    };
+
+    text.onclick = openPhoto;
+    preview.onclick = openPhoto;
+    openArrow.onclick = openPhoto;
+
+    const mealPlanUnplannedIconHtml = `<span class="action-plan-text" role="img" aria-label="Запланировать"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><title>Round-more-time SVG Icon</title><path fill="currentColor" d="M10.75 8c-.41 0-.75.34-.75.75v4.69c0 .35.18.67.47.85l3.64 2.24a.713.713 0 1 0 .74-1.22L11.5 13.3V8.75c0-.41-.34-.75-.75-.75"/><path fill="currentColor" d="M17.92 12A6.957 6.957 0 0 1 11 20c-3.9 0-7-3.1-7-7s3.1-7 7-7c.7 0 1.37.1 2 .29V4.23c-.64-.15-1.31-.23-2-.23c-5 0-9 4-9 9s4 9 9 9a8.963 8.963 0 0 0 8.94-10z"/><path fill="currentColor" d="M22 5h-2V3c0-.55-.45-1-1-1s-1 .45-1 1v2h-2c-.55 0-1 .45-1 1s.45 1 1 1h2v2c0 .55.45 1 1 1s1-.45 1-1V7h2c.55 0 1-.45 1-1s-.45-1-1-1"/></svg></span>`;
+    const mealPlanPlannedIconHtml = `<span class="action-plan-text" role="img" aria-label="Съедено"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><title>Round-more-time-check SVG Icon</title><path fill="currentColor" d="M10.75 8c-.41 0-.75.34-.75.75v4.69c0 .35.18.67.47.85l3.64 2.24a.713.713 0 1 0 .74-1.22L11.5 13.3V8.75c0-.41-.34-.75-.75-.75"/><path fill="currentColor" d="M17.92 12A6.957 6.957 0 0 1 11 20c-3.9 0-7-3.1-7-7s3.1-7 7-7c.7 0 1.37.1 2 .29V4.23c-.64-.15-1.31-.23-2-.23c-5 0-9 4-9 9s4 9 9 9a8.963 8.963 0 0 0 8.94-10z"/><path fill="currentColor" d="M17.3 9.8a1 1 0 0 1-.7-.29L15 7.91a1 1 0 1 1 1.41-1.41l.89.89l2.69-2.69A1 1 0 1 1 21.41 6l-3.4 3.4a1 1 0 0 1-.71.4"/></svg></span>`;
+    const planSlot = createElement('div', 'food-swipe-plan-slot');
+    const planBtn = createElement('button', 'action-btn action-plan');
+    planBtn.type = 'button';
+    let isPlanned = item.planned === true;
+
+    const planOverlay = createElement('div', 'food-planned-overlay');
+    planOverlay.textContent = 'Запланировано';
+
+    planBtn.onclick = async (e) => {
+        e.stopPropagation();
+
+        const cycleRef = getCycleDocRef();
+        if (!cycleRef) {
+            showToast('Не выбран цикл — нельзя сохранить прием');
+            return;
+        }
+
+        const nextPlanned = !isPlanned;
+
+        try {
+            planBtn.disabled = true;
+
+            const mealRef = doc(cycleRef, 'meals', state.selectedDate);
+            const mealItems = Array.isArray(state.mealsData?.[mealId])
+                ? [...state.mealsData[mealId]]
+                : [];
+
+            if (!mealItems[index]) return;
+
+            mealItems[index] = {
+                ...mealItems[index],
+                planned: nextPlanned
+            };
+
+            await updateDoc(mealRef, { [mealId]: mealItems });
+
+            isPlanned = nextPlanned;
+
+            if (nextPlanned) {
+                header.classList.add('food-header--planned');
+                if (!planOverlay.parentNode) header.append(planOverlay);
+                planSlot.classList.add('food-swipe-plan-slot--planned');
+                planBtn.innerHTML = mealPlanPlannedIconHtml;
+            } else {
+                header.classList.remove('food-header--planned');
+                planOverlay.remove();
+                planSlot.classList.remove('food-swipe-plan-slot--planned');
+                planBtn.innerHTML = mealPlanUnplannedIconHtml;
+            }
+
+            closeSwipeRowVisual(swipeWrap);
+        } catch (error) {
+            console.error(error);
+            showToast('Не удалось сохранить');
+        } finally {
+            planBtn.disabled = false;
+        }
+    };
+    planSlot.append(planBtn);
+
+    const deleteSlot = createElement('div', 'food-swipe-delete-slot');
+    const deleteBtn = createElement('button', 'action-btn action-delete');
+    deleteBtn.type = 'button';
+    deleteBtn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+            <path fill="currentColor" d="M16 1.75V3h5.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H8V1.75C8 .784 8.784 0 9.75 0h4.5C15.216 0 16 .784 16 1.75m-6.5 0V3h5V1.75a.25.25 0 0 0-.25-.25h-4.5a.25.25 0 0 0-.25.25M4.997 6.178a.75.75 0 1 0-1.493.144L4.916 20.92a1.75 1.75 0 0 0 1.742 1.58h10.684a1.75 1.75 0 0 0 1.742-1.581l1.413-14.597a.75.75 0 0 0-1.494-.144l-1.412 14.596a.25.25 0 0 1-.249.226H6.658a.25.25 0 0 1-.249-.226z"></path>
+            <path fill="currentColor" d="M9.206 7.501a.75.75 0 0 1 .793.705l.5 8.5A.75.75 0 1 1 9 16.794l-.5-8.5a.75.75 0 0 1 .705-.793Zm6.293.793A.75.75 0 1 0 14 8.206l-.5 8.5a.75.75 0 0 0 1.498.088l.5-8.5Z"></path>
+        </svg>
+    `;
+    deleteBtn.onclick = (e) => {
+        e.stopPropagation();
+        openConfirmModal('Удалить фото из приема?', async () => {
+            await removeFoodFromMeal(mealId, index);
+        });
+    };
+    deleteSlot.append(deleteBtn);
+
+    const actionsStrip = createElement('div', 'food-swipe-meal-actions');
+    actionsStrip.append(planSlot, deleteSlot);
+
+    header.append(text, openArrow);
+
+    if (isPlanned) {
+        header.classList.add('food-header--planned');
+        header.append(planOverlay);
+        planSlot.classList.add('food-swipe-plan-slot--planned');
+        planBtn.innerHTML = mealPlanPlannedIconHtml;
+    } else {
+        planBtn.innerHTML = mealPlanUnplannedIconHtml;
+    }
+
+    content.append(header, actionsStrip);
     row.append(content);
     swipeWrap.append(row);
 
@@ -12542,21 +14636,8 @@ function createMealFoodSwipeItem({ item, index, mealId, food }) {
 }
 
 function createRecipeFoodSearchSwipeItem(food, onDeleted = null) {
-    const swipeWrap = createElement('div', 'meal-swipe');
-    swipeWrap.dataset.foodId = food.id;
-
-    const actions = createElement('div', 'swipe-actions right');
-    actions.innerHTML = `
-        <button class="action-btn action-delete" type="button">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
-                <path fill="currentColor" d="M16 1.75V3h5.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H8V1.75C8 .784 8.784 0 9.75 0h4.5C15.216 0 16 .784 16 1.75m-6.5 0V3h5V1.75a.25.25 0 0 0-.25-.25h-4.5a.25.25 0 0 0-.25.25M4.997 6.178a.75.75 0 1 0-1.493.144L4.916 20.92a1.75 1.75 0 0 0 1.742 1.58h10.684a1.75 1.75 0 0 0 1.742-1.581l1.413-14.597a.75.75 0 0 0-1.494-.144l-1.412 14.596a.25.25 0 0 1-.249.226H6.658a.25.25 0 0 1-.249-.226z"/>
-                <path fill="currentColor" d="M9.206 7.501a.75.75 0 0 1 .793.705l.5 8.5A.75.75 0 1 1 9 16.794l-.5-8.5a.75.75 0 0 1 .705-.793Zm6.293.793A.75.75 0 1 0 14 8.206l-.5 8.5a.75.75 0 0 0 1.498.088l.5-8.5Z"/>
-            </svg>
-        </button>
-    `;
-
     const item = createElement('div', 'food-item meal-search-item');
-    const swipeContent = createElement('div', 'swipe-content food-swipe');
+    item.dataset.foodId = food.id;
 
     const contentHeader = createElement('div', 'food-info-header-content');
     const foodHeader = createElement('div', 'food-info-header');
@@ -12564,11 +14645,11 @@ function createRecipeFoodSearchSwipeItem(food, onDeleted = null) {
     const info = createElement('div', 'food-info meal-search-item-info');
     const actualAmt = Number(food.defaultAmount || food.baseAmount || 100);
     const scaledPreview = calcFoodMacrosByAmount(food, actualAmt);
-    const _rUnit = food.baseUnit || 'г';
+    const unit = food.baseUnit || 'г';
     info.innerHTML = `
-        <div class="meal-search-item-name">${food.name}</div>
+        ${buildMealSearchFoodNameMarkup(food.name, isFoodLinkedToGlobalCatalog(food))}
         ${food.description?.trim() ? `<div class="meal-search-item-desc">${food.description}</div>` : ''}
-        <div class="meal-search-item-macros"><span class="meal-search-item-weight">${actualAmt}${_rUnit}</span>Б ${formatMacro(scaledPreview.protein, 1)} · Ж ${formatMacro(scaledPreview.fat, 1)} · У ${formatMacro(scaledPreview.carbs, 1)} · ${Math.round(scaledPreview.calories)} ккал</div>
+        <div class="meal-search-item-macros"><span class="meal-search-item-weight">${actualAmt}${unit}</span>Б ${formatMacro(scaledPreview.protein, 1)} · Ж ${formatMacro(scaledPreview.fat, 1)} · У ${formatMacro(scaledPreview.carbs, 1)} · ${Math.round(scaledPreview.calories)} ккал</div>
     `;
 
     info.style.cursor = 'pointer';
@@ -12577,6 +14658,7 @@ function createRecipeFoodSearchSwipeItem(food, onDeleted = null) {
         saveMealPageScroll();
         mealScrollRestorePending = true;
 
+        state.recipeIngredientEditIndex = null;
         state.recipeSelectedFoodId = food.id;
         state.recipeFoodPreviewBackTarget = 'recipeFoodSearch';
         state.mealView = 'recipeFoodPreview';
@@ -12587,6 +14669,7 @@ function createRecipeFoodSearchSwipeItem(food, onDeleted = null) {
         e.stopPropagation();
         openPreview();
     };
+    item.onclick = openPreview;
 
     const addBtn = createElement('button', 'food-add-btn meal-search-add-btn');
     addBtn.type = 'button';
@@ -12600,55 +14683,30 @@ function createRecipeFoodSearchSwipeItem(food, onDeleted = null) {
     addBtn.onclick = (e) => {
         e.stopPropagation();
 
-        const draft = getRecipeDraft();
-
-        if (!Array.isArray(draft.ingredients)) {
-            draft.ingredients = [];
-        }
-
-        const actualAmount = Number(food.defaultAmount || food.baseAmount || 100) || 100;
-        const scaled = calcFoodMacrosByAmount(food, actualAmount);
-
-        draft.ingredients.push({
-            id: crypto.randomUUID(),
-            foodId: food.id,
-            name: food.name || '',
-            amount: `${actualAmount} ${food.baseUnit || 'г'}`,
-            selectedAmount: actualAmount,
-            baseAmount: Number(food.baseAmount || 100) || 100,
-            baseUnit: food.baseUnit || 'г',
-            protein: scaled.protein,
-            fat: scaled.fat,
-            carbs: scaled.carbs,
-            calories: scaled.calories,
-            description: food.description || ''
-        });
-
+        addFoodToRecipeDraft({ id: food.id, ...food }, actualAmt, null);
         showToast('Добавлено в рецепт');
-    };
 
-    const deleteBtn = actions.querySelector('.action-delete');
-    deleteBtn.onclick = (e) => {
-        e.stopPropagation();
-
-        openConfirmModal(`Удалить продукт «${food.name}»?`, async () => {
-            await deleteFood(food.id);
-
-            if (typeof onDeleted === 'function') {
-                await onDeleted();
-            }
-        });
+        addBtn.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 512 512">
+                <path fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="44" d="M416 128L192 384l-96-96"></path>
+            </svg>
+        `;
+        setTimeout(() => {
+            addBtn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24">
+                    <title>Plus SVG Icon</title>
+                    <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2" d="M12 20v-8m0 0V4m0 8h8m-8 0H4"></path>
+                </svg>
+            `;
+        }, 600);
     };
 
     foodHeader.append(info, addBtn);
     contentHeader.append(foodHeader);
-    swipeContent.append(contentHeader);
-    item.append(swipeContent, actions);
-    swipeWrap.append(item);
+    item.append(contentHeader);
 
-    return swipeWrap;
+    return item;
 }
-
 function renderRecipeFoodSearchList(container, foods, onDeleted = null) {
     container.innerHTML = '';
 
@@ -12661,10 +14719,6 @@ function renderRecipeFoodSearchList(container, foods, onDeleted = null) {
     foods.forEach(food => {
         container.append(createRecipeFoodSearchSwipeItem(food, onDeleted));
     });
-
-    setTimeout(() => {
-        initMealSwipe();
-    }, 0);
 }
 
 function renderFoodList(container, foods, onDeleted = null) {
@@ -12758,6 +14812,7 @@ async function addFood(food, opts = {}) {
     const payload = {
         ...food,
         nameLower: normalizeSearchText(food?.name),
+        searchTokens: buildMealSearchTokens(food?.name),
         createdAt: Date.now()
     };
 
@@ -12955,9 +15010,15 @@ async function subscribeMeals() {
         if (cachedSnap.exists() && state.selectedDate === selectedDateAtSubscribe) {
             const cachedData = cachedSnap.data();
             state.mealsData = cachedData;
+            mealsDataLoadedDate = selectedDateAtSubscribe;
             initOpenStateForCurrentDay(cachedData);
+            const hasFoodForSelectedDate = hasAnyFoodInDoc(cachedData);
+            updateCachedWeekPresenceForDate(selectedDateAtSubscribe, hasFoodForSelectedDate);
+            updateCachedMonthMealsDailySummaryForDate(selectedDateAtSubscribe, cachedData);
+            applyWeekRowPresence({ [selectedDateAtSubscribe]: hasFoodForSelectedDate });
             rebuildMealsSection();
             renderMeals(cachedData);
+            scheduleMealRootScrollAvailabilitySync();
         }
     } catch (_) { /* no cache hit */ }
 
@@ -12968,7 +15029,12 @@ async function subscribeMeals() {
         const newStructure = getMealKeysFromData(data).join('|');
 
         state.mealsData = data;
+        mealsDataLoadedDate = selectedDateAtSubscribe;
         initOpenStateForCurrentDay(data);
+        const hasFoodForSelectedDate = hasAnyFoodInDoc(data);
+        updateCachedWeekPresenceForDate(selectedDateAtSubscribe, hasFoodForSelectedDate);
+        updateCachedMonthMealsDailySummaryForDate(selectedDateAtSubscribe, data);
+        applyWeekRowPresence({ [selectedDateAtSubscribe]: hasFoodForSelectedDate });
 
         if (newStructure !== lastRenderedMealStructure) {
             state.mealsData = data;
@@ -12976,10 +15042,12 @@ async function subscribeMeals() {
 
             rebuildMealsSection();
             renderMeals(data);
+            scheduleMealRootScrollAvailabilitySync();
             return;
         }
 
         renderMeals(data);
+        scheduleMealRootScrollAvailabilitySync();
     });
 }
 
@@ -13034,7 +15102,48 @@ async function getFoodsMap(force = false) {
 const MEAL_SEARCH_PREVIEW_LIMIT = 20;
 
 function normalizeSearchText(s) {
-    return String(s || '').toLowerCase().trim();
+    return String(s || '').toLowerCase().replace(/ё/g, 'е').trim();
+}
+
+function getMealSearchWords(value) {
+    return normalizeSearchText(value)
+        .split(/[^a-zа-я0-9]+/iu)
+        .map(word => word.trim())
+        .filter(word => word.length >= 2);
+}
+
+function buildMealSearchTokens(value) {
+    const tokens = new Set();
+    getMealSearchWords(value).forEach(word => {
+        const maxLen = Math.min(word.length, 32);
+        for (let len = 2; len <= maxLen; len += 1) {
+            tokens.add(word.slice(0, len));
+        }
+    });
+    return Array.from(tokens).slice(0, 240);
+}
+
+function getMealSearchPrimaryToken(value) {
+    return getMealSearchWords(value)
+        .sort((a, b) => b.length - a.length || a.localeCompare(b, 'ru'))[0] || '';
+}
+
+function mealSearchTextMatchesQuery(text, queryText) {
+    const queryWords = getMealSearchWords(queryText);
+    if (!queryWords.length) return true;
+
+    const textWords = getMealSearchWords(text);
+    if (!textWords.length) return false;
+
+    return queryWords.every(queryWord =>
+        textWords.some(textWord => textWord.startsWith(queryWord))
+    );
+}
+
+function filterMealSearchRowsByText(rows, queryText, getText) {
+    const queryWords = getMealSearchWords(queryText);
+    if (!queryWords.length) return rows;
+    return rows.filter(row => mealSearchTextMatchesQuery(getText(row), queryText));
 }
 
 async function ensureMealSearchIndexFieldsOnce() {
@@ -13045,7 +15154,7 @@ async function ensureMealSearchIndexFieldsOnce() {
     const recipesCol = getMealLibraryRecipesCollection();
     if (!foodsCol && !recipesCol) return;
 
-    const key = `mealSearchIndexLibraryV5:${libKey}`;
+    const key = `mealSearchIndexLibraryV6:${libKey}`;
     if (localStorage.getItem(key) === '1') return;
 
     try {
@@ -13061,9 +15170,19 @@ async function ensureMealSearchIndexFieldsOnce() {
 
                 for (const d of docs) {
                     const data = d.data() || {};
-                    if (typeof data.nameLower === 'string' && data.nameLower.length) continue;
-                    const nameLower = normalizeSearchText(data.name || '');
-                    batch.update(d.ref, { nameLower });
+                    const patch = {};
+
+                    if (!(typeof data.nameLower === 'string' && data.nameLower.length)) {
+                        patch.nameLower = normalizeSearchText(data.name || '');
+                    }
+
+                    if (!Array.isArray(data.searchTokens) || !data.searchTokens.length) {
+                        patch.searchTokens = buildMealSearchTokens(data.name || '');
+                    }
+
+                    if (!Object.keys(patch).length) continue;
+
+                    batch.update(d.ref, patch);
                     ops += 1;
                     if (ops >= 400) {
                         await batch.commit();
@@ -13090,6 +15209,10 @@ async function ensureMealSearchIndexFieldsOnce() {
 
                     if (!(typeof data.titleLower === 'string' && data.titleLower.length)) {
                         patch.titleLower = normalizeSearchText(data.title || '');
+                    }
+
+                    if (!Array.isArray(data.searchTokens) || !data.searchTokens.length) {
+                        patch.searchTokens = buildMealSearchTokens(data.title || '');
                     }
 
                     if (data.createdAt === undefined || data.createdAt === null) {
@@ -13286,7 +15409,6 @@ async function getHistoryPreview(sortId, take = 20) {
                     title: String(snap?.name || snap?.title || 'Рецепт'),
                     description: String(snap?.description || ''),
                     servings: Number(snap?.servings || snap?.baseServings || 1),
-                    prepMinutes: 0,
                     ingredients: Array.isArray(snap?.ingredients) ? snap.ingredients : [],
                     lastUsedAt: entry.lastSeq
                 });
@@ -13339,6 +15461,11 @@ function renderMealsFromData(mealsData, foodsMap) {
                 headerKcalEl.innerHTML = '';
             }
 
+            const photoIndicatorEl = document.getElementById(`${mealId}-photo-indicator`);
+            if (photoIndicatorEl) {
+                photoIndicatorEl.style.display = 'none';
+            }
+
             if (arrow) {
                 arrow.classList.remove('arrow-rotate-open', 'arrow-rotate-close');
                 arrow.style.transform = 'rotate(270deg)';
@@ -13358,12 +15485,31 @@ function renderMealsFromData(mealsData, foodsMap) {
             <div><span>у-</span> ${formatMacro(mealTotal.c, 1)}</div>
         `;
 
+        const photoCount = items.filter(isMealPhotoItem).length;
+        const photoIndicatorEl = document.getElementById(`${mealId}-photo-indicator`);
+        if (photoIndicatorEl) {
+            const countEl = photoIndicatorEl.querySelector('.meal-photo-indicator-count');
+            if (countEl) {
+                countEl.textContent = String(photoCount);
+            }
+            photoIndicatorEl.style.display = photoCount > 0 ? 'inline-flex' : 'none';
+        }
+
         const headerKcalEl = document.getElementById(`${mealId}-header-kcal`);
         if (headerKcalEl) {
             headerKcalEl.innerHTML = `<span>к-</span> ${Math.round(mealTotal.cal)}`;
         }
 
         items.forEach((item, index) => {
+            if (isMealPhotoItem(item)) {
+                list.append(createMealPhotoSwipeItem({
+                    item,
+                    index,
+                    mealId
+                }));
+                return;
+            }
+
             const snapshotFood = {
                 name: item.name,
                 description: item.description,
@@ -13392,11 +15538,27 @@ function renderMealsFromData(mealsData, foodsMap) {
         });
 
         const footer = createElement('div', 'meal-food-list-footer');
-        const fBtn1 = createElement('button', 'meal-food-list-footer-btn', 'Кнопка 1');
+        const fBtn1 = createElement('button', 'meal-food-list-footer-btn meal-food-list-footer-btn--camera');
         fBtn1.type = 'button';
-        const fBtn2 = createElement('button', 'meal-food-list-footer-btn', 'Кнопка 2');
+        fBtn1.setAttribute('aria-label', 'Сделать фото');
+        fBtn1.innerHTML = getMealCameraIconMarkup();
+        fBtn1.onclick = () => openMealPhotoCaptureFlow(mealId);
+        const fBtn2 = createElement('button', 'meal-food-list-footer-btn meal-food-list-footer-btn--quick-add');
         fBtn2.type = 'button';
-        footer.append(fBtn1, fBtn2);
+        fBtn2.setAttribute('aria-label', 'Быстрое добавление');
+        fBtn2.innerHTML = getMealQuickAddIconMarkup();
+        fBtn2.onclick = () => openQuickAddForm('main', mealId);
+
+        const fBtn3 = createElement('button', 'meal-food-list-footer-btn meal-food-list-footer-btn--add');
+        fBtn3.type = 'button';
+        fBtn3.setAttribute('aria-label', 'Добавить');
+        fBtn3.innerHTML = `
+            <span class="meal-food-list-footer-btn-icon">${getMealAddIconMarkup()}</span>
+            <span class="meal-food-list-footer-btn-text">Добавить продукт</span>
+        `;
+        fBtn3.onclick = () => openMealSearchForMeal(mealId);
+
+        footer.append(fBtn1, fBtn2, fBtn3);
         list.append(footer);
 
         const openKey = getMealOpenKey(state.selectedDate, mealId);
@@ -13418,6 +15580,7 @@ function renderMealsFromData(mealsData, foodsMap) {
 
     setTimeout(() => {
         initMealSwipe();
+        scheduleMealRootScrollAvailabilitySync();
     }, 0);
 
     if (mealScrollRestorePending) {
@@ -13812,7 +15975,7 @@ function initMealSwipe() {
 
     function crossCloseOtherStrip(target) {
         if (target.classList.contains('meal-swipe')) {
-            document.querySelectorAll('.food-swipe.open, .food-swipe.open-left').forEach((el) => {
+            document.querySelectorAll('.food-swipe--meal-item.open, .food-swipe--meal-item.open-left').forEach((el) => {
                 if (el !== target) closeSwipeRowVisual(el, onSwipeClosedVisual);
             });
         } else if (target.classList.contains('food-swipe')) {
@@ -13836,15 +15999,15 @@ function initMealSwipe() {
     });
 
     bindSwipeBlock({
-        rootSelector: '.food-swipe',
+        rootSelector: '.food-swipe.food-swipe--meal-item',
         contentSelector: '.food-info-header-content',
-        maxSwipe: 84,
+        maxSwipe: 168,
         onSwipeActiveVisual,
         onSwipeClosedVisual,
         onBeforeOpen: crossCloseOtherStrip,
         edgeWidth: 40,
-        edgeWidthLeft: 40,
-        maxSwipeLeft: 120
+        edgeWidthLeft: 0,
+        maxSwipeLeft: 0
     });
 
     if (!mealSwipeDocumentBound) {
@@ -13854,7 +16017,7 @@ function initMealSwipe() {
                 closeSwipeRowVisual(openedMeal, onSwipeClosedVisual);
             }
 
-            document.querySelectorAll('.food-swipe.open, .food-swipe.open-left').forEach((openedFood) => {
+            document.querySelectorAll('.food-swipe.food-swipe--meal-item.open, .food-swipe.food-swipe--meal-item.open-left').forEach((openedFood) => {
                 if (!e.target.closest('.food-swipe')) {
                     closeSwipeRowVisual(openedFood, onSwipeClosedVisual);
                 }

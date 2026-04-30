@@ -67,6 +67,9 @@ export function suppressClickFollowingSwipeGesture(containerEl) {
 
     const handler = (ev) => {
         if (!containerEl.contains(ev.target)) return;
+        // Кнопки «под» свайпом (удалить / запланировать и т.п.) — не гасим: иначе первый
+        // клик после открытия строки не доходит до onclick (contentEl включает полосу действий).
+        if (ev.target.closest?.('.action-btn, .food-swipe-meal-actions')) return;
         ev.preventDefault();
         ev.stopImmediatePropagation();
         document.removeEventListener('click', handler, true);

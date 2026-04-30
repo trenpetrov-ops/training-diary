@@ -226,6 +226,9 @@ export function attachSwipeRow({
         if (e.button != null && e.button !== 0) return;
         if (isPointerOnSwipeExcludedTarget(e.target)) return;
 
+        // Clear a stale lock if the previous gesture ended abnormally.
+        disableTouchScrollLock();
+
         startedInEdge = false;
         const isOpen = item.classList.contains('open');
         const isOpenLeft = item.classList.contains('open-left');
@@ -255,8 +258,6 @@ export function attachSwipeRow({
         axisLocked = null;
         activePointerId = null;
         swipeDirection = null;
-
-        if (startedInEdge) enableTouchScrollLock();
 
         contentEl.style.transition = 'none';
     });
@@ -307,6 +308,8 @@ export function attachSwipeRow({
                 }
 
                 axisLocked = 'x';
+                // Lock document scrolling only after we are sure this is a horizontal swipe.
+                enableTouchScrollLock();
 
                 activePointerId = e.pointerId;
                 try {
@@ -381,8 +384,16 @@ export function attachSwipeRow({
 
         if (!hasMovedHorizontally) {
             if (item.classList.contains('open') || item.classList.contains('open-left')) {
-                closeSwipe(item);
-                suppressClickFollowingSwipeGesture(contentEl);
+                // Тап по уже открытой строке: закрываем, но не если палец отпущен над кнопками
+                // действий (они внутри contentEl — иначе closeSwipe снимает .open до фазы click).
+                const tapOnAction =
+                    e.target &&
+                    typeof e.target.closest === 'function' &&
+                    e.target.closest('.action-btn, .food-swipe-meal-actions, .swipe-actions');
+                if (!tapOnAction) {
+                    closeSwipe(item);
+                    suppressClickFollowingSwipeGesture(contentEl);
+                }
             } else if (typeof onPureTap === 'function' && typeof pureTapIf === 'function' && pureTapIf(item)) {
                 onPureTap(e, item);
                 suppressNextClickGlobally();

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'training-diary-v6';
+const CACHE_NAME = 'training-diary-v7';
 const CACHE_URLS = [
   '/',
   '/index.html',

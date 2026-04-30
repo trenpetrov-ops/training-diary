@@ -14,6 +14,15 @@
     filter: blur(9px);
     background: #ffffffb0;
 }
+.navigation.navigation--meal-search {
+    border-radius: 50px;
+    margin: 0 auto 50px auto;
+    height: 61px;
+    width: 89%;
+    background: #eeeff3;
+    box-shadow: 0px 1px 3px #00000030;
+    border: 0.5px solid #d9d9d9;
+}
 
 .navigation {
     position: fixed;
@@ -21,42 +30,113 @@
     left: 0;
     right: 0;
     display: flex;
-    height: 58px;
-    background-color: #ffffff;
-    border-bottom: 1px solid #e7e7e7;
-    border-top: 0.5px solid #e7e7e7;
-    z-index: 900;
-    width: 88%;
-    margin: 0 auto 35px auto;
-    border-radius: 50px;
+    height: 82px;
+    background-color: #e3e4e9;
+    background: #e5e7ec;
+    /* border-bottom: 0.5px solid #d5d8e5; */
+    border-top: 1px solid #d2d4dc;
+    z-index: 1000;
+    /* width: 97%; */
+    /* margin: 0 auto 20px auto; */
+    border-radius: 45px 45px 0px 0;
     justify-content: space-around;
+    /* overflow: hidden; */
+    /* box-shadow: 0px 1px 0px 0px #c7c7cc; */
     align-items: center;
-    overflow: hidden;
-    box-shadow: 0px 1px 0px 0px #c7c7cc;
+    /* border-radius: 50px; */
+    /* box-shadow: 0px 1px 3px #00000063 !important; */
 }
 
 .nav-btn {
     flex: 1;
     position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
     background: transparent;
     border: none;
     outline: none;
     cursor: pointer;
     color: #444;
     transition: color 0.3s ease;
-    z-index: 2;
     padding: 0;
+    z-index: 1;
+}
+
+.nav-supplement-badge {
+    position: absolute;
+    top: 17px;
+    left: calc(50% + 14px);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: #3e8ce1;
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    box-shadow: 0 3px 8px rgba(62, 140, 225, 0.24);
+    pointer-events: none;
+    z-index: 4;
+}
+
+.nav-supplement-badge[hidden] {
+    display: none !important;
 }
 
 .nav-btn svg {
     color: #484747;
     width: 30px;
     height: 30px;
+    transform-origin: bottom center;
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
     transition: transform 0.3s ease, color 0.3s ease;
+}
+
+/* Нижний край строки фиксирован: при scale иконка растёт вверх, без «прыжка» (iOS Safari) */
+.nav-icon {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    width: 100%;
+    height: 30px;
+}
+
+.nav-icon svg {
+    display: block;
+    color: inherit;
+}
+
+.nav-label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    /* min-height: 21px; */
+    font-size: 9px;
+    line-height: 1.05;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: #4f4f56;
+    text-align: center;
+    white-space: normal;
+    word-break: break-word;
+}
+
+.nav-btn.active .nav-label {
+    color: #3e8ce1;
 }
 
 .nav-btn .icon {
     display: inline-block;
+    transform-origin: bottom center;
     transition: transform 0.3s ease, color 0.3s ease;
 }
 
@@ -65,33 +145,40 @@
     transform: scale(1.15);
 }
 
-.navigation::before {
-    content: '';
-    position: absolute;
-    height: 52px;
-    width: calc(97% / 5);
-    top: 3px;
-    left: 3px;
-    background: #e6e6e6;
-    border-radius: 36px;
-    z-index: 1;
-    transition: left 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+.nav-btn.active .nav-icon svg {
+    color: #3e8ce1;
+    transform: scale(1.08);
+    transform-origin: bottom center;
 }
 
-.navigation[data-active="0"]::before {
-    left: 3px;
+.navigation #journal-icon svg {
+    /* width: 27px !important; */
+    /* height: 27px !important; */
+    /* margin: 0 !important; */
 }
-.navigation[data-active="1"]::before {
-    left: calc(103% / 5);
+
+.navigation #supplement-icon svg {
+    /* width: 28px !important; */
+    /* height: 28px !important; */
+    /* margin: 0 !important; */
 }
-.navigation[data-active="2"]::before {
-    left: calc(101% / 5 * 2);
+
+.navigation #programs-icon svg {
+    /* width: 24px !important; */
+    /* height: 24px !important; */
+    /* margin: 0 !important; */
 }
-.navigation[data-active="3"]::before {
-    left: calc(100% / 5 * 3);
+
+.navigation #meal-icon svg {
+    /* width: 24px !important; */
+    /* height: 24px !important; */
+    /* margin: 0 !important; */
 }
-.navigation[data-active="4"]::before {
-    left: calc(100% / 5 * 4);
+
+.navigation #reports-icon svg {
+    /* width: 24px !important; */
+    /* height: 24px !important; */
+    /* margin: 0 !important; */
 }
 
 .navigation.navigation--cycle-gate-locked .nav-btn {
@@ -106,10 +193,20 @@
 /* --- Поиск продуктов (приём): гамбургер + назад + действие, иконки уезжают влево --- */
 .navigation__meal-search-lead {
     display: none;
-    flex-shrink: 0;
+    flex: 1;
     align-items: center;
-    gap: 2px;
-    padding: 0 4px 0 2px;
+    gap: 0px;
+    width: 100%;
+    padding: 0 13px 0 33px;
+    justify-content: space-between;
+}
+
+.meal-search-nav-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 9px;
+    min-width: 0;
 }
 
 .navigation__icons-wrap {
@@ -120,6 +217,8 @@
     align-items: center;
     position: relative;
     transition: transform 0.36s cubic-bezier(0.25, 1, 0.5, 1);
+    padding: 0 16px;
+    margin-top: -22px;
 }
 
 .navigation.navigation--meal-search .navigation__meal-search-lead {
@@ -127,54 +226,89 @@
 }
 
 .navigation.navigation--meal-search .navigation__icons-wrap {
-    transform: translateX(-52%);
-}
-
-.navigation.navigation--meal-search.navigation--meal-search-expanded .navigation__meal-search-lead {
     display: none;
 }
 
-.navigation.navigation--meal-search.navigation--meal-search-expanded .navigation__icons-wrap {
-    transform: translateX(0);
-}
-
-.navigation__icons-wrap.navigation__icons-wrap--from-right {
-    transform: translateX(100%) !important;
-    transition: none !important;
-}
-
-.navigation.navigation--meal-search:not(.navigation--meal-search-expanded)::before {
-    opacity: 0;
-    pointer-events: none;
-}
-
-.meal-search-nav-hamburger,
 .meal-search-nav-back {
     border: none;
-    background: transparent;
+    background: none;
     outline: none;
     cursor: pointer;
-    color: #444;
-    padding: 0 4px;
+    padding: 0;
+    color: #3e8ce1;
     display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 36px;
-    height: 44px;
     -webkit-tap-highlight-color: transparent;
+    font-size: 13.5px;
+    font-weight: 600;
+    align-items: center;
+    gap: 1px;
+}
+button.meal-search-nav-back svg {
+    width: 24px;
+    height: 24px;
+    color: #111827;
+    color: #3e8ce1;
+}
+button.meal-search-nav-back span {
+    margin-top: 2px;
+}
+.meal-search-nav-hamburger {
+    display: none !important;
 }
 
 .navigation .meal-search-nav-action {
-    border: none;
-    background: transparent;
+    background: white;
     cursor: pointer;
-    padding: 0 8px 0 4px;
-    font-size: 13px;
+    padding: 12px 32px;
+    font-size: 12.5px;
     font-weight: 600;
-    color: #268eff;
+    /* color: #49494f!important; */
     white-space: nowrap;
-    max-width: 42vw;
+    color: #3e8ce1;
+    max-width: 56vw;
     overflow: hidden;
     text-overflow: ellipsis;
+    border-radius: 25px;
+    opacity: 0.55;
+    pointer-events: none;
+    transition: opacity 0.18s ease, transform 0.18s ease, border-color 0.18s ease;
     -webkit-tap-highlight-color: transparent;
+    /* border: 1px solid #3d8be1; */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #d7d7d7;
+}
+
+.navigation .meal-search-nav-action--icon {
+    width: 48px;
+    height: 41px;
+    padding: 0;
+    max-width: none;
+    border-radius: 10px;
+    flex: 0 0 75px;
+}
+button.meal-search-nav-action.meal-search-nav-action-primary.meal-search-main-action.meal-search-main-action--text.meal-search-nav-action--icon.active {
+    margin-right: 20px;
+}
+
+.navigation .meal-search-nav-action--icon svg {
+    width: 24.6px;
+    height: 26px;
+}
+button.meal-search-nav-action.meal-search-nav-action-primary.meal-search-main-action.meal-search-main-action--text.meal-search-nav-action--icon.active svg
+ {
+    width: 27.5px;
+    height: 26px;
+    margin-left: 7px;
+}
+.navigation .meal-search-nav-action.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.navigation .meal-search-nav-action.disabled,
+.navigation .meal-search-nav-action:disabled {
+    opacity: 0.55;
+    pointer-events: none;
 }

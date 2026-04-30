@@ -15,10 +15,12 @@ import { attachSwipeRow, closeSwipeRowVisual } from './swipe-engine.js';
 
 import { renderCycleReportPage } from './pages/supplement.js';
 import { resetSupplementsListener } from './pages/supplement.js';
+import { getSupplementPlanSnapshotSignature } from './pages/supplement.js';
 import {
     initBottomNav,
     syncBottomNavAfterRender,
-    setBottomNavLayoutFromAppVisibility
+    setBottomNavLayoutFromAppVisibility,
+    syncSupplementsBottomNavBadge
 } from './nav/bottom-nav.js';
 // Чтобы отключить нижнее меню: замените импорт выше на './nav/bottom-nav.stub.js'
 import {
@@ -38,6 +40,7 @@ import {
     setDoc,
     updateDoc,
     deleteDoc,
+    deleteField,
     onSnapshot,
     collection,
     getDocs,
@@ -46,16 +49,17 @@ import {
     where,
     runTransaction,
     serverTimestamp,
-    writeBatch
+    writeBatch,
+    arrayUnion
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 // 🔥 ДОБАВЛЯЕМ ИМПОРТЫ ДЛЯ FIREBASE STORAGE
 import {
     getStorage,
     ref,
-    uploadBytes,
+    uploadBytesResumable,
     getDownloadURL,
-    deleteObject // опционально
+    deleteObject
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
 
@@ -81,6 +85,45 @@ const CLOUDINARY_UPLOAD_PRESET = 'training_diary';
 // Используем projectId в качестве уникального ID приложения для структуры базы
 const appId = firebaseConfig.projectId;
 const initialAuthToken = null;
+const APPLE_HEALTH_CAPACITOR_CALLBACK_SCHEME = 'App';
+
+function parseAppleHealthSyncReturnUrl(rawUrl) {
+    try {
+        if (!rawUrl) return null;
+        const url = new URL(String(rawUrl));
+        if (!url.searchParams.has('appleHealthSync')) return null;
+
+        return {
+            status: String(url.searchParams.get('status') || 'done'),
+            date: String(url.searchParams.get('appleHealthDate') || '').trim(),
+            target: String(url.searchParams.get('appleHealthTarget') || '').trim()
+        };
+    } catch (_) {
+        return null;
+    }
+}
+
+function readAppleHealthSyncReturnParams() {
+    const payload = parseAppleHealthSyncReturnUrl(window.location.href);
+    if (!payload) return null;
+
+    try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('appleHealthSync');
+        url.searchParams.delete('appleHealthDate');
+        url.searchParams.delete('appleHealthTarget');
+        url.searchParams.delete('status');
+        const cleanSearch = url.searchParams.toString();
+        const cleanUrl = `${url.pathname}${cleanSearch ? `?${cleanSearch}` : ''}${url.hash || ''}`;
+        window.history.replaceState({}, '', cleanUrl);
+
+        return payload;
+    } catch (_) {
+        return null;
+    }
+}
+
+const initialAppleHealthSyncReturn = readAppleHealthSyncReturnParams();
 // =================================================================
 
 if (!firebaseConfig || Object.keys(firebaseConfig).length === 0) {
@@ -117,6 +160,8 @@ let clientsUnsubscribe = () => {};
 let cyclesUnsubscribe = () => {};
 let cyclesUnsubscribeTrainer = () => {};
 let cyclesUnsubscribeClient = () => {};
+let linkedTrainerAccessUnsubscribe = () => {};
+let ownLinkedTrainersUnsubscribe = () => {};
 let cyclesTrainerBuffer = [];
 let cyclesClientBuffer = [];
 let cyclesLinkKey = '';
@@ -201,16 +246,92 @@ let state = {
     selectedJournalRecord: null,
     loadedClientIdForCycles: null,
     cyclesLoaded: false,
+    selectedClientTrainerAccess: null,
+    ownLinkedTrainersAccess: [],
+    isProgramsLoading: false,
 
     userProfile: null,
     profileCabinetEditing: false,
     profileOriginPage: null,
+    appleHealthSyncReturn: initialAppleHealthSyncReturn,
+    appleHealthSyncToastShown: false,
 
     /** Снимок getBoundingClientRect карточек циклов до render() — для FLIP-анимации */
     cycleFlipPrevRects: null,
 
 };
 window.state = state;
+
+function enqueueAppleHealthSyncReturn(payload, { rerender = false } = {}) {
+    if (!payload || typeof payload !== 'object') return false;
+
+    state.appleHealthSyncReturn = {
+        status: String(payload.status || 'done'),
+        date: String(payload.date || '').trim(),
+        target: String(payload.target || '').trim(),
+        _handled: false
+    };
+    state.appleHealthSyncToastShown = false;
+
+    if (rerender) {
+        try {
+            render();
+        } catch (_) {}
+    }
+
+    return true;
+}
+
+async function installCapacitorAppleHealthReturnListener() {
+    if (!isCapacitorNativePlatform()) return;
+
+    const appPlugin = window.Capacitor?.Plugins?.App;
+    if (!appPlugin) {
+        console.warn('[AppleHealth] Capacitor App plugin is not available. Native x-success return is disabled.');
+        return;
+    }
+
+    const handleUrl = (rawUrl) => {
+        const payload = parseAppleHealthSyncReturnUrl(rawUrl);
+        if (!payload) return false;
+        return enqueueAppleHealthSyncReturn(payload, { rerender: true });
+    };
+
+    try {
+        if (typeof appPlugin.addListener === 'function') {
+            await appPlugin.addListener('appUrlOpen', (event) => {
+                handleUrl(event?.url);
+            });
+        }
+    } catch (error) {
+        console.warn('[AppleHealth] Failed to subscribe to appUrlOpen.', error);
+    }
+
+    try {
+        if (typeof appPlugin.getLaunchUrl === 'function') {
+            const launch = await appPlugin.getLaunchUrl();
+            handleUrl(launch?.url);
+        }
+    } catch (error) {
+        console.warn('[AppleHealth] Failed to read launch URL.', error);
+    }
+}
+
+// =================================================================
+// Scroll memory (in-memory, resets on reload)
+// Один скролл-контейнер (#root) используется для разных страниц,
+// поэтому храним scrollTop раздельно по "ключу экрана".
+// =================================================================
+const __scrollTopByViewKey = new Map();
+let __lastViewKeyForScrollMemory = null;
+
+function getScrollMemoryViewKey() {
+    // journal имеет два состояния: список (завершённые/план) и детали записи.
+    if (state.currentPage === 'journal') {
+        return state.selectedJournalRecord ? `journal:record:${state.selectedJournalRecord}` : 'journal:list';
+    }
+    return String(state.currentPage || 'unknown');
+}
 
 // =================================================================
 // Контекст: свой / персональный, клиент, цикл (цепочка без смешивания)
@@ -257,6 +378,7 @@ function resetCycleScopedState() {
 
     state.supplementPlan = null;
     state._supplementSubscribed = false;
+    syncSupplementsBottomNavBadge(null);
 
     state.reports = [];
     state.selectedReportId = null;
@@ -279,6 +401,8 @@ function resetCycleScopedState() {
     state.mealGoalField = null;
     state.mealsData = {};
     state.selectedDate = null;
+    state.mealSummaryMonth = null;
+    state.mealBurnedSummaryDate = null;
 }
 
 function resetClientScopedState() {
@@ -287,6 +411,7 @@ function resetClientScopedState() {
     state.cycles = [];
     state.loadedClientIdForCycles = null;
     state.cyclesLoaded = false;
+    state.selectedClientTrainerAccess = null;
     state.journal = [];
     state.selectedJournalCategory = '';
     state.selectedJournalProgram = '';
@@ -525,6 +650,181 @@ export function getCurrentAuthUid() {
     return auth.currentUser?.uid || null;
 }
 
+export function getLocalDateString(date = new Date()) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function bytesToHex(bytes) {
+    return Array.from(bytes)
+        .map((value) => value.toString(16).padStart(2, '0'))
+        .join('');
+}
+
+async function sha256HexBrowser(value) {
+    const payload = new TextEncoder().encode(String(value || ''));
+    const digest = await crypto.subtle.digest('SHA-256', payload);
+    return bytesToHex(new Uint8Array(digest));
+}
+
+function generateAppleHealthTokenValue() {
+    const bytes = new Uint8Array(24);
+    crypto.getRandomValues(bytes);
+    return `ah_${bytesToHex(bytes)}`;
+}
+
+export async function createAppleHealthImportToken() {
+    const uid = getCurrentAuthUid();
+    if (!uid) throw new Error('Не удалось определить пользователя.');
+
+    const tokenRef = getCurrentUserPrivateDocRef('appleHealthImport', uid);
+    const previousSnap = await getDoc(tokenRef);
+    const previousHash = String(previousSnap.data()?.tokenHash || '').trim();
+    const token = generateAppleHealthTokenValue();
+    const tokenHash = await sha256HexBrowser(token);
+    await setDoc(tokenRef, {
+        tokenHash,
+        updatedAt: serverTimestamp(),
+        source: 'pwa'
+    }, { merge: true });
+
+    await setDoc(getAppleHealthImportTokenMapRef(tokenHash), {
+        uid,
+        source: 'pwa',
+        updatedAt: serverTimestamp()
+    }, { merge: true });
+
+    if (previousHash && previousHash !== tokenHash) {
+        try {
+            await deleteDoc(getAppleHealthImportTokenMapRef(previousHash));
+        } catch (_) {
+            // ignore stale cleanup failure; the new token is already active
+        }
+    }
+
+    return {
+        token,
+        updatedAt: new Date().toISOString()
+    };
+}
+
+export async function getAppleHealthImportSettings() {
+    const uid = getCurrentAuthUid();
+    if (!uid) return null;
+    const settingsRef = getCurrentUserPrivateDocRef('appleHealthImport', uid);
+    const snap = await getDoc(settingsRef);
+    if (!snap.exists()) return null;
+    const data = snap.data() || {};
+    const tokenHash = String(data.tokenHash || '').trim();
+
+    if (tokenHash) {
+        try {
+            await setDoc(getAppleHealthImportTokenMapRef(tokenHash), {
+                uid,
+                source: 'pwa_repair',
+                updatedAt: serverTimestamp()
+            }, { merge: true });
+        } catch (error) {
+            console.warn('apple health token map repair failed', error);
+        }
+    }
+
+    return {
+        tokenHash,
+        source: data.source || '',
+        updatedAt: data.updatedAt || null
+    };
+}
+
+export function isAppleShortcutsLaunchSupported() {
+    const userAgent = navigator.userAgent || '';
+    return /iPhone|iPad|iPod/i.test(userAgent);
+}
+
+export function isCapacitorNativePlatform() {
+    return (
+        window.Capacitor?.isNativePlatform?.() === true ||
+        /Capacitor/i.test(window.navigator?.userAgent || '')
+    );
+}
+
+export function isStandalonePwaDisplayMode() {
+    try {
+        return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    } catch (_) {
+        return window.navigator?.standalone === true;
+    }
+}
+
+function buildAppleHealthShortcutCallbackUrl({ date, target, status = 'done' }) {
+    if (isCapacitorNativePlatform()) {
+        const nativeUrl = new URL(`${APPLE_HEALTH_CAPACITOR_CALLBACK_SCHEME}://apple-health-sync`);
+        nativeUrl.searchParams.set('appleHealthSync', 'done');
+        nativeUrl.searchParams.set('appleHealthDate', date);
+        nativeUrl.searchParams.set('appleHealthTarget', target);
+        if (status && status !== 'done') {
+            nativeUrl.searchParams.set('status', status);
+        }
+        return nativeUrl.toString();
+    }
+
+    const returnUrl = new URL(window.location.origin + window.location.pathname);
+    returnUrl.searchParams.set('appleHealthSync', 'done');
+    returnUrl.searchParams.set('appleHealthDate', date);
+    returnUrl.searchParams.set('appleHealthTarget', target);
+    if (status && status !== 'done') {
+        returnUrl.searchParams.set('status', status);
+    }
+    return returnUrl.toString();
+}
+
+export function buildAppleHealthShortcutUrl({ uid, date, target = 'mealBurned' }) {
+    const shortcutName = 'Sync Training Diary';
+    const payload = {
+        uid,
+        date,
+        source: 'manual_button'
+    };
+    const baseUrl =
+        'shortcuts://x-callback-url/run-shortcut' +
+        '?name=' + encodeURIComponent(shortcutName) +
+        '&input=text' +
+        '&text=' + encodeURIComponent(JSON.stringify(payload));
+
+    if (!isCapacitorNativePlatform() && isStandalonePwaDisplayMode()) {
+        return baseUrl;
+    }
+
+    const successUrl = buildAppleHealthShortcutCallbackUrl({ date, target, status: 'done' });
+    const cancelUrl = buildAppleHealthShortcutCallbackUrl({ date, target, status: 'cancel' });
+    const errorUrl = buildAppleHealthShortcutCallbackUrl({ date, target, status: 'error' });
+
+    return (
+        baseUrl +
+        '&x-success=' + encodeURIComponent(successUrl) +
+        '&x-cancel=' + encodeURIComponent(cancelUrl) +
+        '&x-error=' + encodeURIComponent(errorUrl)
+    );
+}
+
+export function launchAppleHealthShortcut(options = {}) {
+    const uid = options.uid || getCurrentAuthUid();
+    const date = options.date || getLocalDateString(new Date());
+    const target = options.target || 'mealBurned';
+
+    if (!uid) {
+        return { ok: false, reason: 'missing_uid' };
+    }
+    if (!isAppleShortcutsLaunchSupported()) {
+        return { ok: false, reason: 'unsupported_platform' };
+    }
+
+    window.location.href = buildAppleHealthShortcutUrl({ uid, date, target });
+    return { ok: true };
+}
+
 
 
 // 🔥 Коллекция для Отчетов, привязанная к циклу
@@ -566,6 +866,33 @@ window.createElement = createElement;
 
 function getUserAccountSettingsRef(uid) {
     return doc(db, 'artifacts', appId, 'users', uid, 'account', 'settings');
+}
+
+function getUserPrivateDocRef(uid, docId) {
+    return doc(db, 'artifacts', appId, 'users', uid, 'private', docId);
+}
+
+function getAppleHealthImportTokenMapRef(tokenHash) {
+    return doc(db, 'artifacts', appId, 'appleHealthImportTokens', tokenHash);
+}
+
+function getUserHealthDailyDocRef(uid, dateStr) {
+    return doc(db, 'artifacts', appId, 'users', uid, 'healthDaily', dateStr);
+}
+
+export function getCurrentUserPrivateDocRef(docId, uid = getCurrentAuthUid()) {
+    if (!uid || !docId) return null;
+    return getUserPrivateDocRef(uid, docId);
+}
+
+export function getCurrentUserHealthDailyDocRef(dateStr, uid = getCurrentAuthUid()) {
+    if (!uid || !dateStr) return null;
+    return getUserHealthDailyDocRef(uid, dateStr);
+}
+
+export function getCurrentUserHealthDailyCollection(uid = getCurrentAuthUid()) {
+    if (!uid) return null;
+    return collection(db, 'artifacts', appId, 'users', uid, 'healthDaily');
 }
 
 function getPublicUserCodeRef(code) {
@@ -619,30 +946,282 @@ function getLinkedTrainerDocRef(clientUid, trainerUid) {
     return doc(db, 'artifacts', appId, 'users', clientUid, 'linkedTrainers', trainerUid);
 }
 
+function normalizeTrainerCycleAccessSettings(data = {}) {
+    return {
+        active: data?.active !== false,
+        fullCycleAccess: data?.fullCycleAccess === true,
+        allowedCycleIds: Array.isArray(data?.allowedCycleIds)
+            ? data.allowedCycleIds.map((id) => String(id || '').trim()).filter(Boolean)
+            : []
+    };
+}
+
+function getCycleTrainerAccessMap(cycle = {}) {
+    const raw = cycle?.trainerAccess;
+    return raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+}
+
+function cycleHasTrainerDirectAccess(cycle, trainerUid = userId) {
+    if (!cycle || !trainerUid) return false;
+    return getCycleTrainerAccessMap(cycle)[trainerUid] === true;
+}
+
+function trainerAccessAllowsCycle(access, cycleId) {
+    if (!access || !cycleId) return false;
+    if (access.fullCycleAccess) return true;
+    return Array.isArray(access.allowedCycleIds) && access.allowedCycleIds.includes(String(cycleId));
+}
+
+function ownCycleIsSharedWithTrainer(cycleId) {
+    if (!cycleId) return false;
+    return (state.ownLinkedTrainersAccess || []).some((access) => trainerAccessAllowsCycle(access, cycleId));
+}
+
+async function fetchOwnCyclesForClientAccessRaw() {
+    if (!userId) return [];
+    const cyclesRef = collection(db, 'artifacts', appId, 'users', userId, 'cycles');
+    const snap = await getDocs(cyclesRef);
+    return snap.docs.map((item) => ({ id: item.id, ...item.data() }));
+}
+
+function sortCyclesForAccessUi(cycles = []) {
+    return [...cycles].sort((a, b) => {
+        const aTime = Number(a?.startDate || 0);
+        const bTime = Number(b?.startDate || 0);
+        if (aTime !== bTime) return bTime - aTime;
+        return String(a?.name || '').localeCompare(String(b?.name || ''), 'ru');
+    });
+}
+
+export async function fetchOwnCyclesForClientAccess() {
+    const cycles = await fetchOwnCyclesForClientAccessRaw();
+    return sortCyclesForAccessUi(cycles).map((cycle) => ({
+        id: cycle.id,
+        name: String(cycle.name || '').trim() || 'Без названия'
+    }));
+}
+
+function buildTrainerCycleAccessSummary(trainerUid, cycles = [], accessSettings = {}) {
+    const sortedCycles = sortCyclesForAccessUi(cycles);
+    const normalized = normalizeTrainerCycleAccessSettings(accessSettings);
+    const fullCycleAccess = normalized.fullCycleAccess;
+    if (fullCycleAccess) {
+        return {
+            accessMode: 'full',
+            allowedCycleIds: sortedCycles.map((cycle) => cycle.id),
+            allowedCycleNames: sortedCycles.map((cycle) => String(cycle.name || '').trim()).filter(Boolean)
+        };
+    }
+
+    // Только явный список из linkedTrainers; пустой список при частичном доступе = нет циклов
+    const allowed = normalized.allowedCycleIds.length
+        ? sortedCycles.filter((cycle) => normalized.allowedCycleIds.includes(cycle.id))
+        : [];
+    return {
+        accessMode: allowed.length ? 'partial' : 'none',
+        allowedCycleIds: allowed.map((cycle) => cycle.id),
+        allowedCycleNames: allowed.map((cycle) => String(cycle.name || '').trim()).filter(Boolean)
+    };
+}
+
+function getSelectedTrainerCycleAccessSettings() {
+    return normalizeTrainerCycleAccessSettings(state.selectedClientTrainerAccess || {});
+}
+
+function canTrainerAccessCanonicalClientCycle(cycle) {
+    if (!cycle?.id) return false;
+    if (state.currentMode !== 'personal' || !state.selectedClientId) return true;
+    // Сырой буфер клиента из onSnapshot ещё без _firesAtClient — раньше из‑за этого
+    // все циклы проходили фильтр. При активной связи проверяем только linkedTrainers.
+    if (!getActiveLinkedClientUid()) return true;
+
+    const access = getSelectedTrainerCycleAccessSettings();
+    return trainerAccessAllowsCycle(access, cycle.id);
+}
+
+function filterTrainerVisibleClientCycles(cycles = []) {
+    return cycles.filter((cycle) => canTrainerAccessCanonicalClientCycle(cycle));
+}
+
+function filterJournalRecordsForVisibleCycles(records = []) {
+    if (state.currentMode !== 'personal' || !state.selectedClientId) return records;
+    if (!getActiveLinkedClientUid()) return records;
+
+    const visibleCycleIds = new Set((state.cycles || []).map((cycle) => cycle.id).filter(Boolean));
+    const visibleCycleNames = new Set((state.cycles || []).map((cycle) => cycle.name).filter(Boolean));
+
+    if (!visibleCycleIds.size && !visibleCycleNames.size) return [];
+
+    return records.filter((record) => {
+        if (record?.cycleId && visibleCycleIds.has(record.cycleId)) return true;
+        if (record?.cycleName && visibleCycleNames.has(record.cycleName)) return true;
+        return false;
+    });
+}
+
+function syncSelectedCycleAfterVisibilityChange() {
+    if (
+        state.selectedJournalCategory &&
+        !state.cycles.some((cycle) => cycle.name === state.selectedJournalCategory)
+    ) {
+        state.selectedJournalCategory = '';
+        state.selectedJournalProgram = '';
+        state.selectedJournalRecord = null;
+    }
+
+    if (!state.selectedCycleId) return;
+    const currentCycle = state.cycles.find((cycle) => cycle.id === state.selectedCycleId);
+    if (currentCycle) return;
+
+    resetCycleScopedState();
+    state.selectedJournalCategory = '';
+    state.selectedJournalProgram = '';
+    state.selectedJournalRecord = null;
+
+    const cycleRequiredPages = ['programsInCycle', 'programDetails', 'meal', 'reports', 'supplements', 'cycleReport', 'mealsReport'];
+    if (cycleRequiredPages.includes(state.currentPage)) {
+        state.currentPage = 'programs';
+    }
+}
+
+function resetCycleDerivedStateForSwitch() {
+    resetSupplementsListener();
+    resetMealsState();
+    destroyMealShellState();
+
+    state.selectedProgramIdForDetails = null;
+    state.programDetailsOrigin = null;
+    state.expandedExerciseId = null;
+    state.editingSetId = null;
+    state.lastClickedExerciseId = null;
+    state.openSwipedExerciseId = null;
+    state.openSide = null;
+
+    state.supplementPlan = null;
+    state._supplementSubscribed = false;
+    syncSupplementsBottomNavBadge(null);
+
+    state.reports = [];
+    state.selectedReportId = null;
+    state.programs = [];
+    state.openProgramAfterLoad = null;
+    state.reportHtmlCache = null;
+    state.isProgramsLoading = true;
+
+    state.selectedFoods = new Set();
+    state.mealView = 'main';
+    state.currentMealId = null;
+    state.mealSearchTab = 'all';
+    state.mealSearchBaseMode = 'english';
+    state.mealSearchSortByTab = { all: 'recentlyUsed', products: 'new', recipes: 'new' };
+    state.mealSearchScrollByTab = { all: 0, products: 0, recipes: 0 };
+    state.recipeFoodSearchQuery = '';
+    state.recipeFoodSearchScrollTop = 0;
+    state.createFoodBackTarget = null;
+    state.recipeSelectedFoodId = null;
+    state.mealGoal = { calories: '', protein: 0, fat: 0, carbs: 0, mode: 'grams' };
+    state.mealGoalField = null;
+    state.mealsData = {};
+    state.selectedDate = null;
+    state.mealSummaryMonth = null;
+    state.mealBurnedSummaryDate = null;
+}
+
+function applyCycleSelection(cycle, options = {}) {
+    if (!cycle?.id) return false;
+
+    const shouldReload = options.reloadData === true || state.selectedCycleId !== cycle.id;
+
+    if (options.captureFlip === true) {
+        state.cycleFlipPrevRects = captureCycleCardRectsForFlip();
+    }
+
+    if (shouldReload) {
+        resetCycleDerivedStateForSwitch();
+        state.selectedCycleId = cycle.id;
+        state.selectedJournalCategory = cycle.name || '';
+        if (!options.preserveJournalSelection) {
+            state.selectedJournalProgram = '';
+            state.selectedJournalRecord = null;
+        }
+        setupDynamicListeners();
+    }
+
+    if (options.openPrograms === true) {
+        state.currentPage = 'programsInCycle';
+        state.lastProgramsPage = 'programsInCycle';
+    }
+
+    return shouldReload;
+}
+
+function normalizePersonNameFields(data = {}) {
+    const firstName = String(data?.firstName || '').trim();
+    const lastName = String(data?.lastName || '').trim();
+    return {
+        firstName,
+        lastName,
+        fullName: [firstName, lastName].filter(Boolean).join(' ').trim()
+    };
+}
+
+async function getOwnProfileNameFields() {
+    const cached = state.userProfile && typeof state.userProfile === 'object'
+        ? normalizePersonNameFields(state.userProfile)
+        : { firstName: '', lastName: '', fullName: '' };
+
+    if (cached.firstName || cached.lastName) {
+        return cached;
+    }
+
+    if (!userId) return cached;
+
+    try {
+        const snap = await getDoc(getUserAccountSettingsRef(userId));
+        if (!snap.exists()) return cached;
+        return normalizePersonNameFields(snap.data());
+    } catch (_) {
+        return cached;
+    }
+}
+
 function mergeCyclesTrainerClientBuffers() {
     const map = new Map();
     for (const c of cyclesTrainerBuffer) {
         map.set(c.id, { ...c, _firesAtClient: false });
     }
-    for (const c of cyclesClientBuffer) {
+    for (const c of filterTrainerVisibleClientCycles(cyclesClientBuffer)) {
         map.set(c.id, { ...c, _firesAtClient: true });
     }
-    state.cycles = Array.from(map.values());
+    state.cycles = sortCyclesForAccessUi(Array.from(map.values()));
+    syncSelectedCycleAfterVisibilityChange();
 }
 
 async function syncTrainerClientCardsFromAcceptedInvites() {
     if (state.currentMode !== 'personal' || !userId) return;
     for (const c of state.clients || []) {
-        if (c.linkStatus !== 'pending' || !c.inviteId || !c.linkedUserUid) continue;
+        if (!c.inviteId || !c.linkedUserUid) continue;
         try {
-            const invRef = doc(db, 'artifacts', appId, 'users', c.linkedUserUid, 'trainerInvites', c.inviteId);
-            const inv = await getDoc(invRef);
-            if (!inv.exists()) continue;
-            const st = inv.data()?.status;
-            if (st === 'accepted') {
-                await updateDoc(doc(getClientsCollection(), c.id), { linkStatus: 'active' });
-            } else if (st === 'rejected') {
-                await deleteDoc(doc(getClientsCollection(), c.id));
+            if (c.linkStatus === 'pending') {
+                const invRef = doc(db, 'artifacts', appId, 'users', c.linkedUserUid, 'trainerInvites', c.inviteId);
+                const inv = await getDoc(invRef);
+                if (!inv.exists()) continue;
+                const st = inv.data()?.status;
+                if (st === 'accepted') {
+                    await updateDoc(doc(getClientsCollection(), c.id), { linkStatus: 'active' });
+                } else if (st === 'rejected') {
+                    await deleteDoc(doc(getClientsCollection(), c.id));
+                }
+                continue;
+            }
+
+            if (c.linkStatus === 'active') {
+                const linkedRef = getLinkedTrainerDocRef(c.linkedUserUid, userId);
+                const linkedSnap = await getDoc(linkedRef);
+                const isLinked = linkedSnap.exists() && linkedSnap.data()?.active === true;
+                if (!isLinked) {
+                    await deleteDoc(doc(getClientsCollection(), c.id));
+                }
             }
         } catch (e) {
             console.warn('sync invite', e);
@@ -671,6 +1250,8 @@ async function createTrainerInviteByPublicCode(codeRaw) {
         /* нет доступа к профилю до привязки — оставляем имя по номеру */
     }
 
+    const trainerName = await getOwnProfileNameFields();
+
     const clientsCol = getClientsCollection();
     const newCardRef = doc(clientsCol);
     const inviteRef = doc(getTrainerInvitesCollection(clientUid));
@@ -686,6 +1267,9 @@ async function createTrainerInviteByPublicCode(codeRaw) {
     batch.set(inviteRef, {
         trainerUid: trainerUid,
         trainerClientCardId: newCardRef.id,
+        trainerFirstName: trainerName.firstName,
+        trainerLastName: trainerName.lastName,
+        trainerName: trainerName.fullName,
         status: 'pending',
         createdAt: serverTimestamp()
     });
@@ -715,6 +1299,12 @@ export async function acceptTrainerInviteClient(inviteId) {
     batch.set(getLinkedTrainerDocRef(userId, trainerUid), {
         active: true,
         trainerClientCardId: data.trainerClientCardId || '',
+        inviteId: inviteId,
+        trainerFirstName: String(data.trainerFirstName || '').trim(),
+        trainerLastName: String(data.trainerLastName || '').trim(),
+        trainerName: String(data.trainerName || '').trim(),
+        fullCycleAccess: false,
+        allowedCycleIds: [],
         linkedAt: serverTimestamp()
     });
     await batch.commit();
@@ -727,6 +1317,182 @@ export async function rejectTrainerInviteClient(inviteId) {
     if (!snap.exists()) return;
     if (snap.data()?.status !== 'pending') return;
     await updateDoc(invRef, { status: 'rejected', rejectedAt: serverTimestamp() });
+}
+
+export async function fetchLinkedTrainersForClient() {
+    if (!userId) return [];
+
+    const linkedCol = collection(db, 'artifacts', appId, 'users', userId, 'linkedTrainers');
+    const [snap, ownCycles] = await Promise.all([
+        getDocs(linkedCol),
+        fetchOwnCyclesForClientAccessRaw()
+    ]);
+
+    const trainers = await Promise.all(snap.docs.map(async (item) => {
+            const data = item.data() || {};
+            let firstName = String(data.trainerFirstName || '').trim();
+            let lastName = String(data.trainerLastName || '').trim();
+            let trainerName = String(data.trainerName || '').trim();
+            const inviteId = String(data.inviteId || '').trim();
+
+            if ((!firstName || !lastName) && inviteId) {
+                try {
+                    const inviteSnap = await getDoc(
+                        doc(db, 'artifacts', appId, 'users', userId, 'trainerInvites', inviteId)
+                    );
+                    if (inviteSnap.exists()) {
+                        const inviteData = inviteSnap.data() || {};
+                        firstName = firstName || String(inviteData.trainerFirstName || '').trim();
+                        lastName = lastName || String(inviteData.trainerLastName || '').trim();
+                        trainerName = trainerName || String(inviteData.trainerName || '').trim();
+                    }
+                } catch (_) {
+                    /* keep fallback below */
+                }
+            }
+
+            if ((!firstName || !lastName) && trainerName) {
+                const parts = trainerName.split(/\s+/).filter(Boolean);
+                if (!firstName && parts.length) firstName = parts[0];
+                if (!lastName && parts.length > 1) lastName = parts.slice(1).join(' ');
+            }
+
+            const accessSummary = buildTrainerCycleAccessSummary(item.id, ownCycles, data);
+
+            return {
+                id: item.id,
+                trainerUid: item.id,
+                active: data.active !== false,
+                trainerClientCardId: String(data.trainerClientCardId || '').trim(),
+                inviteId,
+                firstName,
+                lastName,
+                fullCycleAccess: data.fullCycleAccess === true,
+                accessMode: accessSummary.accessMode,
+                allowedCycleIds: accessSummary.allowedCycleIds,
+                allowedCycleNames: accessSummary.allowedCycleNames,
+                fullName: [firstName, lastName].filter(Boolean).join(' ').trim() || trainerName || 'Тренер'
+            };
+        }));
+
+    return trainers.filter((trainer) => trainer.active);
+}
+
+export async function saveLinkedTrainerCycleAccess(trainerUid, options = {}) {
+    if (!userId) throw new Error('Не авторизован');
+
+    const normalizedTrainerUid = String(trainerUid || '').trim();
+    if (!normalizedTrainerUid) throw new Error('Не найден тренер');
+
+    const linkedRef = getLinkedTrainerDocRef(userId, normalizedTrainerUid);
+    const linkedSnap = await getDoc(linkedRef);
+    if (!linkedSnap.exists()) throw new Error('Связь с тренером не найдена');
+
+    const fullCycleAccess = options?.fullCycleAccess === true;
+    const allowedCycleIds = new Set(
+        Array.isArray(options?.allowedCycleIds)
+            ? options.allowedCycleIds.map((id) => String(id || '').trim()).filter(Boolean)
+            : []
+    );
+
+    const ownCycles = await fetchOwnCyclesForClientAccessRaw();
+    const batch = writeBatch(db);
+    batch.update(linkedRef, {
+        fullCycleAccess,
+        allowedCycleIds: [...allowedCycleIds],
+        accessUpdatedAt: serverTimestamp()
+    });
+
+    for (const cycle of ownCycles) {
+        const cycleRef = doc(db, 'artifacts', appId, 'users', userId, 'cycles', cycle.id);
+        const fieldName = `trainerAccess.${normalizedTrainerUid}`;
+        const shouldGrant = allowedCycleIds.has(cycle.id);
+        const alreadyGranted = cycleHasTrainerDirectAccess(cycle, normalizedTrainerUid);
+
+        if (shouldGrant) {
+            batch.update(cycleRef, { [fieldName]: true });
+        } else if (alreadyGranted) {
+            batch.update(cycleRef, { [fieldName]: deleteField() });
+        }
+    }
+
+    await batch.commit();
+
+    const nextCycles = ownCycles.map((cycle) => {
+        const nextAccessMap = { ...getCycleTrainerAccessMap(cycle) };
+        if (allowedCycleIds.has(cycle.id)) {
+            nextAccessMap[normalizedTrainerUid] = true;
+        } else {
+            delete nextAccessMap[normalizedTrainerUid];
+        }
+        return { ...cycle, trainerAccess: nextAccessMap };
+    });
+
+    return buildTrainerCycleAccessSummary(normalizedTrainerUid, nextCycles, {
+        fullCycleAccess,
+        allowedCycleIds: [...allowedCycleIds]
+    });
+}
+
+export async function disconnectLinkedTrainerClient(trainerUid) {
+    if (!userId) throw new Error('Не авторизован');
+
+    const normalizedTrainerUid = String(trainerUid || '').trim();
+    if (!normalizedTrainerUid) throw new Error('Не найден тренер для разрыва связи');
+
+    const linkedRef = getLinkedTrainerDocRef(userId, normalizedTrainerUid);
+    const linkedSnap = await getDoc(linkedRef);
+    if (!linkedSnap.exists()) return;
+
+    const linkedData = linkedSnap.data() || {};
+    const trainerClientCardId = String(linkedData.trainerClientCardId || '').trim();
+    const inviteId = String(linkedData.inviteId || '').trim();
+    const ownCycles = await fetchOwnCyclesForClientAccessRaw();
+    const batch = writeBatch(db);
+
+    batch.delete(linkedRef);
+
+    if (inviteId) {
+        batch.delete(
+            doc(
+                db,
+                'artifacts',
+                appId,
+                'users',
+                userId,
+                'trainerInvites',
+                inviteId
+            )
+        );
+    }
+
+    for (const cycle of ownCycles) {
+        if (!cycleHasTrainerDirectAccess(cycle, normalizedTrainerUid)) continue;
+        batch.update(
+            doc(db, 'artifacts', appId, 'users', userId, 'cycles', cycle.id),
+            { [`trainerAccess.${normalizedTrainerUid}`]: deleteField() }
+        );
+    }
+
+    await batch.commit();
+
+    if (trainerClientCardId) {
+        try {
+            await deleteDoc(
+                doc(
+                    db,
+                    'artifacts',
+                    appId,
+                    'users',
+                    normalizedTrainerUid,
+                    'clients',
+                    trainerClientCardId
+                )
+            );
+        } catch (e) {
+            console.warn('disconnectLinkedTrainerClient: trainer card cleanup skipped', e?.code || e);
+        }
+    }
 }
 
 function openAddClientChoiceModal() {
@@ -1430,7 +2196,8 @@ function renderCyclesPage() {
     contentContainer.append(header);
 
     // -----------------------------------------------------------
-    // СПИСОК ЦИКЛОВ (активация цикла → меню; «Перейти к тренировкам» → список программ)
+    // СПИСОК ЦИКЛОВ: 1-й клик — активация и раскрытие; 2-й по той же карточке (или заголовок
+    // когда активна, или «Перейти к тренировкам») — список программ цикла.
     // -----------------------------------------------------------
     const cyclesList = createElement('div', 'programs-list programs-list--cycles-board list-section');
 
@@ -1445,7 +2212,15 @@ function renderCyclesPage() {
 
             const headerRow = createElement('div', 'cycle-card-header');
             const titleEl = createElement('div', 'cycle-card-title');
-            titleEl.innerHTML = `${cycle.name} <small class="muted">(${cycle.startDateString || '—'})</small>`;
+            const accessMark = state.currentMode === 'own' && ownCycleIsSharedWithTrainer(cycle.id)
+                ? `<span class="cycle-card-access-mark" title="Этот цикл доступен тренеру">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+                            <path fill="currentColor" d="m10 15.172l-3.95-3.95l-1.414 1.414L10 18L20.364 7.636l-1.414-1.414z"></path>
+                        </svg>
+                   </span>`
+                : '';
+            const dateStr = cycle.startDateString || '—';
+            titleEl.innerHTML = `${accessMark}<span>${cycle.name}</span> <span><small class="muted">(${dateStr})</small></span>`;
             titleEl.addEventListener('click', (e) => {
                 if (state.selectedCycleId === cycle.id) {
                     e.stopPropagation();
@@ -1485,21 +2260,13 @@ function renderCyclesPage() {
             cycleItem.addEventListener('click', (e) => {
                 if (e.target.closest('.menu-btn')) return;
                 if (e.target.closest('.cycle-goto-programs-btn')) return;
-
                 if (state.selectedCycleId === cycle.id) {
-                    state.cycleFlipPrevRects = captureCycleCardRectsForFlip();
-                    resetCycleScopedState();
-                    state.selectedJournalCategory = '';
-                    state.loadedClientIdForCycles = null;
-                    setupDynamicListeners();
+                    state.currentPage = 'programsInCycle';
+                    state.lastProgramsPage = 'programsInCycle';
                     render();
                     return;
                 }
-
-                state.cycleFlipPrevRects = captureCycleCardRectsForFlip();
-                state.selectedCycleId = cycle.id;
-                state.selectedJournalCategory = cycle.name || '';
-                setupDynamicListeners();
+                applyCycleSelection(cycle, { captureFlip: true });
                 render();
             });
 
@@ -1521,8 +2288,28 @@ function renderCyclesPage() {
                 startDateString: new Date().toLocaleDateString('ru-RU'),
                 supplementPlan: { supplements: [], data: [] }
             };
+            const linkedUid = getActiveLinkedClientUid();
+            if (state.currentMode === 'personal' && linkedUid) {
+                newCycle.createdByTrainerUid = userId;
+                newCycle.trainerAccess = { [userId]: true };
+            }
             try {
-                await addDoc(getUserCyclesCollection(), newCycle);
+                if (state.currentMode === 'personal' && linkedUid) {
+                    const batch = writeBatch(db);
+                    const cycleRef = doc(getUserCyclesCollection());
+                    batch.set(cycleRef, newCycle);
+                    const linkedRef = getLinkedTrainerDocRef(linkedUid, userId);
+                    const linkedSnap = await getDoc(linkedRef);
+                    if (linkedSnap.exists() && linkedSnap.data()?.fullCycleAccess !== true) {
+                        batch.update(linkedRef, {
+                            allowedCycleIds: arrayUnion(cycleRef.id),
+                            accessUpdatedAt: serverTimestamp()
+                        });
+                    }
+                    await batch.commit();
+                } else {
+                    await addDoc(getUserCyclesCollection(), newCycle);
+                }
             } catch (error) {
                 console.error("Ошибка при добавлении цикла:", error);
                 showToast('Ошибка сохранения. Проверьте правила Firebase!');
@@ -1556,7 +2343,7 @@ function openCycleMenuModal(cycle) {
 
     // Кнопка "Редактировать"
     const editBtn = createElement('button', 'btn btn-primary');
-    editBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24"><title>Edit SVG Icon</title><path fill="currentColor" d="M3.548 20.938h16.9a.5.5 0 0 0 0-1h-16.9a.5.5 0 0 0 0 1M9.71 17.18a2.587 2.587 0 0 0 1.12-.65l9.54-9.54a1.75 1.75 0 0 0 0-2.47l-.94-.93a1.788 1.788 0 0 0-2.47 0l-9.54 9.53a2.473 2.473 0 0 0-.64 1.12L6.04 17a.737.737 0 0 0 .19.72a.767.767 0 0 0 .53.22Zm.41-1.36a1.468 1.468 0 0 1-.67.39l-.97.26l-1-1l.26-.97a1.521 1.521 0 0 1 .39-.67l.38-.37l1.99 1.99Zm1.09-1.08l-1.99-1.99l6.73-6.73l1.99 1.99Zm8.45-8.45L18.65 7.3l-1.99-1.99l1.01-1.02a.748.748 0 0 1 1.06 0l.93.94a.754.754 0 0 1 0 1.06"></path></svg>';
+    editBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><title>Редактировать</title><path fill="currentColor" d="M 14.96 1.812 C 14.01 1.875 13.23 2.479 12.62 3.165 C 9.636 6.167 6.628 9.151 3.651 12.16 C 2.981 12.89 2.991 13.94 2.731 14.85 C 2.558 15.67 2.348 16.49 2.197 17.32 C 2.22 17.74 2.708 17.9 3.055 17.74 C 4.394 17.42 5.752 17.18 7.078 16.81 C 7.617 16.62 8.021 16.2 8.41 15.8 C 8.307 15.4 8.24 15 8.211 14.59 C 7.701 15.02 7.32 15.65 6.678 15.89 C 5.577 16.16 4.465 16.39 3.359 16.64 C 3.627 15.5 3.846 14.35 4.144 13.22 C 4.449 12.6 5.062 12.2 5.511 11.69 C 7.823 9.38 10.14 7.07 12.45 4.76 C 13.38 5.69 14.31 6.62 15.24 7.551 C 14.82 7.971 14.41 8.391 13.99 8.811 C 14.4 8.842 14.8 8.907 15.2 9.01 C 16 8.179 16.87 7.41 17.62 6.537 C 18.58 5.306 18.3 3.354 17.05 2.432 C 16.46 1.971 15.7 1.747 14.96 1.812 z M 15.6 2.848 C 16.69 3.048 17.46 4.279 17.1 5.346 C 16.93 5.981 16.38 6.384 15.95 6.84 C 15.02 5.91 14.08 4.98 13.15 4.051 C 13.7 3.495 14.29 2.812 15.14 2.818 C 15.29 2.801 15.45 2.84 15.6 2.848 z "/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" d="M12.07,13.39L13.71,12.47L15.35,13.39L15.35,15.22L13.71,16.15L12.07,15.22z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" d="M16.98,13.5L17.8,12.6L17.18,11.55L15.97,11.84L14.59,11.1L14.32,10.22L13.1,10.22L12.82,11.1L11.45,11.84L10.24,11.55L9.62,12.6L10.44,13.5L10.44,15.12L9.62,16.01L10.24,17.07L11.45,16.78L12.82,17.52L13.1,18.4L14.32,18.4L14.59,17.52L15.97,16.78L17.18,17.07L17.8,16.01L16.98,15.12z"/></svg>';
     editBtn.addEventListener('click', () => {
         document.body.removeChild(modal);
         openEditCycleModal(cycle);
@@ -1718,7 +2505,7 @@ function renderProgramsInCyclePage() {
     // -----------------------------------------------------------
     const programsList = createElement('div', 'programs-list list-section');
 
-    if (state.programs.length === 0) {
+    if (state.isProgramsLoading && state.programs.length === 0) {
         programsList.append(createElement('div', 'muted', 'Нет программ. Создайте новую!'));
     } else {
         state.programs.forEach(program => {
@@ -1746,6 +2533,10 @@ function renderProgramsInCyclePage() {
 
             // Клик по карточке → открыть детали
             programItem.addEventListener('click', (e) => {
+                if (programItem.dataset.suppressClick === '1') {
+                    programItem.dataset.suppressClick = '0';
+                    return;
+                }
                 if (!e.target.closest('.menu-btn')) {
                     state.selectedProgramIdForDetails = program.id;
                     state.programDetailsOrigin = 'programsInCycle';
@@ -1756,6 +2547,7 @@ function renderProgramsInCyclePage() {
                 }
             });
 
+            attachProgramReorderLongPress({ itemEl: programItem, parentEl: programsList });
             programsList.append(programItem);
         });
     }
@@ -1809,7 +2601,7 @@ function openProgramMenuModal(program) {
 
     // Редактировать
     const editBtn = createElement('button', 'btn btn-primary');
-    editBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24"><title>Edit SVG Icon</title><path fill="currentColor" d="M3.548 20.938h16.9a.5.5 0 0 0 0-1h-16.9a.5.5 0 0 0 0 1M9.71 17.18a2.587 2.587 0 0 0 1.12-.65l9.54-9.54a1.75 1.75 0 0 0 0-2.47l-.94-.93a1.788 1.788 0 0 0-2.47 0l-9.54 9.53a2.473 2.473 0 0 0-.64 1.12L6.04 17a.737.737 0 0 0 .19.72a.767.767 0 0 0 .53.22Zm.41-1.36a1.468 1.468 0 0 1-.67.39l-.97.26l-1-1l.26-.97a1.521 1.521 0 0 1 .39-.67l.38-.37l1.99 1.99Zm1.09-1.08l-1.99-1.99l6.73-6.73l1.99 1.99Zm8.45-8.45L18.65 7.3l-1.99-1.99l1.01-1.02a.748.748 0 0 1 1.06 0l.93.94a.754.754 0 0 1 0 1.06"></path></svg>';
+    editBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><title>Редактировать</title><path fill="currentColor" d="M 14.96 1.812 C 14.01 1.875 13.23 2.479 12.62 3.165 C 9.636 6.167 6.628 9.151 3.651 12.16 C 2.981 12.89 2.991 13.94 2.731 14.85 C 2.558 15.67 2.348 16.49 2.197 17.32 C 2.22 17.74 2.708 17.9 3.055 17.74 C 4.394 17.42 5.752 17.18 7.078 16.81 C 7.617 16.62 8.021 16.2 8.41 15.8 C 8.307 15.4 8.24 15 8.211 14.59 C 7.701 15.02 7.32 15.65 6.678 15.89 C 5.577 16.16 4.465 16.39 3.359 16.64 C 3.627 15.5 3.846 14.35 4.144 13.22 C 4.449 12.6 5.062 12.2 5.511 11.69 C 7.823 9.38 10.14 7.07 12.45 4.76 C 13.38 5.69 14.31 6.62 15.24 7.551 C 14.82 7.971 14.41 8.391 13.99 8.811 C 14.4 8.842 14.8 8.907 15.2 9.01 C 16 8.179 16.87 7.41 17.62 6.537 C 18.58 5.306 18.3 3.354 17.05 2.432 C 16.46 1.971 15.7 1.747 14.96 1.812 z M 15.6 2.848 C 16.69 3.048 17.46 4.279 17.1 5.346 C 16.93 5.981 16.38 6.384 15.95 6.84 C 15.02 5.91 14.08 4.98 13.15 4.051 C 13.7 3.495 14.29 2.812 15.14 2.818 C 15.29 2.801 15.45 2.84 15.6 2.848 z "/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" d="M12.07,13.39L13.71,12.47L15.35,13.39L15.35,15.22L13.71,16.15L12.07,15.22z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" d="M16.98,13.5L17.8,12.6L17.18,11.55L15.97,11.84L14.59,11.1L14.32,10.22L13.1,10.22L12.82,11.1L11.45,11.84L10.24,11.55L9.62,12.6L10.44,13.5L10.44,15.12L9.62,16.01L10.24,17.07L11.45,16.78L12.82,17.52L13.1,18.4L14.32,18.4L14.59,17.52L15.97,16.78L17.18,17.07L17.8,16.01L16.98,15.12z"/></svg>';
     editBtn.addEventListener('click', () => {
         document.body.removeChild(modal);
         openEditProgramModal(program);
@@ -2133,6 +2925,53 @@ function openAddProgramModal(onConfirmNew, onConfirmCopy) {
 // =================================================================
 // 🌟 Модалка для редактирования подхода
 // =================================================================
+const __DROP_SET_MAX_PARTS = 5;
+
+function __getDropSetGroupBounds(exercise, idx) {
+    const sets = exercise?.sets || [];
+    if (idx < 0 || idx >= sets.length) return [idx, idx];
+    let start = idx;
+    while (start > 0 && sets[start]?.continuation) start -= 1;
+    let end = idx;
+    while (end < sets.length - 1 && sets[end + 1]?.continuation) end += 1;
+    return [start, end];
+}
+
+function __getApproachOrdinalForSet(sets, setIndex) {
+    if (!Array.isArray(sets) || setIndex < 0 || setIndex >= sets.length) return 0;
+    let n = 0;
+    for (let i = 0; i <= setIndex; i++) {
+        if (!sets[i]?.continuation) n++;
+    }
+    return n;
+}
+
+/** Журнал: один фрагмент «вес×повторы» с символом умножения в отдельном span */
+function __appendJournalTrainingCompact(parent, weight, reps) {
+    const compact = createElement('span', 'set-item__compact');
+    compact.append(
+        document.createTextNode(String(weight ?? 0)),
+        createElement('span', 'set-item__times', '×'),
+        document.createTextNode(String(reps ?? 0))
+    );
+    parent.append(compact);
+}
+
+function __dropSetTreeSvg(isLastInGroup) {
+    if (isLastInGroup) {
+        return `<svg class="set-row__tree-svg set-row__tree-svg--last" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 34" width="22" height="34" aria-hidden="true"><path class="set-row__tree-path" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" d="M11 0v15h9"/></svg>`;
+    }
+    return `<svg class="set-row__tree-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 34" width="22" height="34" aria-hidden="true"><path class="set-row__tree-path" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" d="M11 0v34M11 14h9"/></svg>`;
+}
+
+const __DROP_SET_TREE_ROOT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" id="РЁРєРѕРЅРєР° 8" viewBox="0 0 22 34">
+  <path class="set-row__tree-path" fill="none" stroke="currentColor" stroke-width="1.32" stroke-linecap="round" stroke-linejoin="round" d="M12.7,15.1 L12.7,31.3 M12.8,15.1 L15.6,15.1 L21.6,15.1"></path>
+</svg>`;
+
+function __formatSetDisplayKgReps(displayWeight, displayReps) {
+    return `${displayWeight} <small>кг</small> <small>x</small> ${displayReps} <small>пов</small>`;
+}
+
 function openEditSetModal(programId, exerciseId, setIndex, currentSet) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -2140,66 +2979,161 @@ function openEditSetModal(programId, exerciseId, setIndex, currentSet) {
     const modal = document.createElement('div');
     modal.className = 'modal-set';
 
-    const title = createElement('h3', null, ` ${setIndex + 1} .подход`);
+    const program = state.programs.find(p => p.id === programId);
+    const exercise = program?.exercises?.find(ex => ex.id === exerciseId);
+    if (!program || !exercise || !Array.isArray(exercise.sets) || !exercise.sets[setIndex]) {
+        document.body.appendChild(overlay);
+        overlay.remove();
+        return;
+    }
 
-    // Поле ввода веса
-    const weightInput = createElement('input');
-    weightInput.type = 'number';
-    weightInput.placeholder = 'Вес';
-    weightInput.value = currentSet.weight || '';
+    const [gStart, gEnd] = __getDropSetGroupBounds(exercise, setIndex);
+    const groupSets = exercise.sets.slice(gStart, gEnd + 1).slice(0, __DROP_SET_MAX_PARTS);
+    const approachOrdinal = __getApproachOrdinalForSet(exercise.sets, gStart);
 
-    // "x"
-    const SpanX = createElement('span', 'SpanX', ' x');
+    const headerRow = createElement('div', 'modal-set-header');
+    const title = createElement('h3', null, `${approachOrdinal}. подход`);
 
-    // Поле ввода повторений
-    const repsInput = createElement('input');
-    repsInput.type = 'number';
-    repsInput.placeholder = 'Повт';
-    repsInput.value = currentSet.reps || '';
-
-    // ✅ Кастомный чекбокс "рабочий подход"
-    const checkboxWrapper = createElement('label', 'checkbox-wrapper');
-
+    const checkboxWrapper = createElement('label', 'checkbox-wrapper checkbox-wrapper--modal-header');
     const isMainCheckbox = createElement('input', 'checkbox-input');
     isMainCheckbox.type = 'checkbox';
-    isMainCheckbox.checked = !!currentSet.isMain; // Сохранение текущего состояния
-
+    isMainCheckbox.checked = !!groupSets[0]?.isMain;
     const customCheckbox = createElement('span', 'checkbox-custom');
-    const checkboxLabel = createElement('span', 'checkbox-text', ' рабочий');
-
+    const checkboxLabel = createElement('span', 'checkbox-text', 'рабочий');
     checkboxWrapper.append(isMainCheckbox, customCheckbox, checkboxLabel);
+    headerRow.append(title, checkboxWrapper);
 
-    // Кнопка OK
-    const btnOk = createElement('button', 'btn btn-primary', 'ОК');
+    const fieldsWrap = createElement('div', 'modal-set-fields');
+    const rowMetas = [];
+
+    const addPartBtn = createElement('button', 'btn btn-secondary modal-set-add-part-btn');
+    addPartBtn.type = 'button';
+    addPartBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 14 14"><title>Add-1-solid SVG Icon</title><path fill="currentColor" fill-rule="evenodd" d="M8 1a1 1 0 0 0-2 0v5H1a1 1 0 0 0 0 2h5v5a1 1 0 1 0 2 0V8h5a1 1 0 0 0 0-2H8z" clip-rule="evenodd"></path></svg><span>добавить сет</span>';
+
+    const deleteBtnSvg = `
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24">
+                          <path fill="currentColor" d="M18.3 5.71a1 1 0 0 0-1.41 0L12 10.59L7.11 5.7A1 1 0 1 0 5.7 7.11L10.59 12L5.7 16.89a1 1 0 1 0 1.41 1.41L12 13.41l4.89 4.89a1 1 0 0 0 1.41-1.41L13.41 12l4.89-4.89a1 1 0 0 0 0-1.4z"/>
+                        </svg>`;
+
+    const btnOk = createElement('button', 'btn btn-primary modal-set-ok-btn', 'ОК');
+
+    const syncAddBtnState = () => {
+        addPartBtn.disabled = rowMetas.length >= __DROP_SET_MAX_PARTS;
+        rowMetas.forEach((m) => {
+            if (m.delBtn) m.delBtn.disabled = rowMetas.length <= 1;
+        });
+    };
+
+    const removeRow = (meta) => {
+        const ix = rowMetas.indexOf(meta);
+        if (ix < 1 || rowMetas.length <= 1) return;
+        meta.row.remove();
+        rowMetas.splice(ix, 1);
+        syncAddBtnState();
+    };
+
+    const addFirstRow = (w = '', r = '') => {
+        const row = createElement('div', 'modal-set-row modal-set-row--first');
+        const wIn = createElement('input');
+        wIn.type = 'number';
+        wIn.placeholder = 'Вес';
+        wIn.value = w || '';
+        const spanX = createElement('span', 'SpanX', ' x');
+        const rIn = createElement('input');
+        rIn.type = 'number';
+        rIn.placeholder = 'Повт';
+        rIn.value = r || '';
+        row.append(wIn, spanX, rIn, btnOk);
+        fieldsWrap.append(row);
+        rowMetas.push({ row, wIn, rIn, delBtn: null });
+    };
+
+    const addExtraRow = (w = '', r = '') => {
+        if (rowMetas.length >= __DROP_SET_MAX_PARTS) return;
+
+        const row = createElement('div', 'modal-set-row');
+        const wIn = createElement('input');
+        wIn.type = 'number';
+        wIn.placeholder = 'Вес';
+        wIn.value = w || '';
+        const spanX = createElement('span', 'SpanX', ' x');
+        const rIn = createElement('input');
+        rIn.type = 'number';
+        rIn.placeholder = 'Повт';
+        rIn.value = r || '';
+        const delBtn = createElement('button', 'btn delete-set-btn modal-set-row-delete');
+        delBtn.type = 'button';
+        delBtn.innerHTML = deleteBtnSvg;
+        const meta = { row, wIn, rIn, delBtn };
+        delBtn.addEventListener('click', () => removeRow(meta));
+        row.append(wIn, spanX, rIn, delBtn);
+        fieldsWrap.append(row);
+        rowMetas.push(meta);
+        syncAddBtnState();
+    };
+
+    if (groupSets.length) {
+        addFirstRow(groupSets[0].weight || '', groupSets[0].reps || '');
+        for (let i = 1; i < groupSets.length; i++) {
+            addExtraRow(groupSets[i].weight || '', groupSets[i].reps || '');
+        }
+    } else {
+        addFirstRow('', '');
+    }
+
+    addPartBtn.addEventListener('click', () => addExtraRow('', ''));
+    syncAddBtnState();
+
     btnOk.addEventListener('click', async () => {
-        const newWeight = weightInput.value.trim();
-        const newReps = repsInput.value.trim();
+        const parts = rowMetas.map((m) => ({
+            weight: m.wIn.value.trim(),
+            reps: m.rIn.value.trim()
+        })).filter((p) => p.weight !== '' || p.reps !== '');
 
-        const program = state.programs.find(p => p.id === programId);
-        if (program) {
-            const exercise = program.exercises.find(ex => ex.id === exerciseId);
-            if (exercise) {
-                // Обновляем значения подхода
-                exercise.sets[setIndex].weight = newWeight;
-                exercise.sets[setIndex].reps = newReps;
-                exercise.sets[setIndex].isMain = isMainCheckbox.checked; // Save checkbox state
+        if (!parts.length) {
+            showToast('Укажите вес или повторения');
+            return;
+        }
 
-                await updateDoc(doc(getUserProgramsCollection(), program.id), {
-                    exercises: program.exercises
-                });
+        const isMain = !!isMainCheckbox.checked;
+        const newSets = parts.map((p, j) => {
+            const prev = groupSets[j];
+            return {
+                weight: p.weight,
+                reps: p.reps,
+                isMain,
+                done: prev && typeof prev.done === 'boolean' ? prev.done : false,
+                continuation: j > 0
+            };
+        });
 
-                render();
-            }
+        const fresh = state.programs.find(p => p.id === programId);
+        const ex = fresh?.exercises?.find(ex => ex.id === exerciseId);
+        if (!fresh || !ex || !Array.isArray(ex.sets)) {
+            document.body.removeChild(overlay);
+            return;
+        }
+
+        const anchor = Math.min(gStart, Math.max(0, ex.sets.length - 1));
+        const [s0, s1] = __getDropSetGroupBounds(ex, anchor);
+        ex.sets.splice(s0, s1 - s0 + 1, ...newSets);
+
+        try {
+            await updateDoc(doc(getUserProgramsCollection(), fresh.id), {
+                exercises: fresh.exercises
+            });
+            render();
+        } catch (err) {
+            console.error(err);
+            showToast('Ошибка сохранения');
         }
         document.body.removeChild(overlay);
     });
 
-    // Добавляем элементы в модалку
-    modal.append(title, weightInput, SpanX, repsInput, btnOk, checkboxWrapper);
+    modal.append(headerRow, fieldsWrap, addPartBtn);
     overlay.append(modal);
     document.body.append(overlay);
 
-    // Закрытие при клике по фону
     overlay.addEventListener('click', (e) => {
         if (e.target === overlay) {
             document.body.removeChild(overlay);
@@ -2209,7 +3143,7 @@ function openEditSetModal(programId, exerciseId, setIndex, currentSet) {
 
 
 // =================================================================
-// 🌟 МОДАЛКА: Комментарий с поддержкой фото/видео (Cloudinary)
+// 🌟 МОДАЛКА: Комментарий с поддержкой фото/видео (новые файлы → Firebase Storage)
 // =================================================================
 function openCommentModal(exerciseId, currentNote, titleText, onSave) {
     const overlay = createElement('div', 'modal-overlay');
@@ -2276,8 +3210,7 @@ fileInput.addEventListener('change', async (e) => {
   mediaContainer.append(progressWrap);
 
   try {
-    // === Реальная загрузка с Cloudinary ===
-    const url = await uploadFileToCloudinaryWithProgress(file, (percent) => {
+    const url = await uploadUserMediaFileWithProgress(file, 'training-media', (percent) => {
       progressBar.style.width = percent + '%';
       progressBar.textContent = percent + '%'; // можно убрать, если не хочешь текст
       console.log('🟢 Реальный прогресс:', percent);
@@ -2328,10 +3261,69 @@ saveBtn.addEventListener('click', () => {
 }
 
 
+// -----------------------------------------------------------------------------
+// Новые загрузки медиа: Firebase Storage (users/{uid}/...).
+// Старые записи с URL Cloudinary продолжают открываться по сохранённой ссылке.
+// -----------------------------------------------------------------------------
+export async function uploadUserMediaFileWithProgress(file, folder = 'uploads', onProgress) {
+    const uid = getCurrentAuthUid();
+    if (!uid) throw new Error('Нужна авторизация для загрузки файла');
+
+    const safeFolder = String(folder || 'uploads').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || 'uploads';
+    const rawName = file.name || 'file';
+    const safeName = rawName.replace(/[^\w.\-+()]/g, '_').slice(0, 180);
+    const fullPath = `users/${uid}/${safeFolder}/${Date.now()}_${safeName}`;
+    const storageRef = ref(storage, fullPath);
+    const task = uploadBytesResumable(storageRef, file);
+
+    return new Promise((resolve, reject) => {
+        task.on(
+            'state_changed',
+            (snapshot) => {
+                if (typeof onProgress === 'function' && snapshot.totalBytes > 0) {
+                    const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+                    onProgress(pct);
+                }
+            },
+            (err) => reject(err),
+            async () => {
+                try {
+                    const url = await getDownloadURL(task.snapshot.ref);
+                    if (typeof onProgress === 'function') onProgress(100);
+                    resolve(url);
+                } catch (e) {
+                    reject(e);
+                }
+            }
+        );
+    });
+}
+
+/** Удаление файла из Firebase Storage по HTTPS download URL (наш bucket). Облако Cloudinary / чужие URL пропускаются. */
+export async function deleteUserFirebaseStorageFileByDownloadUrl(downloadUrl) {
+    if (!downloadUrl || typeof downloadUrl !== 'string') return;
+    const u = downloadUrl.trim();
+    if (!u) return;
+    const bucket = firebaseConfig.storageBucket;
+    if (!bucket) return;
+    const isFirebase =
+        (u.startsWith('gs://') && u.includes(bucket)) ||
+        (u.includes('firebasestorage.googleapis.com') && u.includes(bucket));
+    if (!isFirebase) return;
+    try {
+        await deleteObject(ref(storage, u));
+    } catch (e) {
+        const msg = `${e?.code || ''} ${e?.message || e || ''}`;
+        if (/object-not-found|404/i.test(msg)) return;
+        console.warn('deleteUserFirebaseStorageFileByDownloadUrl:', e);
+        showToast('Не удалось удалить файл из хранилища', 'error');
+    }
+}
+
 // -----------------------------------------------------------
-// Дополнительно: нужна функция загрузки с прогрессом
+// Дополнительно: прежняя загрузка в Cloudinary (оставлена для совместимости)
 // -----------------------------------------------------------
-async function uploadFileToCloudinaryWithProgress(file, onProgress) {
+export async function uploadFileToCloudinaryWithProgress(file, onProgress) {
   const url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/upload`;
   const formData = new FormData();
   formData.append('file', file);
@@ -2443,7 +3435,9 @@ function renderMediaPreview(container, media) {
            `;
 
 
-        delBtn.addEventListener('click', () => {
+        delBtn.addEventListener('click', async () => {
+            const urlToDrop = typeof file.url === 'string' ? file.url : '';
+            if (urlToDrop) await deleteUserFirebaseStorageFileByDownloadUrl(urlToDrop);
             media.splice(index, 1);      // Удаляем из массива
             renderMediaPreview(container, media); // Перерисовываем
         });
@@ -2519,6 +3513,580 @@ async function saveExerciseNote(programId, exerciseId, note, media = []) {
 // ✅ Глобальный менеджер свайпов
 // ===============================
 let __openSwipeRoot = null;
+let __activeExerciseReorder = null;
+
+let __activeProgramReorder = null;
+
+function __createExerciseReorderPlaceholder(fromEl) {
+  const ph = document.createElement('div');
+  ph.className = 'exercise-reorder-placeholder';
+  const r = fromEl.getBoundingClientRect();
+  ph.style.height = `${Math.max(1, Math.round(r.height))}px`;
+  return ph;
+}
+
+function __createExerciseReorderGhost(fromEl, rect) {
+  const ghost = fromEl.cloneNode(true);
+  ghost.classList.add('exercise-reorder-ghost');
+  ghost.style.width = `${Math.round(rect.width)}px`;
+  ghost.style.height = `${Math.round(rect.height)}px`;
+  ghost.style.left = `0px`;
+  ghost.style.top = `0px`;
+  document.body.appendChild(ghost);
+  return ghost;
+}
+
+function __clampGhostTranslateToViewport(ghostEl, x, y) {
+  if (!ghostEl) return { x, y };
+  const vw = window.innerWidth || document.documentElement.clientWidth || 0;
+  const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+  const w = ghostEl.offsetWidth || 0;
+  const h = ghostEl.offsetHeight || 0;
+  const maxX = Math.max(0, vw - w);
+  const maxY = Math.max(0, vh - h);
+  return {
+    x: Math.min(maxX, Math.max(0, x)),
+    y: Math.min(maxY, Math.max(0, y))
+  };
+}
+
+function __exerciseReorderLayoutItems(parentEl, draggedEl) {
+  return [...parentEl.querySelectorAll('.exercise-item')].filter((el) => {
+    if (el === draggedEl) return false;
+    return el.style.display !== 'none';
+  });
+}
+
+function __updateExerciseReorderGhostPos(active, clientX, clientY) {
+  if (!active?.ghostEl || !active.placeholderEl) return;
+  const ph = active.placeholderEl.getBoundingClientRect();
+  const lift = typeof active.exerciseGhostLiftPx === 'number' ? active.exerciseGhostLiftPx : -6;
+  const maxOff = Math.min(22, Math.min(ph.width, ph.height) * 0.2);
+  const cx = ph.left + ph.width / 2;
+  const cy = ph.top + ph.height / 2;
+  const sx = active.exerciseStartX ?? clientX;
+  const sy = active.exerciseStartY ?? clientY;
+  let ox = 0;
+  let oy = (clientY - sy) + lift;
+  if (oy > maxOff) oy = maxOff;
+  if (oy < -maxOff) oy = -maxOff;
+  const gw = active.ghostEl.offsetWidth || ph.width || 0;
+  const gh = active.ghostEl.offsetHeight || ph.height || 0;
+  const rawX = cx - gw / 2 + ox;
+  const rawY = cy - gh / 2 + oy;
+  const { x, y } = __clampGhostTranslateToViewport(active.ghostEl, rawX, rawY);
+  active.ghostEl.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+}
+
+function __createProgramReorderPlaceholder(fromEl) {
+    const ph = document.createElement('div');
+    ph.className = 'program-reorder-placeholder';
+    const r = fromEl.getBoundingClientRect();
+    ph.style.height = `${Math.max(1, Math.round(r.height))}px`;
+    return ph;
+}
+
+function __createProgramReorderGhost(fromEl, rect) {
+    const ghost = fromEl.cloneNode(true);
+    ghost.classList.add('program-reorder-ghost');
+    ghost.style.width = `${Math.round(rect.width)}px`;
+    ghost.style.height = `${Math.round(rect.height)}px`;
+    ghost.style.left = `0px`;
+    ghost.style.top = `0px`;
+    document.body.appendChild(ghost);
+    return ghost;
+}
+
+function __programItemsVisualOrder(parentEl, excludeEl) {
+    const items = [...parentEl.querySelectorAll('.program-item')].filter((el) => el !== excludeEl);
+    return items
+        .map((el) => ({ el, r: el.getBoundingClientRect() }))
+        .sort((a, b) => {
+            const dy = a.r.top - b.r.top;
+            if (Math.abs(dy) > 6) return dy;
+            return a.r.left - b.r.left;
+        })
+        .map((x) => x.el);
+}
+
+function __programHoleCellFromSlot(ordered, slotIndex) {
+    const n = ordered.length;
+    const slot = Math.max(0, Math.min(n, slotIndex | 0));
+    if (n === 0) return { row: 0, col: 0 };
+    if (slot < n) return { row: Math.floor(slot / 3), col: slot % 3 };
+    const last = n - 1;
+    const lr = Math.floor(last / 3);
+    const lc = last % 3;
+    if (lc < 2) return { row: lr, col: lc + 1 };
+    return { row: lr + 1, col: 0 };
+}
+
+function __programSlotIndexFromCell(ordered, cell) {
+    const n = ordered.length;
+    if (!n) return 0;
+    if (!cell) return 0;
+    const row = Math.max(0, cell.row | 0);
+    const col = Math.min(2, Math.max(0, cell.col | 0));
+    const idx = row * 3 + col;
+    if (idx < 0) return 0;
+    if (idx > n) return n;
+    return idx;
+}
+
+function __idealProgramCellFromPointer(parentEl, pointerX, pointerY) {
+    const pr = parentEl.getBoundingClientRect();
+    if (pr.width <= 1 || pr.height <= 1) return { row: 0, col: 0 };
+
+    const col = Math.min(2, Math.max(0, Math.floor(((pointerX - pr.left) / pr.width) * 3)));
+    const sample = parentEl.querySelector('.program-item');
+    const sr = sample?.getBoundingClientRect?.();
+    const estTileH = Math.max(64, sr?.height || 84, pr.height / 8);
+    const row = Math.min(64, Math.max(0, Math.floor((pointerY - pr.top) / estTileH)));
+    return { row, col };
+}
+
+function __syncProgramReorderGhost(active, clientX, clientY) {
+    if (!active?.ghostEl || !active.placeholderEl) return;
+    const ph = active.placeholderEl.getBoundingClientRect();
+    const lift = typeof active.ghostLiftPx === 'number' ? active.ghostLiftPx : -6;
+    const maxOff = Math.min(26, Math.min(ph.width, ph.height) * 0.22);
+    const cx = ph.left + ph.width / 2;
+    const cy = ph.top + ph.height / 2;
+    const sx = active.startX ?? clientX;
+    const sy = active.startY ?? clientY;
+    let ox = (clientX - sx);
+    let oy = (clientY - sy) + lift;
+    if (ox > maxOff) ox = maxOff;
+    if (ox < -maxOff) ox = -maxOff;
+    if (oy > maxOff) oy = maxOff;
+    if (oy < -maxOff) oy = -maxOff;
+    const gw = active.ghostEl.offsetWidth || ph.width || 0;
+    const gh = active.ghostEl.offsetHeight || ph.height || 0;
+    const rawX = cx - gw / 2 + ox;
+    const rawY = cy - gh / 2 + oy;
+    const { x, y } = __clampGhostTranslateToViewport(active.ghostEl, rawX, rawY);
+    active.ghostEl.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+}
+
+function __applyProgramSlotIndex(active, slotIndex) {
+    if (!active?.parentEl || !active.placeholderEl) return;
+    const parentEl = active.parentEl;
+    const addBtn = parentEl.querySelector('.add-program-btn');
+    const ordered = __programItemsVisualOrder(parentEl, active.itemEl);
+    const n = ordered.length;
+    const idx = Math.max(0, Math.min(n, slotIndex | 0));
+
+    if (idx >= n) {
+        if (addBtn) parentEl.insertBefore(active.placeholderEl, addBtn);
+        else parentEl.appendChild(active.placeholderEl);
+        return;
+    }
+    const beforeEl = ordered[idx];
+    if (beforeEl && active.placeholderEl !== beforeEl.previousSibling) {
+        parentEl.insertBefore(active.placeholderEl, beforeEl);
+    }
+}
+
+function __maybeStepProgramGrid(active, pointerX, pointerY) {
+    if (!active?.parentEl || !active.placeholderEl) return;
+
+    const STEP_COOLDOWN_MS = 165;
+    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    if (active.lastGridStepAt && now - active.lastGridStepAt < STEP_COOLDOWN_MS) return;
+
+    const ordered = __programItemsVisualOrder(active.parentEl, active.itemEl);
+    if (!ordered.length) return;
+
+    let slot = active.slotIndex;
+    if (slot == null) slot = active.originIndex;
+    slot = Math.max(0, Math.min(ordered.length, slot | 0));
+
+    const hole = __programHoleCellFromSlot(ordered, slot);
+    const idealCell = __idealProgramCellFromPointer(active.parentEl, pointerX, pointerY);
+    const ideal = __programSlotIndexFromCell(ordered, idealCell);
+
+    if (ideal === slot) return;
+
+    let dr = idealCell.row - hole.row;
+    let dc = idealCell.col - hole.col;
+    if (dr === 0 && dc === 0) return;
+
+    let nextCell = { row: hole.row, col: hole.col };
+    if (Math.abs(dr) >= Math.abs(dc) && dr !== 0) {
+        nextCell = { row: hole.row + Math.sign(dr), col: hole.col };
+    } else if (dc !== 0) {
+        nextCell = { row: hole.row, col: hole.col + Math.sign(dc) };
+    }
+
+    const nextSlot = __programSlotIndexFromCell(ordered, nextCell);
+    if (nextSlot === slot) return;
+
+    active.lastGridStepAt = now;
+    active.slotIndex = nextSlot;
+    __applyProgramSlotIndex(active, nextSlot);
+
+    const children = [...active.parentEl.children];
+    let phIndexAmongPrograms = 0;
+    for (const el of children) {
+        if (el === active.placeholderEl) break;
+        if (el.classList?.contains('program-item')) phIndexAmongPrograms += 1;
+    }
+    active.didChange = phIndexAmongPrograms !== active.originIndex;
+}
+
+let __programReorderAutoScrollRaf = 0;
+
+function __stopProgramReorderAutoScroll() {
+    if (__programReorderAutoScrollRaf) {
+        cancelAnimationFrame(__programReorderAutoScrollRaf);
+        __programReorderAutoScrollRaf = 0;
+    }
+}
+
+function __scheduleProgramReorderAutoScroll(active, clientX, clientY) {
+    if (!active?.ghostEl) return;
+    const rootEl = document.getElementById('root');
+    if (!rootEl) return;
+
+    const EDGE_PX = 72;
+    const MAX_STEP = 22;
+
+    active.lastPointerX = clientX;
+    active.lastPointerY = clientY;
+
+    const step = () => {
+        __programReorderAutoScrollRaf = 0;
+        if (!__activeProgramReorder || __activeProgramReorder !== active) return;
+
+        const py = active.lastPointerY;
+        const px = active.lastPointerX;
+
+        const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+        let dy = 0;
+        if (py < EDGE_PX) {
+            dy = -Math.ceil(((EDGE_PX - py) / EDGE_PX) * MAX_STEP);
+        } else if (py > vh - EDGE_PX) {
+            dy = Math.ceil(((py - (vh - EDGE_PX)) / EDGE_PX) * MAX_STEP);
+        }
+
+        if (dy) {
+            const prevTop = rootEl.scrollTop;
+            rootEl.scrollTop = Math.max(0, Math.min(rootEl.scrollHeight - rootEl.clientHeight, prevTop + dy));
+            const applied = rootEl.scrollTop - prevTop;
+            if (applied) {
+                active.pointerOffsetY -= applied;
+                __maybeStepProgramGrid(active, px, py);
+                __syncProgramReorderGhost(active, px, py);
+            }
+        }
+
+        const vh2 = window.innerHeight || document.documentElement.clientHeight || 0;
+        if (py < EDGE_PX || py > vh2 - EDGE_PX) {
+            __programReorderAutoScrollRaf = requestAnimationFrame(step);
+        }
+    };
+
+    const vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    if (clientY < EDGE_PX || clientY > vh - EDGE_PX) {
+        if (!__programReorderAutoScrollRaf) {
+            __programReorderAutoScrollRaf = requestAnimationFrame(step);
+        }
+    }
+}
+
+async function finishProgramReorder(saveChanges = true) {
+    const active = __activeProgramReorder;
+    if (!active) return;
+
+    __activeProgramReorder = null;
+    __stopProgramReorderAutoScroll();
+
+    if (active.ghostEl) {
+        active.ghostEl.remove();
+        active.ghostEl = null;
+    }
+
+    if (active.placeholderEl && active.placeholderEl.parentElement) {
+        active.parentEl.insertBefore(active.itemEl, active.placeholderEl);
+        active.placeholderEl.remove();
+        active.placeholderEl = null;
+    }
+
+    if (active.restoreStyle) {
+        active.itemEl.style.height = active.restoreStyle.height;
+        active.itemEl.style.minHeight = active.restoreStyle.minHeight;
+        active.itemEl.style.margin = active.restoreStyle.margin;
+        active.itemEl.style.padding = active.restoreStyle.padding;
+        active.itemEl.style.border = active.restoreStyle.border;
+        active.itemEl.style.overflow = active.restoreStyle.overflow;
+        active.itemEl.style.visibility = active.restoreStyle.visibility;
+        active.itemEl.style.opacity = active.restoreStyle.opacity;
+        active.itemEl.style.display = active.restoreStyle.display;
+        active.itemEl.style.pointerEvents = active.restoreStyle.pointerEvents;
+    } else {
+        active.itemEl.style.visibility = '';
+        active.itemEl.style.height = '';
+        active.itemEl.style.minHeight = '';
+        active.itemEl.style.margin = '';
+        active.itemEl.style.padding = '';
+        active.itemEl.style.border = '';
+        active.itemEl.style.overflow = '';
+        active.itemEl.style.opacity = '';
+        active.itemEl.style.display = '';
+        active.itemEl.style.pointerEvents = '';
+    }
+    active.itemEl.classList.remove('program-item--reorder-active', 'program-item--dragging-source');
+
+    if (!saveChanges || !active.didChange) {
+        document.documentElement.classList.remove('program-reorder-lock');
+        document.body.classList.remove('program-reorder-lock');
+        return;
+    }
+
+    const orderedIds = [...active.parentEl.querySelectorAll('.program-item')].map((el) => el.dataset.id).filter(Boolean);
+    const programById = new Map(active.programs.map((p) => [p.id, p]));
+    const nextPrograms = orderedIds.map((id) => programById.get(id)).filter(Boolean);
+    state.programs = nextPrograms;
+
+    try {
+        // сохраняем порядок по полю order
+        await Promise.all(
+            orderedIds.map((id, idx) => updateDoc(doc(getUserProgramsCollection(), id), { order: idx }))
+        );
+        render();
+    } catch (error) {
+        console.error('Не удалось сохранить порядок программ:', error);
+        showToast('Не удалось сохранить порядок');
+        render();
+    } finally {
+        document.documentElement.classList.remove('program-reorder-lock');
+        document.body.classList.remove('program-reorder-lock');
+    }
+}
+
+function attachProgramReorderLongPress({ itemEl, parentEl }) {
+    if (!itemEl || itemEl.dataset.programReorderBound === '1') return;
+    itemEl.dataset.programReorderBound = '1';
+
+    let pressTimer = null;
+    let startX = 0;
+    let startY = 0;
+    let lastX = 0;
+    let lastY = 0;
+    let reorderStarted = false;
+    let pointerId = null;
+    let touchId = null;
+    let windowListenersBound = false;
+    const DRAG_START_MOVE_PX = 6;
+
+    const clearPressTimer = () => {
+        if (!pressTimer) return;
+        clearTimeout(pressTimer);
+        pressTimer = null;
+    };
+
+    const bindWindowListeners = () => {
+        if (windowListenersBound) return;
+        windowListenersBound = true;
+        window.addEventListener('pointermove', handlePointerMove, { passive: false });
+        window.addEventListener('pointerup', handlePointerEnd);
+        window.addEventListener('pointercancel', handlePointerCancel);
+        window.addEventListener('touchmove', handleTouchMove, { passive: false });
+        window.addEventListener('touchend', handleTouchEnd);
+        window.addEventListener('touchcancel', handleTouchCancel);
+    };
+
+    const beginReorder = () => {
+        if (__activeProgramReorder || !parentEl) return;
+        reorderStarted = true;
+        itemEl.dataset.suppressClick = '1';
+        const rect = itemEl.getBoundingClientRect();
+        const originIndex = [...parentEl.querySelectorAll('.program-item')].indexOf(itemEl);
+        const placeholderEl = __createProgramReorderPlaceholder(itemEl);
+        parentEl.insertBefore(placeholderEl, itemEl);
+        // Не схлопываем карточку до 0px — иначе grid пересобирается и ghost "прыгает" в сторону.
+        // Плейсхолдер держит ячейку, саму карточку прячем из потока (display:none).
+        const restoreStyle = {
+            height: itemEl.style.height,
+            minHeight: itemEl.style.minHeight,
+            margin: itemEl.style.margin,
+            padding: itemEl.style.padding,
+            border: itemEl.style.border,
+            overflow: itemEl.style.overflow,
+            visibility: itemEl.style.visibility,
+            opacity: itemEl.style.opacity,
+            display: itemEl.style.display,
+            pointerEvents: itemEl.style.pointerEvents
+        };
+
+        const ghostEl = __createProgramReorderGhost(itemEl, rect);
+        ghostEl.dataset.sourceId = itemEl.dataset.id || '';
+
+        itemEl.classList.add('program-item--reorder-active', 'program-item--dragging-source');
+        itemEl.style.opacity = '0';
+        itemEl.style.pointerEvents = 'none';
+        itemEl.style.display = 'none';
+
+        __activeProgramReorder = {
+            itemEl,
+            parentEl,
+            startX,
+            startY,
+            didChange: false,
+            programs: state.programs.slice(),
+            placeholderEl,
+            ghostEl,
+            pointerOffsetX: startX - rect.left,
+            pointerOffsetY: startY - rect.top,
+            originIndex,
+            slotIndex: originIndex,
+            lastGridStepAt: 0,
+            ghostLiftPx: -6,
+            restoreStyle
+        };
+
+        document.documentElement.classList.add('program-reorder-lock');
+        document.body.classList.add('program-reorder-lock');
+
+        __applyProgramSlotIndex(__activeProgramReorder, originIndex);
+        __syncProgramReorderGhost(__activeProgramReorder, lastX, lastY);
+    };
+
+    const removeWindowListeners = () => {
+        if (!windowListenersBound) return;
+        windowListenersBound = false;
+        window.removeEventListener('pointermove', handlePointerMove);
+        window.removeEventListener('pointerup', handlePointerEnd);
+        window.removeEventListener('pointercancel', handlePointerCancel);
+        window.removeEventListener('touchmove', handleTouchMove);
+        window.removeEventListener('touchend', handleTouchEnd);
+        window.removeEventListener('touchcancel', handleTouchCancel);
+    };
+
+    const handlePointerMove = (e) => {
+        if (pointerId == null) return;
+        if (e.pointerId !== pointerId) return;
+        lastX = e.clientX;
+        lastY = e.clientY;
+
+        if (!reorderStarted) {
+            if (Math.abs(lastX - startX) > DRAG_START_MOVE_PX || Math.abs(lastY - startY) > DRAG_START_MOVE_PX) {
+                clearPressTimer();
+            }
+            return;
+        }
+
+        const active = __activeProgramReorder;
+        if (!active) return;
+        if (e.cancelable) e.preventDefault();
+        __maybeStepProgramGrid(active, e.clientX, e.clientY);
+        __syncProgramReorderGhost(active, e.clientX, e.clientY);
+        __scheduleProgramReorderAutoScroll(active, e.clientX, e.clientY);
+    };
+
+    const getTrackedTouch = (touchList) => {
+        if (touchId == null) return null;
+        return [...touchList].find((t) => t.identifier === touchId) || null;
+    };
+
+    const handleTouchMove = (e) => {
+        const touch = getTrackedTouch(e.touches);
+        if (!touch) return;
+        lastX = touch.clientX;
+        lastY = touch.clientY;
+
+        if (!reorderStarted) {
+            if (Math.abs(lastX - startX) > DRAG_START_MOVE_PX || Math.abs(lastY - startY) > DRAG_START_MOVE_PX) {
+                clearPressTimer();
+            }
+            return;
+        }
+
+        const active = __activeProgramReorder;
+        if (!active) return;
+        if (e.cancelable) e.preventDefault();
+        __maybeStepProgramGrid(active, touch.clientX, touch.clientY);
+        __syncProgramReorderGhost(active, touch.clientX, touch.clientY);
+        __scheduleProgramReorderAutoScroll(active, touch.clientX, touch.clientY);
+    };
+
+    const handlePointerEnd = async () => {
+        clearPressTimer();
+        removeWindowListeners();
+        const didReorder = reorderStarted;
+        reorderStarted = false;
+        pointerId = null;
+        touchId = null;
+        if (didReorder) await finishProgramReorder(true);
+    };
+
+    const handlePointerCancel = async () => {
+        clearPressTimer();
+        removeWindowListeners();
+        const didReorder = reorderStarted;
+        reorderStarted = false;
+        pointerId = null;
+        touchId = null;
+        if (didReorder) await finishProgramReorder(false);
+    };
+
+    const handleTouchEnd = async (e) => {
+        const ended = touchId != null && [...e.changedTouches].some((t) => t.identifier === touchId);
+        if (!ended) return;
+        clearPressTimer();
+        removeWindowListeners();
+        const didReorder = reorderStarted;
+        reorderStarted = false;
+        touchId = null;
+        pointerId = null;
+        if (didReorder) await finishProgramReorder(true);
+    };
+
+    const handleTouchCancel = async (e) => {
+        const cancelled = touchId != null && [...e.changedTouches].some((t) => t.identifier === touchId);
+        if (!cancelled) return;
+        clearPressTimer();
+        removeWindowListeners();
+        const didReorder = reorderStarted;
+        reorderStarted = false;
+        touchId = null;
+        pointerId = null;
+        if (didReorder) await finishProgramReorder(false);
+    };
+
+    itemEl.addEventListener('pointerdown', (e) => {
+        if (e.pointerType === 'touch') return;
+        if (e.button != null && e.button !== 0) return;
+        if (e.target.closest('.menu-btn')) return;
+        if (__activeExerciseReorder || __activeProgramReorder) return;
+        pointerId = e.pointerId;
+        startX = e.clientX;
+        startY = e.clientY;
+        lastX = startX;
+        lastY = startY;
+        reorderStarted = false;
+        clearPressTimer();
+        pressTimer = setTimeout(beginReorder, 360);
+        bindWindowListeners();
+    }, { passive: true });
+
+    itemEl.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
+        if (e.target.closest('.menu-btn')) return;
+        if (__activeExerciseReorder || __activeProgramReorder) return;
+        const touch = e.changedTouches[0];
+        touchId = touch.identifier;
+        startX = touch.clientX;
+        startY = touch.clientY;
+        lastX = startX;
+        lastY = startY;
+        pointerId = null;
+        reorderStarted = false;
+        clearPressTimer();
+        pressTimer = setTimeout(beginReorder, 360);
+        bindWindowListeners();
+    }, { passive: true });
+}
 
 function __closeSwipe(swipeRoot) {
   if (!swipeRoot) return;
@@ -2546,19 +4114,18 @@ document.addEventListener('pointerdown', (e) => {
 // ✅ Подключение свайпа
 // ===============================
 function attachSwipeActions(swipeRoot, selectedProgram, exercise) {
-  const content = swipeRoot.querySelector('.swipe-content');
-  const rightActions = swipeRoot.querySelector('.swipe-actions.right');
+  const content = swipeRoot.querySelector('.food-info-header-content') || swipeRoot.querySelector('.swipe-content');
   if (!content) return;
 
-  const MAX_RIGHT = rightActions ? rightActions.offsetWidth || 120 : 120;
+  const MAX_RIGHT = 168;
 
-  rightActions?.querySelector('.action-edit')?.addEventListener('click', (e) => {
+  swipeRoot.querySelector('.action-edit')?.addEventListener('click', (e) => {
     e.stopPropagation();
     closeSwipeRowVisual(swipeRoot, () => {});
     openEditExerciseModal(selectedProgram, exercise);
   });
 
-  rightActions?.querySelector('.action-delete')?.addEventListener('click', (e) => {
+  swipeRoot.querySelector('.action-delete')?.addEventListener('click', (e) => {
     e.stopPropagation();
     closeSwipeRowVisual(swipeRoot, () => {});
     openConfirmModal('Удалить упражнение?', async () => {
@@ -2580,8 +4147,417 @@ function attachSwipeActions(swipeRoot, selectedProgram, exercise) {
     onSwipeActiveVisual: null,
     onSwipeClosedVisual: null,
     onBeforeOpen: null,
-    addDocumentClickOutside: true
+    addDocumentClickOutside: true,
+    edgeWidth: 0,
+    edgeWidthLeft: 0,
+    maxSwipeLeft: 0
   });
+}
+
+function __exercisePlaceholderSlotIndex(parentEl, ph, draggedEl) {
+  const layoutItems = __exerciseReorderLayoutItems(parentEl, draggedEl);
+  let el = ph.nextElementSibling;
+  while (el && (!(el instanceof HTMLElement) || el.style.display === 'none')) {
+    el = el.nextElementSibling;
+  }
+  if (!el || !el.classList?.contains('exercise-item')) return layoutItems.length;
+  const idx = layoutItems.indexOf(el);
+  return idx < 0 ? layoutItems.length : idx;
+}
+
+function updateExerciseReorderVisual(active) {
+  if (!active?.placeholderEl || !active?.parentEl) return;
+  const layoutItems = __exerciseReorderLayoutItems(active.parentEl, active.itemEl);
+  const ph = active.placeholderEl;
+  const currentIndex = __exercisePlaceholderSlotIndex(active.parentEl, ph, active.itemEl);
+  const lastIndex = layoutItems.length;
+  ph.classList.toggle('exercise-reorder-placeholder--can-up', currentIndex > 0);
+  ph.classList.toggle('exercise-reorder-placeholder--can-down', currentIndex >= 0 && currentIndex < lastIndex);
+}
+
+function refreshExerciseOrderNumbers(parentEl) {
+  if (!parentEl) return;
+  const dragged = [...parentEl.querySelectorAll('.exercise-item.exercise-item--dragging-source')][0];
+  const layoutItems = __exerciseReorderLayoutItems(parentEl, dragged || null);
+  layoutItems.forEach((itemEl, index) => {
+    const numberEl = itemEl.querySelector('.exercise-number');
+    if (numberEl) numberEl.textContent = `${index + 1}.`;
+  });
+}
+
+function moveExerciseInReorder(active, direction) {
+  if (!active?.placeholderEl || !active?.parentEl || !direction) return false;
+
+  const parentEl = active.parentEl;
+  const ph = active.placeholderEl;
+  const layoutItems = __exerciseReorderLayoutItems(parentEl, active.itemEl);
+  const effectiveFrom = __exercisePlaceholderSlotIndex(parentEl, ph, active.itemEl);
+  const toIndex = effectiveFrom + direction;
+
+  if (effectiveFrom < 0 || toIndex < 0 || toIndex > layoutItems.length) return false;
+
+  const beforeRects = new Map();
+  layoutItems.forEach((el) => {
+    beforeRects.set(el, el.getBoundingClientRect());
+  });
+
+  if (direction < 0) {
+    const beforeEl = layoutItems[toIndex];
+    if (beforeEl) parentEl.insertBefore(ph, beforeEl);
+  } else if (toIndex >= layoutItems.length) {
+    parentEl.appendChild(ph);
+  } else {
+    const beforeEl = layoutItems[toIndex];
+    if (beforeEl) parentEl.insertBefore(ph, beforeEl);
+  }
+
+  const afterLayout = __exerciseReorderLayoutItems(parentEl, active.itemEl);
+  afterLayout.forEach((el) => {
+    const before = beforeRects.get(el);
+    if (!before) return;
+    const after = el.getBoundingClientRect();
+    const dy = before.top - after.top;
+    if (!dy) return;
+
+    el.style.transition = 'none';
+    el.style.transform = `translateY(${dy}px)`;
+    void el.offsetHeight;
+    el.style.transition = 'transform 160ms ease';
+    el.style.transform = '';
+    window.setTimeout(() => {
+      if (el.style.transition === 'transform 160ms ease') el.style.transition = '';
+    }, 190);
+  });
+
+  active.didChange = true;
+  refreshExerciseOrderNumbers(active.parentEl);
+  updateExerciseReorderVisual(active);
+  return true;
+}
+
+async function finishExerciseReorder(saveChanges = true) {
+  const active = __activeExerciseReorder;
+  if (!active) return;
+
+  __activeExerciseReorder = null;
+
+  if (active.ghostEl) {
+    active.ghostEl.remove();
+    active.ghostEl = null;
+  }
+
+  if (active.placeholderEl && active.placeholderEl.parentElement) {
+    active.parentEl.insertBefore(active.itemEl, active.placeholderEl);
+    active.placeholderEl.remove();
+    active.placeholderEl = null;
+  }
+
+  active.itemEl.style.transform = '';
+  if (active.restoreExerciseStyle) {
+    active.itemEl.style.visibility = active.restoreExerciseStyle.visibility;
+    active.itemEl.style.opacity = active.restoreExerciseStyle.opacity;
+    active.itemEl.style.display = active.restoreExerciseStyle.display;
+    active.itemEl.style.pointerEvents = active.restoreExerciseStyle.pointerEvents;
+  } else {
+    active.itemEl.style.visibility = '';
+    active.itemEl.style.opacity = '';
+    active.itemEl.style.display = '';
+    active.itemEl.style.pointerEvents = '';
+  }
+  active.itemEl.classList.remove(
+    'exercise-item--reorder-active',
+    'exercise-item--can-move-up',
+    'exercise-item--can-move-down',
+    'exercise-item--dragging-source'
+  );
+  if (active.placeholderEl) {
+    active.placeholderEl.classList.remove('exercise-reorder-placeholder--can-up', 'exercise-reorder-placeholder--can-down');
+  }
+  if (active.headerEl) active.headerEl.dataset.suppressClick = '0';
+  document.documentElement.classList.remove('exercise-reorder-lock');
+  document.body.classList.remove('exercise-reorder-lock');
+
+  if (!saveChanges || !active.didChange) return;
+
+  active.selectedProgram.exercises = __exerciseReorderLayoutItems(active.parentEl, null)
+    .map((itemEl) => active.exerciseMap.get(itemEl.dataset.exId))
+    .filter(Boolean);
+
+  try {
+    await updateDoc(doc(getUserProgramsCollection(), active.selectedProgram.id), {
+      exercises: active.selectedProgram.exercises
+    });
+    render();
+  } catch (error) {
+    console.error('Не удалось сохранить порядок упражнений:', error);
+    active.selectedProgram.exercises = active.originalExercises;
+    showToast('Не удалось сохранить порядок');
+    render();
+  }
+}
+
+function attachExerciseReorderLongPress({ headerEl, itemEl, swipeRoot, selectedProgram, exercise }) {
+  if (!headerEl || headerEl.dataset.exerciseReorderBound === '1') return;
+  headerEl.dataset.exerciseReorderBound = '1';
+
+  let pointerId = null;
+  let touchId = null;
+  let pressTimer = null;
+  let startX = 0;
+  let startY = 0;
+  let lastY = 0;
+  let reorderStarted = false;
+  const STEP_COOLDOWN_MS = 140;
+  // Чуть чувствительнее (~20%): меньше "запас" у середины соседней карточки
+  const MID_CROSS_PADDING_PX = 5;
+
+  const shouldStepNow = (active, now) => {
+    const last = active?.lastStepAt || 0;
+    if (now - last < STEP_COOLDOWN_MS) return false;
+    active.lastStepAt = now;
+    return true;
+  };
+
+  const tryStepByPointerY = (active, pointerY) => {
+    if (!active?.itemEl || !active?.parentEl || !active.placeholderEl) return;
+    const layoutItems = __exerciseReorderLayoutItems(active.parentEl, active.itemEl);
+    const slot = __exercisePlaceholderSlotIndex(active.parentEl, active.placeholderEl, active.itemEl);
+
+    const prev = slot > 0 ? layoutItems[slot - 1] : null;
+    const next = slot < layoutItems.length ? layoutItems[slot] : null;
+
+    // Вверх: переставляем только когда палец пересёк середину предыдущего элемента (с небольшим запасом).
+    if (prev) {
+      const r = prev.getBoundingClientRect();
+      const mid = r.top + r.height / 2;
+      if (pointerY < mid - MID_CROSS_PADDING_PX) {
+        moveExerciseInReorder(active, -1);
+        return;
+      }
+    }
+
+    // Вниз: переставляем только когда палец пересёк середину следующего элемента (с небольшим запасом).
+    if (next) {
+      const r = next.getBoundingClientRect();
+      const mid = r.top + r.height / 2;
+      if (pointerY > mid + MID_CROSS_PADDING_PX) {
+        moveExerciseInReorder(active, 1);
+      }
+    }
+  };
+
+  const clearPressTimer = () => {
+    if (!pressTimer) return;
+    clearTimeout(pressTimer);
+    pressTimer = null;
+  };
+
+  const suppressNextClick = () => {
+    headerEl.dataset.suppressClick = '1';
+  };
+
+  const beginReorder = () => {
+    if (__activeExerciseReorder || !itemEl.parentElement) return;
+
+    reorderStarted = true;
+    suppressNextClick();
+    closeAllSwipes();
+
+    try {
+      if (pointerId != null) headerEl.setPointerCapture?.(pointerId);
+    } catch (_) {
+      /* noop */
+    }
+
+    const parentEl = itemEl.parentElement;
+    const rect = itemEl.getBoundingClientRect();
+    const originIndex = [...parentEl.querySelectorAll('.exercise-item')].indexOf(itemEl);
+    const placeholderEl = __createExerciseReorderPlaceholder(itemEl);
+    parentEl.insertBefore(placeholderEl, itemEl);
+    const ghostEl = __createExerciseReorderGhost(itemEl, rect);
+
+    const restoreExerciseStyle = {
+      visibility: itemEl.style.visibility,
+      opacity: itemEl.style.opacity,
+      display: itemEl.style.display,
+      pointerEvents: itemEl.style.pointerEvents
+    };
+
+    __activeExerciseReorder = {
+      selectedProgram,
+      exerciseId: exercise.id,
+      headerEl,
+      itemEl,
+      parentEl,
+      exerciseMap: new Map(selectedProgram.exercises.map((ex) => [String(ex.id), ex])),
+      originalExercises: selectedProgram.exercises.slice(),
+      didChange: false,
+      startY: lastY,
+      placeholderEl,
+      ghostEl,
+      exerciseStartX: startX,
+      exerciseStartY: lastY,
+      exerciseGhostLiftPx: -6,
+      restoreExerciseStyle,
+      originIndex
+    };
+
+    itemEl.classList.add('exercise-item--reorder-active', 'exercise-item--dragging-source');
+    itemEl.style.opacity = '0';
+    itemEl.style.pointerEvents = 'none';
+    itemEl.style.display = 'none';
+    document.documentElement.classList.add('exercise-reorder-lock');
+    document.body.classList.add('exercise-reorder-lock');
+
+    __updateExerciseReorderGhostPos(__activeExerciseReorder, startX, lastY);
+    updateExerciseReorderVisual(__activeExerciseReorder);
+  };
+
+  const handlePointerDown = (e) => {
+    if (e.pointerType === 'touch') return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (e.target.closest('.edit-note-btn, .action-btn, input, textarea, select, a')) return;
+    if (swipeRoot.classList.contains('open') || swipeRoot.classList.contains('open-left') || swipeRoot.classList.contains('open-right')) return;
+    if (__activeExerciseReorder) return;
+
+    pointerId = e.pointerId;
+    startX = e.clientX;
+    startY = e.clientY;
+    lastY = e.clientY;
+    reorderStarted = false;
+    clearPressTimer();
+    pressTimer = setTimeout(beginReorder, 320);
+    window.addEventListener('pointermove', handlePointerMove, { passive: false });
+    window.addEventListener('pointerup', handlePointerEnd);
+    window.addEventListener('pointercancel', handlePointerEnd);
+  };
+
+  const handlePointerMove = (e) => {
+    if (e.pointerId !== pointerId) return;
+
+    lastY = e.clientY;
+
+    if (!reorderStarted) {
+      if (Math.abs(e.clientX - startX) > 10 || Math.abs(e.clientY - startY) > 10) {
+        clearPressTimer();
+      }
+      return;
+    }
+
+    const active = __activeExerciseReorder;
+    if (!active) return;
+
+    if (e.cancelable) e.preventDefault();
+
+    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    if (shouldStepNow(active, now)) {
+      tryStepByPointerY(active, e.clientY);
+    }
+    __updateExerciseReorderGhostPos(active, e.clientX, e.clientY);
+  };
+
+  const removeTouchWindowListeners = () => {
+    window.removeEventListener('touchmove', handleTouchMove);
+    window.removeEventListener('touchend', handleTouchEnd);
+    window.removeEventListener('touchcancel', handleTouchEnd);
+  };
+
+  const getTrackedTouch = (touchList) => {
+    if (touchId == null) return null;
+    return [...touchList].find((touch) => touch.identifier === touchId) || null;
+  };
+
+  const handleTouchStart = (e) => {
+    if (e.touches.length !== 1) return;
+    if (e.target.closest('.edit-note-btn, .action-btn, input, textarea, select, a')) return;
+    if (swipeRoot.classList.contains('open') || swipeRoot.classList.contains('open-left') || swipeRoot.classList.contains('open-right')) return;
+    if (__activeExerciseReorder) return;
+
+    const touch = e.changedTouches[0];
+    touchId = touch.identifier;
+    startX = touch.clientX;
+    startY = touch.clientY;
+    lastY = touch.clientY;
+    reorderStarted = false;
+    clearPressTimer();
+    pressTimer = setTimeout(beginReorder, 320);
+    window.addEventListener('touchmove', handleTouchMove, { passive: false });
+    window.addEventListener('touchend', handleTouchEnd);
+    window.addEventListener('touchcancel', handleTouchEnd);
+  };
+
+  const handleTouchMove = (e) => {
+    const touch = getTrackedTouch(e.touches);
+    if (!touch) return;
+
+    lastY = touch.clientY;
+
+    if (!reorderStarted) {
+      if (Math.abs(touch.clientX - startX) > 10 || Math.abs(touch.clientY - startY) > 10) {
+        clearPressTimer();
+      }
+      return;
+    }
+
+    const active = __activeExerciseReorder;
+    if (!active) return;
+
+    if (e.cancelable) e.preventDefault();
+
+    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    if (shouldStepNow(active, now)) {
+      tryStepByPointerY(active, touch.clientY);
+    }
+    __updateExerciseReorderGhostPos(active, touch.clientX, touch.clientY);
+  };
+
+  const releasePointer = () => {
+    if (pointerId == null) return;
+    try {
+      headerEl.releasePointerCapture?.(pointerId);
+    } catch (_) {
+      /* noop */
+    }
+    pointerId = null;
+  };
+
+  const removeWindowListeners = () => {
+    window.removeEventListener('pointermove', handlePointerMove);
+    window.removeEventListener('pointerup', handlePointerEnd);
+    window.removeEventListener('pointercancel', handlePointerEnd);
+  };
+
+  const handlePointerEnd = async () => {
+    clearPressTimer();
+    removeWindowListeners();
+    releasePointer();
+
+    const didReorder = reorderStarted;
+    reorderStarted = false;
+
+    if (didReorder) {
+      await finishExerciseReorder(true);
+    }
+  };
+
+  const handleTouchEnd = async (e) => {
+    const trackedTouchEnded = touchId != null && [...e.changedTouches].some((touch) => touch.identifier === touchId);
+    if (!trackedTouchEnded) return;
+
+    clearPressTimer();
+    removeTouchWindowListeners();
+    touchId = null;
+
+    const didReorder = reorderStarted;
+    reorderStarted = false;
+
+    if (didReorder) {
+      await finishExerciseReorder(true);
+    }
+  };
+
+  headerEl.addEventListener('pointerdown', handlePointerDown);
+  headerEl.addEventListener('touchstart', handleTouchStart, { passive: true });
 }
 
 
@@ -2590,7 +4566,8 @@ function attachSwipeActions(swipeRoot, selectedProgram, exercise) {
 // ===============================
 
 
-function enableSwipeDone(setRow, set) {
+function enableSwipeDone(setRow, setsArg) {
+    const syncSets = Array.isArray(setsArg) ? setsArg : [setsArg];
     let startX = 0;
     let startY = 0;
     let currentX = 0;
@@ -2606,7 +4583,7 @@ function enableSwipeDone(setRow, set) {
         isSwipe = true;
         dragged = false;
         panAxis = null;
-    });
+    }, { passive: true });
 
     setRow.addEventListener("touchmove", (e) => {
         if (!isSwipe || !e.touches || !e.touches.length) return;
@@ -2645,8 +4622,9 @@ function enableSwipeDone(setRow, set) {
             : currentX) - startX;
 
         if (Math.abs(diff) > 45) {
-            set.done = !set.done;
-            setRow.classList.toggle("done", set.done);
+            const newDone = !syncSets[0].done;
+            syncSets.forEach((s) => { s.done = newDone; });
+            setRow.classList.toggle("done", newDone);
         }
 
         setRow.style.transform = "translateX(0)";
@@ -2703,9 +4681,13 @@ function renderProgramDetailsPage() {
             exerciseItem.dataset.exId = exercise.id;
 
             // 1. — СОЗДАЁМ HEADER (но НЕ добавляем в DOM напрямую)
-            const exerciseHeader = createElement('div', `exercise-header ${isExpanded ? 'expanded' : ''}`);
+            const exerciseHeader = createElement('div', `exercise-header food-info-header ${isExpanded ? 'expanded' : ''}`);
 
 exerciseHeader.addEventListener('click', () => {
+    if (exerciseHeader.dataset.suppressClick === '1') {
+        exerciseHeader.dataset.suppressClick = '0';
+        return;
+    }
     state.expandedExerciseId =
         state.expandedExerciseId === exercise.id ? null : exercise.id;
 
@@ -2720,48 +4702,84 @@ exerciseHeader.addEventListener('click', () => {
             );
 
 
-const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-note' : ''}`);
-            // карандаш — оставляю твой SVG как есть
-            editNoteBtn.innerHTML = `
-               <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><title>Ios-more-outline SVG Icon</title><path d="M256 238c9.9 0 18 8.1 18 18s-8.1 18-18 18-18-8.1-18-18 8.1-18 18-18m0-14c-17.7 0-32 14.3-32 32s14.3 32 32 32 32-14.3 32-32-14.3-32-32-32z" fill="currentColor"/><path d="M128.4 238c9.9 0 18 8.1 18 18s-8.1 18-18 18-18-8.1-18-18 8.1-18 18-18m0-14c-17.7 0-32 14.3-32 32s14.3 32 32 32 32-14.3 32-32-14.4-32-32-32z" fill="currentColor"/><path d="M384 238c9.9 0 18 8.1 18 18s-8.1 18-18 18-18-8.1-18-18 8.1-18 18-18m0-14c-17.7 0-32 14.3-32 32s14.3 32 32 32 32-14.3 32-32-14.3-32-32-32z" fill="currentColor"/></svg>`;
+            // Кнопка "добавить комментарий": показываем только если комментария нет.
+            let editNoteBtn = null;
+            if (!hasNote) {
+                editNoteBtn = createElement('button', 'btn edit-note-btn');
+                editNoteBtn.innerHTML = `
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" id="РРєРѕРЅРєР° 7" viewBox="0 0 17 12">
+  <g>
+    <path fill="none" fill-rule="evenodd" d="M6.5,12.39 L6.5,12.39 L6.44,12.4 L6.43,12.4 L6.43,12.4 L6.38,12.39 C6.38,12.37 6.38,12.39 6.37,12.39 L6.37,12.39 L6.36,12.64 L6.37,12.65 L6.37,12.65 L6.43,12.7 L6.44,12.7 L6.44,12.7 L6.51,12.65 L6.51,12.65 L6.52,12.64 L6.51,12.39 C6.51,12.39 6.5,12.39 6.5,12.39 M6.65,12.31 L6.65,12.31 L6.53,12.37 L6.53,12.37 L6.53,12.39 L6.53,12.62 L6.54,12.64 L6.54,12.64 L6.66,12.69 C6.68,12.7 6.68,12.7 6.69,12.69 L6.69,12.68 L6.66,12.32 C6.66,12.32 6.66,12.31 6.65,12.31 M6.23,12.31 C6.23,12.31 6.22,12.31 6.22,12.32 L6.22,12.32 L6.19,12.68 C6.19,12.69 6.2,12.69 6.2,12.7 L6.22,12.69 L6.34,12.64 L6.35,12.64 L6.35,12.62 L6.35,12.39 L6.35,12.37 L6.35,12.37 Z"/>
+  </g>
+  <g>
+    <path fill="none" fill-rule="evenodd" d="M6.44,12.09 L6.44,12.09 L6.39,12.1 L6.38,12.1 L6.38,12.1 L6.34,12.09 C6.34,12.08 6.34,12.09 6.31,12.09 L6.31,12.09 L6.3,12.34 L6.31,12.36 L6.31,12.36 L6.38,12.4 L6.39,12.4 L6.39,12.4 L6.46,12.36 L6.46,12.36 L6.47,12.34 L6.46,12.09 C6.46,12.09 6.44,12.09 6.44,12.09 M6.6,12.02 L6.6,12.02 L6.48,12.08 L6.48,12.08 L6.48,12.09 L6.48,12.32 L6.49,12.34 L6.49,12.34 L6.61,12.39 C6.63,12.4 6.63,12.4 6.63,12.39 L6.63,12.38 L6.61,12.03 C6.61,12.03 6.61,12.02 6.6,12.02 M6.18,12.02 C6.18,12.02 6.17,12.02 6.17,12.03 L6.17,12.03 L6.15,12.38 C6.15,12.39 6.16,12.39 6.16,12.4 L6.17,12.39 L6.29,12.34 L6.29,12.34 L6.29,12.32 L6.29,12.09 L6.29,12.08 L6.29,12.08 Z"/>
+    <g>
+      <path fill="none" fill-rule="evenodd" d="M6.35,12.48 L6.35,12.48 L6.29,12.51 L6.28,12.51 L6.28,12.51 L6.24,12.48 C6.24,12.47 6.24,12.48 6.23,12.48 L6.23,12.48 L6.22,12.74 L6.23,12.75 L6.23,12.75 L6.28,12.8 L6.29,12.8 L6.29,12.8 L6.36,12.75 L6.36,12.75 L6.37,12.74 L6.36,12.48 C6.36,12.48 6.35,12.48 6.35,12.48 M6.51,12.41 L6.51,12.41 L6.38,12.47 L6.38,12.47 L6.38,12.48 L6.38,12.73 L6.39,12.74 L6.39,12.74 L6.52,12.79 C6.54,12.8 6.54,12.8 6.55,12.79 L6.55,12.78 L6.52,12.43 C6.52,12.43 6.52,12.41 6.51,12.41 M6.08,12.41 C6.08,12.41 6.06,12.41 6.06,12.43 L6.06,12.43 L6.04,12.78 C6.04,12.79 6.05,12.79 6.05,12.8 L6.06,12.79 L6.18,12.74 L6.2,12.74 L6.2,12.73 L6.2,12.48 L6.2,12.47 L6.2,12.47 Z"/>
+    </g>
+  </g>
+  <g>
+    <path fill="none" fill-rule="evenodd" d="M5.3,10.73 L5.3,10.73 L5.26,10.75 L5.26,10.75 L5.25,10.75 L5.21,10.73 C5.21,10.73 5.21,10.73 5.2,10.74 L5.2,10.74 L5.19,10.95 L5.2,10.96 L5.2,10.96 L5.25,11 L5.26,11 L5.26,11 L5.31,10.96 L5.32,10.95 L5.32,10.95 L5.31,10.74 C5.31,10.74 5.31,10.73 5.3,10.73 M5.43,10.68 L5.42,10.68 L5.34,10.72 L5.33,10.73 L5.33,10.73 L5.34,10.94 L5.34,10.95 L5.35,10.95 L5.44,10.99 C5.45,11 5.45,11 5.46,10.99 L5.46,10.98 L5.44,10.69 C5.44,10.68 5.44,10.68 5.43,10.68 M5.09,10.68 C5.08,10.68 5.08,10.68 5.08,10.68 L5.07,10.69 L5.06,10.98 C5.06,10.99 5.06,10.99 5.06,11 L5.07,10.99 L5.17,10.95 L5.17,10.95 L5.17,10.94 L5.18,10.73 L5.18,10.73 L5.18,10.72 Z"/>
+    <path fill="currentColor" fill-rule="evenodd" d="M11.31,9.45 C11.56,9.2 11.99,9.19 12.26,9.41 C12.53,9.65 12.56,10.04 12.35,10.33 L12.28,10.4 L11.25,11.39 C10.4,12.2 9.04,12.2 8.19,11.39 C7.92,11.11 7.47,11.1 7.18,11.32 L7.1,11.39 L6.75,11.74 C6.49,11.98 6.08,11.98 5.81,11.76 C5.53,11.52 5.47,11.11 5.72,10.84 L5.78,10.79 L6.12,10.46 C6.95,9.64 8.31,9.64 9.17,10.46 C9.44,10.72 9.89,10.74 10.21,10.5 L10.26,10.46 Z M10.04,.58 C10.72,-.05 11.78,-.06 12.46,.55 C13.12,1.16 13.19,2.19 12.58,2.86 L12.49,2.94 L4.49,10.65 C4.39,10.74 4.27,10.83 4.14,10.86 L4.04,10.92 L2.07,11.44 C1.84,11.51 1.59,11.46 1.42,11.3 C1.26,11.14 1.18,10.92 1.21,10.69 L1.22,10.61 L1.78,8.73 C1.82,8.59 1.89,8.47 1.98,8.37 L2.04,8.29 Z M11.68,1.19 C11.56,1.08 11.23,1.1 11.1,1.19 L10.67,1.46 L2.89,8.93 L2.31,10.33 L3.76,9.91 L11.82,2.15 C11.96,2.03 11.96,1.86 11.96,1.46"/>
+  </g>
+</svg>`;
 
-            editNoteBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                openCommentModal(
-                    exercise.id,
-                    exercise.note,
-                    `Комментарий к <span class="exercise-name-span">- ${exercise.name}</span>`,
-                    (newNote, media) => saveExerciseNote(selectedProgram.id, exercise.id, newNote, media)
-                );
-            });
+                editNoteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    openCommentModal(
+                        exercise.id,
+                        exercise.note,
+                        `Комментарий к <span class="exercise-name-span">- ${exercise.name}</span>`,
+                        (newNote, media) => saveExerciseNote(selectedProgram.id, exercise.id, newNote, media)
+                    );
+                });
+            }
 
-            exerciseHeader.append(exerciseTitle,editNoteBtn );
+            const headerArrow = createElement('span', 'exercise-header-arrow');
+            headerArrow.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Arrow-drop-right-line SVG Icon</title><path fill="currentColor" d="M12.172 12L9.343 9.173l1.415-1.414L15 12l-4.242 4.242l-1.415-1.414z"></path></svg>';
+
+            exerciseHeader.append(exerciseTitle, headerArrow);
 
             // Клик по заголовку
 
             // 2. — СОЗДАЁМ SWIPE ROOT
-            const swipeRoot = createElement('div', 'exercise-swipe');
+            const swipeRoot = createElement('div', 'exercise-swipe food-swipe food-swipe--meal-item food-swipe--exercise-item');
+            const swipeRow = createElement('div', 'meal-food-item exercise-swipe-row');
+            const swipeContent = createElement('div', 'food-info-header-content');
+            const actionsStrip = createElement('div', 'food-swipe-meal-actions exercise-swipe-actions');
 
-            // 👉 Только ПРАВАЯ зона (появляется при свайпе влево)
-            const rightActions = createElement('div', 'swipe-actions right');
-            rightActions.innerHTML = `
-              <button class="action-btn action-edit">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Setting-vert SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" d="M11.5 8.5v-4m-5 10v4m10-2v2m-5 0v-6m-5-8v6m10-6v8m-7-4h4m-9 6h4m6 2h4"/></svg>
-              </button>
-              <button class="action-btn action-delete">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Trash-24 SVG Icon</title><path fill="currentColor" d="M16 1.75V3h5.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H8V1.75C8 .784 8.784 0 9.75 0h4.5C15.216 0 16 .784 16 1.75m-6.5 0V3h5V1.75a.25.25 0 0 0-.25-.25h-4.5a.25.25 0 0 0-.25.25M4.997 6.178a.75.75 0 1 0-1.493.144L4.916 20.92a1.75 1.75 0 0 0 1.742 1.58h10.684a1.75 1.75 0 0 0 1.742-1.581l1.413-14.597a.75.75 0 0 0-1.494-.144l-1.412 14.596a.25.25 0 0 1-.249.226H6.658a.25.25 0 0 1-.249-.226z"></path><path fill="currentColor" d="M9.206 7.501a.75.75 0 0 1 .793.705l.5 8.5A.75.75 0 1 1 9 16.794l-.5-8.5a.75.75 0 0 1 .705-.793Zm6.293.793A.75.75 0 1 0 14 8.206l-.5 8.5a.75.75 0 0 0 1.498.088l.5-8.5Z"></path></svg>
-              </button>
+            const editSlot = createElement('div', 'food-swipe-plan-slot exercise-swipe-edit-slot');
+            const editBtn = createElement('button', 'action-btn action-plan action-edit');
+            editBtn.type = 'button';
+            editBtn.innerHTML = `
+              <span class="action-plan-text" role="img" aria-label="Edit exercise">
+                <svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><title>Edit exercise</title><path fill="currentColor" d="M 14.96 1.812 C 14.01 1.875 13.23 2.479 12.62 3.165 C 9.636 6.167 6.628 9.151 3.651 12.16 C 2.981 12.89 2.991 13.94 2.731 14.85 C 2.558 15.67 2.348 16.49 2.197 17.32 C 2.22 17.74 2.708 17.9 3.055 17.74 C 4.394 17.42 5.752 17.18 7.078 16.81 C 7.617 16.62 8.021 16.2 8.41 15.8 C 8.307 15.4 8.24 15 8.211 14.59 C 7.701 15.02 7.32 15.65 6.678 15.89 C 5.577 16.16 4.465 16.39 3.359 16.64 C 3.627 15.5 3.846 14.35 4.144 13.22 C 4.449 12.6 5.062 12.2 5.511 11.69 C 7.823 9.38 10.14 7.07 12.45 4.76 C 13.38 5.69 14.31 6.62 15.24 7.551 C 14.82 7.971 14.41 8.391 13.99 8.811 C 14.4 8.842 14.8 8.907 15.2 9.01 C 16 8.179 16.87 7.41 17.62 6.537 C 18.58 5.306 18.3 3.354 17.05 2.432 C 16.46 1.971 15.7 1.747 14.96 1.812 z M 15.6 2.848 C 16.69 3.048 17.46 4.279 17.1 5.346 C 16.93 5.981 16.38 6.384 15.95 6.84 C 15.02 5.91 14.08 4.98 13.15 4.051 C 13.7 3.495 14.29 2.812 15.14 2.818 C 15.29 2.801 15.45 2.84 15.6 2.848 z "/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" d="M12.07,13.39L13.71,12.47L15.35,13.39L15.35,15.22L13.71,16.15L12.07,15.22z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" d="M16.98,13.5L17.8,12.6L17.18,11.55L15.97,11.84L14.59,11.1L14.32,10.22L13.1,10.22L12.82,11.1L11.45,11.84L10.24,11.55L9.62,12.6L10.44,13.5L10.44,15.12L9.62,16.01L10.24,17.07L11.45,16.78L12.82,17.52L13.1,18.4L14.32,18.4L14.59,17.52L15.97,16.78L17.18,17.07L17.8,16.01L16.98,15.12z"/></svg>
+              </span>
             `;
+            editSlot.append(editBtn);
 
-            // Контент, который ездит
-            const swipeContent = createElement('div', 'swipe-content');
-            swipeContent.append(exerciseHeader);
+            const deleteSlot = createElement('div', 'food-swipe-delete-slot exercise-swipe-delete-slot');
+            const deleteBtn = createElement('button', 'action-btn action-delete');
+            deleteBtn.type = 'button';
+            deleteBtn.innerHTML = `
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Trash-24 SVG Icon</title><path fill="currentColor" d="M16 1.75V3h5.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H8V1.75C8 .784 8.784 0 9.75 0h4.5C15.216 0 16 .784 16 1.75m-6.5 0V3h5V1.75a.25.25 0 0 0-.25-.25h-4.5a.25.25 0 0 0-.25.25M4.997 6.178a.75.75 0 1 0-1.493.144L4.916 20.92a1.75 1.75 0 0 0 1.742 1.58h10.684a1.75 1.75 0 0 0 1.742-1.581l1.413-14.597a.75.75 0 0 0-1.494-.144l-1.412 14.596a.25.25 0 0 1-.249.226H6.658a.25.25 0 0 1-.249-.226z"></path><path fill="currentColor" d="M9.206 7.501a.75.75 0 0 1 .793.705l.5 8.5A.75.75 0 1 1 9 16.794l-.5-8.5a.75.75 0 0 1 .705-.793Zm6.293.793A.75.75 0 1 0 14 8.206l-.5 8.5a.75.75 0 0 0 1.498.088l.5-8.5Z"></path></svg>
+            `;
+            deleteSlot.append(deleteBtn);
 
-            swipeRoot.append(rightActions, swipeContent);
+            actionsStrip.append(editSlot, deleteSlot);
+            swipeContent.append(exerciseHeader, actionsStrip);
+            swipeRow.append(swipeContent);
+            swipeRoot.append(swipeRow);
             exerciseItem.append(swipeRoot);
 
              // 4️⃣ Подключаем свайп (только 1 раз!)
                   attachSwipeActions(swipeRoot, selectedProgram, exercise);
+                  attachExerciseReorderLongPress({
+                      headerEl: exerciseHeader,
+                      itemEl: exerciseItem,
+                      swipeRoot,
+                      selectedProgram,
+                      exercise
+                  });
 
 
 
@@ -2771,42 +4789,92 @@ const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-
             // Контейнер для подходов
             const setsContainer = createElement('div', `sets-container ${isExpanded ? 'expanded' : ''}`);
 
-            // Свернутый краткий вид подходов (чипсы)
+            // Свернутый краткий вид подходов (чипсы) — одна группа дропа = один чип
             const summarySetsContainer = createElement('div', `summary-sets-container ${!isExpanded ? 'visible' : ''}`);
-            const summarySets = (exercise.sets || []).filter(set => (set.weight && set.weight.trim() !== '') || (set.reps && set.reps.trim() !== ''));
-            summarySets.forEach((set) => {
-                const summarySpan = createElement('span', set.isMain ? 'main-set' : '', `${set.weight || '0'}x${set.reps || '0'}`);
-                summarySetsContainer.append(summarySpan);
-            });
+            if (Array.isArray(exercise.sets) && exercise.sets.length) {
+                let si = 0;
+                while (si < exercise.sets.length) {
+                    if (exercise.sets[si].continuation) {
+                        si++;
+                        continue;
+                    }
+                    const [gs, ge] = __getDropSetGroupBounds(exercise, si);
+                    const groupSlice = exercise.sets.slice(gs, ge + 1);
+                    const nonEmptyParts = groupSlice.filter((st) => (st.weight && st.weight.trim() !== '') || (st.reps && st.reps.trim() !== ''));
+                    if (nonEmptyParts.length) {
+                        const chipOrd = __getApproachOrdinalForSet(exercise.sets, gs);
+                        const chipText = `${chipOrd}. ${nonEmptyParts.map((st) => `${st.weight || '0'} кг x ${st.reps || '0'} пов`).join(' · ')}`;
+                        const isMainChip = groupSlice.some((st) => st.isMain);
+                        const summarySpan = createElement('span', isMainChip ? 'main-set' : '', chipText);
+                        summarySetsContainer.append(summarySpan);
+                    }
+                    si = ge + 1;
+                }
+            }
 
-            // Полный список подходов
+            // Полный список подходов (дроп-группа — один set-row)
             if (Array.isArray(exercise.sets)) {
-                exercise.sets.forEach((set, setIndex) => {
-                    const setRow = createElement('div', `set-row ${set.isMain ? 'main-set' : ''}`);
-                        if (set.done) {
-                            setRow.classList.add("done");
-                        }
-                            enableSwipeDone(setRow, set);
+                let setIndex = 0;
+                while (setIndex < exercise.sets.length) {
+                    if (exercise.sets[setIndex].continuation) {
+                        setIndex++;
+                        continue;
+                    }
+                    const [gStart, gEnd] = __getDropSetGroupBounds(exercise, setIndex);
+                    const groupSets = exercise.sets.slice(gStart, gEnd + 1);
+                    const isDropGroup = groupSets.length > 1;
+                    const headSet = groupSets[0];
 
+                    const setRow = createElement('div', `set-row ${headSet.isMain ? 'main-set' : ''}${isDropGroup ? ' set-row--drop-group' : ''}`);
+                    if (groupSets.some((s) => s.done)) {
+                        setRow.classList.add('done');
+                    }
+                    enableSwipeDone(setRow, groupSets);
 
+                    const approachOrd = __getApproachOrdinalForSet(exercise.sets, gStart);
 
-                    const setNumberLabel = createElement('span', 'set-label', `${setIndex + 1}.`);
-                    setRow.append(setNumberLabel);
+                    if (isDropGroup) {
+                        const stack = createElement('div', 'set-display-stack');
+                        groupSets.forEach((part, j) => {
+                            const line = createElement(
+                                'div',
+                                j === 0
+                                    ? 'set-display-line set-display-line--drop set-display-line--drop-root'
+                                    : 'set-display-line set-display-line--drop'
+                            );
+                            const displayWeight = part.weight || '...';
+                            const displayReps = part.reps || '...';
+                            const fullHtml = __formatSetDisplayKgReps(displayWeight, displayReps);
+                            const isLastInDrop = j === groupSets.length - 1;
+                            const treeCell = createElement('span', 'set-display-line__tree');
+                            treeCell.innerHTML = j === 0 ? __DROP_SET_TREE_ROOT_SVG : __dropSetTreeSvg(isLastInDrop);
+                            const ordSpan = createElement(
+                                'span',
+                                j === 0 ? 'set-display-line__ord' : 'set-display-line__ord set-display-line__ord--phantom'
+                            );
+                            ordSpan.textContent = `${approachOrd}.`;
+                            if (j !== 0) ordSpan.setAttribute('aria-hidden', 'true');
+                            const text = createElement('span', 'set-display-line__text');
+                            text.innerHTML = fullHtml;
+                            line.append(treeCell, ordSpan, text);
+                            stack.append(line);
+                        });
+                        setRow.append(stack);
+                    } else {
+                        const ordLabel = createElement('span', 'set-label', `${approachOrd}.`);
+                        const setText = createElement('span', 'set-display');
+                        const displayWeight = headSet.weight || '...';
+                        const displayReps = headSet.reps || '...';
+                        setText.innerHTML = __formatSetDisplayKgReps(displayWeight, displayReps);
+                        setRow.append(ordLabel, setText);
+                    }
 
-                    const setText = createElement('span', 'set-display');
-                    const displayWeight = set.weight || '...';
-                    const displayReps = set.reps || '...';
-                    setText.innerHTML = `${displayWeight} <small>кг</small> <small>x</small> ${displayReps} <small>пов</small>`;
-                    setRow.append(setText);
-
-                    // Клик для редактирования подхода
                     setRow.addEventListener('click', (e) => {
-                        if (setRow._preventClick) return; // 👈 блокируем открытие после свайпа
+                        if (setRow._preventClick) return;
                         e.stopPropagation();
-                        openEditSetModal(selectedProgram.id, exercise.id, setIndex, set);
+                        openEditSetModal(selectedProgram.id, exercise.id, gStart, headSet);
                     });
 
-                    // Удаление подхода (крестик)
                     const deleteSetBtn = createElement('button', 'btn delete-set-btn');
                     deleteSetBtn.innerHTML = `
                         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24">
@@ -2814,10 +4882,13 @@ const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-
                         </svg>`;
                     deleteSetBtn.addEventListener('click', (e) => {
                         e.stopPropagation();
-                        openConfirmModal('Удалить этот подход?', async () => {
-                            exercise.sets.splice(setIndex, 1);
+                        const groupLen = gEnd - gStart + 1;
+                        const delMsg = groupLen > 1
+                            ? 'Удалить подход со всеми сетами дропа?'
+                            : 'Удалить этот подход?';
+                        openConfirmModal(delMsg, async () => {
+                            exercise.sets.splice(gStart, groupLen);
 
-                            // Если подходов не осталось — удаляем упражнение
                             if (exercise.sets.length === 0) {
                                 const currentProgram = state.programs.find(p => p.id === selectedProgram.id);
                                 if (currentProgram) {
@@ -2834,12 +4905,13 @@ const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-
                     setRow.append(deleteSetBtn);
 
                     setsContainer.append(setRow);
-                });
+                    setIndex = gEnd + 1;
+                }
             }
 
             // Кнопки под подходами (добавить подход, комментарий к упражнению + индикаторы медиа)
             const addSetBtn = createElement('button', 'add-set-btn');
-            addSetBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 16 16"><title>Plus SVG Icon</title><path fill="currentColor" d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"></path></svg>';
+            addSetBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 14 14"><title>Add-1-solid SVG Icon</title><path fill="currentColor" fill-rule="evenodd" d="M8 1a1 1 0 0 0-2 0v5H1a1 1 0 0 0 0 2h5v5a1 1 0 1 0 2 0V8h5a1 1 0 1 0 0-2H8z" clip-rule="evenodd"></path></svg><span>добавить подход</span>';
 
             addSetBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
@@ -2858,7 +4930,8 @@ const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-
                     currentExercise.sets.push({
                         weight: lastSet.weight || '',
                         reps: lastSet.reps || '',
-                        isMain: lastSet.isMain || false
+                        isMain: lastSet.isMain || false,
+                        continuation: false
                     });
                     await updateDoc(doc(getUserProgramsCollection(), selectedProgram.id), { exercises: selectedProgram.exercises });
                     render();
@@ -2875,6 +4948,7 @@ const editNoteBtn = createElement('button', `btn edit-note-btn ${hasNote ? 'has-
             bottomButtons.style.display = 'flex';
             bottomButtons.style.gap = '6px';
             bottomButtons.append(addSetBtn);
+            if (editNoteBtn) bottomButtons.append(editNoteBtn);
             setsContainer.append(bottomButtons);
 
             // Отображение комментария под подходами (в раскрытом виде)
@@ -3014,7 +5088,21 @@ const commentButtonGroup = createElement('div', 'comment-btn-group');
 // --- иконка (SVG внутри кнопки) ---
 const commentBtn = createElement('button', `btn comment-toggle-btn ${hasTrainingNote ? 'has-note' : ''}`);
 commentBtn.innerHTML = `
-  <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24"><title>Edit SVG Icon</title><path fill="currentColor" d="M3.548 20.938h16.9a.5.5 0 0 0 0-1h-16.9a.5.5 0 0 0 0 1M9.71 17.18a2.587 2.587 0 0 0 1.12-.65l9.54-9.54a1.75 1.75 0 0 0 0-2.47l-.94-.93a1.788 1.788 0 0 0-2.47 0l-9.54 9.53a2.473 2.473 0 0 0-.64 1.12L6.04 17a.737.737 0 0 0 .19.72a.767.767 0 0 0 .53.22Zm.41-1.36a1.468 1.468 0 0 1-.67.39l-.97.26l-1-1l.26-.97a1.521 1.521 0 0 1 .39-.67l.38-.37l1.99 1.99Zm1.09-1.08l-1.99-1.99l6.73-6.73l1.99 1.99Zm8.45-8.45L18.65 7.3l-1.99-1.99l1.01-1.02a.748.748 0 0 1 1.06 0l.93.94a.754.754 0 0 1 0 1.06"></path></svg>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" id="РРєРѕРЅРєР° 7" viewBox="0 0 17 12">
+  <g>
+    <path fill="none" fill-rule="evenodd" d="M6.5,12.39 L6.5,12.39 L6.44,12.4 L6.43,12.4 L6.43,12.4 L6.38,12.39 C6.38,12.37 6.38,12.39 6.37,12.39 L6.37,12.39 L6.36,12.64 L6.37,12.65 L6.37,12.65 L6.43,12.7 L6.44,12.7 L6.44,12.7 L6.51,12.65 L6.51,12.65 L6.52,12.64 L6.51,12.39 C6.51,12.39 6.5,12.39 6.5,12.39 M6.65,12.31 L6.65,12.31 L6.53,12.37 L6.53,12.37 L6.53,12.39 L6.53,12.62 L6.54,12.64 L6.54,12.64 L6.66,12.69 C6.68,12.7 6.68,12.7 6.69,12.69 L6.69,12.68 L6.66,12.32 C6.66,12.32 6.66,12.31 6.65,12.31 M6.23,12.31 C6.23,12.31 6.22,12.31 6.22,12.32 L6.22,12.32 L6.19,12.68 C6.19,12.69 6.2,12.69 6.2,12.7 L6.22,12.69 L6.34,12.64 L6.35,12.64 L6.35,12.62 L6.35,12.39 L6.35,12.37 L6.35,12.37 Z"/>
+  </g>
+  <g>
+    <path fill="none" fill-rule="evenodd" d="M6.44,12.09 L6.44,12.09 L6.39,12.1 L6.38,12.1 L6.38,12.1 L6.34,12.09 C6.34,12.08 6.34,12.09 6.31,12.09 L6.31,12.09 L6.3,12.34 L6.31,12.36 L6.31,12.36 L6.38,12.4 L6.39,12.4 L6.39,12.4 L6.46,12.36 L6.46,12.36 L6.47,12.34 L6.46,12.09 C6.46,12.09 6.44,12.09 6.44,12.09 M6.6,12.02 L6.6,12.02 L6.48,12.08 L6.48,12.08 L6.48,12.09 L6.48,12.32 L6.49,12.34 L6.49,12.34 L6.61,12.39 C6.63,12.4 6.63,12.4 6.63,12.39 L6.63,12.38 L6.61,12.03 C6.61,12.03 6.61,12.02 6.6,12.02 M6.18,12.02 C6.18,12.02 6.17,12.02 6.17,12.03 L6.17,12.03 L6.15,12.38 C6.15,12.39 6.16,12.39 6.16,12.4 L6.17,12.39 L6.29,12.34 L6.29,12.34 L6.29,12.32 L6.29,12.09 L6.29,12.08 L6.29,12.08 Z"/>
+    <g>
+      <path fill="none" fill-rule="evenodd" d="M6.35,12.48 L6.35,12.48 L6.29,12.51 L6.28,12.51 L6.28,12.51 L6.24,12.48 C6.24,12.47 6.24,12.48 6.23,12.48 L6.23,12.48 L6.22,12.74 L6.23,12.75 L6.23,12.75 L6.28,12.8 L6.29,12.8 L6.29,12.8 L6.36,12.75 L6.36,12.75 L6.37,12.74 L6.36,12.48 C6.36,12.48 6.35,12.48 6.35,12.48 M6.51,12.41 L6.51,12.41 L6.38,12.47 L6.38,12.47 L6.38,12.48 L6.38,12.73 L6.39,12.74 L6.39,12.74 L6.52,12.79 C6.54,12.8 6.54,12.8 6.55,12.79 L6.55,12.78 L6.52,12.43 C6.52,12.43 6.52,12.41 6.51,12.41 M6.08,12.41 C6.08,12.41 6.06,12.41 6.06,12.43 L6.06,12.43 L6.04,12.78 C6.04,12.79 6.05,12.79 6.05,12.8 L6.06,12.79 L6.18,12.74 L6.2,12.74 L6.2,12.73 L6.2,12.48 L6.2,12.47 L6.2,12.47 Z"/>
+    </g>
+  </g>
+  <g>
+    <path fill="none" fill-rule="evenodd" d="M5.3,10.73 L5.3,10.73 L5.26,10.75 L5.26,10.75 L5.25,10.75 L5.21,10.73 C5.21,10.73 5.21,10.73 5.2,10.74 L5.2,10.74 L5.19,10.95 L5.2,10.96 L5.2,10.96 L5.25,11 L5.26,11 L5.26,11 L5.31,10.96 L5.32,10.95 L5.32,10.95 L5.31,10.74 C5.31,10.74 5.31,10.73 5.3,10.73 M5.43,10.68 L5.42,10.68 L5.34,10.72 L5.33,10.73 L5.33,10.73 L5.34,10.94 L5.34,10.95 L5.35,10.95 L5.44,10.99 C5.45,11 5.45,11 5.46,10.99 L5.46,10.98 L5.44,10.69 C5.44,10.68 5.44,10.68 5.43,10.68 M5.09,10.68 C5.08,10.68 5.08,10.68 5.08,10.68 L5.07,10.69 L5.06,10.98 C5.06,10.99 5.06,10.99 5.06,11 L5.07,10.99 L5.17,10.95 L5.17,10.95 L5.17,10.94 L5.18,10.73 L5.18,10.73 L5.18,10.72 Z"/>
+    <path fill="currentColor" fill-rule="evenodd" d="M11.31,9.45 C11.56,9.2 11.99,9.19 12.26,9.41 C12.53,9.65 12.56,10.04 12.35,10.33 L12.28,10.4 L11.25,11.39 C10.4,12.2 9.04,12.2 8.19,11.39 C7.92,11.11 7.47,11.1 7.18,11.32 L7.1,11.39 L6.75,11.74 C6.49,11.98 6.08,11.98 5.81,11.76 C5.53,11.52 5.47,11.11 5.72,10.84 L5.78,10.79 L6.12,10.46 C6.95,9.64 8.31,9.64 9.17,10.46 C9.44,10.72 9.89,10.74 10.21,10.5 L10.26,10.46 Z M10.04,.58 C10.72,-.05 11.78,-.06 12.46,.55 C13.12,1.16 13.19,2.19 12.58,2.86 L12.49,2.94 L4.49,10.65 C4.39,10.74 4.27,10.83 4.14,10.86 L4.04,10.92 L2.07,11.44 C1.84,11.51 1.59,11.46 1.42,11.3 C1.26,11.14 1.18,10.92 1.21,10.69 L1.22,10.61 L1.78,8.73 C1.82,8.59 1.89,8.47 1.98,8.37 L2.04,8.29 Z M11.68,1.19 C11.56,1.08 11.23,1.1 11.1,1.19 L10.67,1.46 L2.89,8.93 L2.31,10.33 L3.76,9.91 L11.82,2.15 C11.96,2.03 11.96,1.86 11.96,1.46"/>
+  </g>
+</svg>
 `;
 
 // --- текст рядом с иконкой ---
@@ -3191,7 +5279,7 @@ contentContainer.append(commentWrapper);
 
 
 // ✅ Универсальная функция full-screen медиа (фото или видео)
-function openMediaFullScreen(url, type = 'photo') {
+export function openMediaFullScreen(url, type = 'photo') {
     const overlay = document.createElement('div');
     overlay.className = 'media-fullscreen-overlay';
     overlay.style.position = 'fixed';
@@ -3347,7 +5435,7 @@ function openExerciseMenuModal(program, exercise) {
 }
 
 //// =================================================================
-  // ✏️ Модалка редактирования упражнения: имя + позиция
+  // ✏️ Модалка редактирования названия упражнения
   // =================================================================
   function openEditExerciseModal(selectedProgram, exercise) {
       const overlay = createElement('div', 'modal-overlay');
@@ -3356,97 +5444,38 @@ function openExerciseMenuModal(program, exercise) {
       });
 
       const modal = createElement('div', 'modal-content modal-compact');
+      const title = createElement('h3', null, 'Редактировать название');
 
-      // === Поле Названия ===
-      const nameInput = createElement('input');
+      const nameInput = createElement('input', 'modal-input');
       nameInput.type = 'text';
       nameInput.value = exercise.name;
 
-      // === Горизонтальный Wheel Picker (позиции) ===
-      const total = selectedProgram.exercises.length;
-      let currentIndex = selectedProgram.exercises.findIndex(ex => ex.id === exercise.id); // 0-based
-
-      // Обёртка (label + колёсико в одну строку)
-      const posLine = createElement('div', 'h-wheel-line'); // <--- новая обёртка строки
-
-      const label = createElement('span', 'h-wheel-label', 'Сделать №');
-
-      const posWrapper = createElement('div', 'h-wheel-wrapper');
-      const leftBtn = createElement('button', 'h-wheel-arrow', '◀');
-      const rightBtn = createElement('button', 'h-wheel-arrow', '▶');
-      const wheel = createElement('div', 'h-wheel');
-
-      // Добавляем пустой слева
-      wheel.append(createElement('div', 'h-wheel-item empty', ''));
-
-      // Основные номера
-      for (let i = 1; i <= total; i++) {
-          const item = createElement('div', 'h-wheel-item', i.toString());
-          wheel.append(item);
-      }
-
-      // Пустой справа
-      wheel.append(createElement('div', 'h-wheel-item empty', ''));
-
-      // Центрирование
-      function updateWheelPosition() {
-          const items = wheel.querySelectorAll('.h-wheel-item');
-          const itemWidth = items[1].offsetWidth;
-          wheel.scrollTo({
-              left: (currentIndex + 1) * itemWidth - wheel.offsetWidth / 2 + itemWidth / 2,
-              behavior: 'smooth'
-          });
-          items.forEach((el, idx) => {
-              el.classList.toggle('active', idx === currentIndex + 1);
-          });
-      }
-
-      leftBtn.addEventListener('click', () => {
-          if (currentIndex > 0) { currentIndex--; updateWheelPosition(); }
-      });
-      rightBtn.addEventListener('click', () => {
-          if (currentIndex < total - 1) { currentIndex++; updateWheelPosition(); }
-      });
-
-      wheel.addEventListener('scroll', () => {
-          const items = wheel.querySelectorAll('.h-wheel-item');
-          const itemWidth = items[1].offsetWidth;
-          const center = wheel.scrollLeft + wheel.offsetWidth / 2;
-          let idx = Math.round((center - itemWidth / 2) / itemWidth) - 1;
-          if (idx >= 0 && idx < total) {
-              currentIndex = idx;
-              items.forEach((el, i) => el.classList.toggle('active', i === currentIndex + 1));
-          }
-      });
-
-      posWrapper.append(leftBtn, wheel, rightBtn);
-
-      // ✅ Добавляем на одну строку: "Сделать №" + колесо
-      posLine.append(label, posWrapper);
-      setTimeout(updateWheelPosition, 100);
-
-      // === Кнопки ===
       const controls = createElement('div', 'modal-controls');
       const save = createElement('button', 'btn btn-primary', 'Сохранить');
 
       save.addEventListener('click', async () => {
-          exercise.name = nameInput.value.trim() || exercise.name;
-          const toIndex = currentIndex;
-          const fromIndex = selectedProgram.exercises.findIndex(ex => ex.id === exercise.id);
-          if (fromIndex !== toIndex) {
-              const moved = selectedProgram.exercises.splice(fromIndex, 1)[0];
-              selectedProgram.exercises.splice(toIndex, 0, moved);
+          const nextName = nameInput.value.trim();
+          if (!nextName) {
+              showToast('Введите название');
+              return;
           }
-          await updateDoc(doc(getUserProgramsCollection(), selectedProgram.id), { exercises: selectedProgram.exercises });
+
+          exercise.name = nextName;
+          await updateDoc(doc(getUserProgramsCollection(), selectedProgram.id), {
+              exercises: selectedProgram.exercises
+          });
           showToast('Обновлено');
           document.body.removeChild(overlay);
           render();
       });
 
       controls.append(save);
-      modal.append(posLine, nameInput, controls);
+      modal.append(title, nameInput, controls);
       overlay.appendChild(modal);
       document.body.appendChild(overlay);
+
+      nameInput.focus();
+      nameInput.select?.();
   }
 
 
@@ -3762,7 +5791,7 @@ async function loadUserCycles() {
     );
 
     const snapshot = await getDocs(cyclesRef);
-    const cycles = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const cycles = sortCyclesForAccessUi(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     console.log("📦 Найдено личных циклов:", cycles.length, cycles);
 
     // 🔹 Загружаем журнал пользователя
@@ -3801,15 +5830,13 @@ async function loadUserCycles() {
       if (best) {
         const foundCycle = cycles.find(c => c.name === best.cycleName);
         if (foundCycle) {
-          state.selectedCycleId = foundCycle.id;
-          state.selectedJournalCategory = foundCycle.name;
+          applyCycleSelection(foundCycle);
           console.log("📘 Автовыбран личный цикл по ближайшей дате:", foundCycle.name, best.date);
         }
       }
     } else if (cycles.length > 0) {
       const lastCycle = cycles[cycles.length - 1];
-      state.selectedCycleId = lastCycle.id;
-      state.selectedJournalCategory = lastCycle.name;
+      applyCycleSelection(lastCycle);
       console.log("📘 Установлен личный цикл по умолчанию:", lastCycle.name);
     } else {
       state.selectedCycleId = null;
@@ -3841,31 +5868,42 @@ async function loadClientCycles(clientId) {
     const clientMeta = state.clients?.find((c) => c.id === clientId);
     const linkedUid =
       clientMeta?.linkedUserUid && clientMeta?.linkStatus === 'active' ? clientMeta.linkedUserUid : null;
+    let linkedAccess = null;
 
-    const trainerCyclesRef = collection(
-      db,
-      "artifacts",
-      appId,
-      "users",
-      uid,
-      "clients",
-      clientId,
-      "cycles"
-    );
-
-    const snapT = await getDocs(trainerCyclesRef);
-    const byId = new Map();
-    for (const d of snapT.docs) {
-      byId.set(d.id, { id: d.id, ...d.data(), _firesAtClient: false });
+    if (linkedUid) {
+      const linkedAccessSnap = await getDoc(getLinkedTrainerDocRef(linkedUid, uid));
+      if (linkedAccessSnap.exists()) {
+        linkedAccess = normalizeTrainerCycleAccessSettings(linkedAccessSnap.data());
+      }
     }
+
+    const byId = new Map();
     if (linkedUid) {
       const clientCyclesRef = collection(db, "artifacts", appId, "users", linkedUid, "cycles");
       const snapC = await getDocs(clientCyclesRef);
       for (const d of snapC.docs) {
-        byId.set(d.id, { id: d.id, ...d.data(), _firesAtClient: true });
+        const cycleData = { id: d.id, ...d.data(), _firesAtClient: true };
+        if (trainerAccessAllowsCycle(linkedAccess, cycleData.id)) {
+          byId.set(d.id, cycleData);
+        }
+      }
+    } else {
+      const trainerCyclesRef = collection(
+        db,
+        "artifacts",
+        appId,
+        "users",
+        uid,
+        "clients",
+        clientId,
+        "cycles"
+      );
+      const snapT = await getDocs(trainerCyclesRef);
+      for (const d of snapT.docs) {
+        byId.set(d.id, { id: d.id, ...d.data(), _firesAtClient: false });
       }
     }
-    const cycles = Array.from(byId.values());
+    const cycles = sortCyclesForAccessUi(Array.from(byId.values()));
     console.log("📦 Найдено циклов для клиента (слияние):", cycles.length, cycles);
 
     // 🔹 Журнал: при активной связи — канон клиента, иначе карточка тренера
@@ -3902,15 +5940,13 @@ async function loadClientCycles(clientId) {
       if (best) {
         const foundCycle = cycles.find(c => c.name === best.cycleName);
         if (foundCycle) {
-          state.selectedCycleId = foundCycle.id;
-          state.selectedJournalCategory = foundCycle.name;
+          applyCycleSelection(foundCycle);
           console.log("📘 Автовыбран цикл по ближайшей дате:", foundCycle.name, best.date);
         }
       }
     } else if (cycles.length > 0) {
       const lastCycle = cycles[cycles.length - 1];
-      state.selectedCycleId = lastCycle.id;
-      state.selectedJournalCategory = lastCycle.name;
+      applyCycleSelection(lastCycle);
       console.log("📘 Установлен цикл по умолчанию:", lastCycle.name);
     } else {
       state.selectedCycleId = null;
@@ -3985,16 +6021,14 @@ if (state.currentMode === 'own' && !state.cyclesLoaded) {
         if (nearestRecord) {
           const foundCycle = cycles.find(c => c.name === nearestRecord.cycleName);
           if (foundCycle) {
-            state.selectedCycleId = foundCycle.id;
-            state.selectedJournalCategory = foundCycle.name;
+            applyCycleSelection(foundCycle);
             console.log("🧭 Ближайшая тренировка:", nearestRecord.date, "→ Цикл:", foundCycle.name);
           } else {
             console.warn("⚠️ Цикл из ближайшей тренировки не найден:", nearestRecord.cycleName);
           }
         } else {
           const lastCycle = cycles[cycles.length - 1];
-          state.selectedCycleId = lastCycle.id;
-          state.selectedJournalCategory = lastCycle.name;
+          applyCycleSelection(lastCycle);
           console.log("📘 Установлен личный цикл по умолчанию:", lastCycle.name);
         }
       }
@@ -4020,8 +6054,7 @@ if (state.currentMode === 'personal' && state.selectedClientId) {
         // 🛠 Не перезаписываем, если уже выбран цикл
         if (!state.selectedCycleId && cycles.length > 0) {
           const lastCycle = cycles[cycles.length - 1];
-          state.selectedCycleId = lastCycle.id;
-          state.selectedJournalCategory = lastCycle.name;
+          applyCycleSelection(lastCycle);
           console.log('📘 Установлен цикл по умолчанию:', lastCycle.name);
         }
 
@@ -4046,9 +6079,10 @@ if (state.currentMode === 'personal' && !state.selectedClientId) {
   return;
 }
 
-if (!state.selectedJournalCategory && state.journal.length > 0) {
+const visibleJournalRecords = filterJournalRecordsForVisibleCycles(state.journal);
+if (!state.selectedJournalCategory && visibleJournalRecords.length > 0) {
   // Фильтруем только релевантные записи
-  const relevantRecords = state.journal.filter(r => {
+  const relevantRecords = visibleJournalRecords.filter(r => {
     if (state.currentMode === 'own') return true;
     if (state.currentMode === 'personal') {
       const linked = getActiveLinkedClientUid();
@@ -4091,9 +6125,9 @@ if (!state.selectedJournalCategory && state.journal.length > 0) {
       // Находим соответствующий цикл
       const foundCycle = state.cycles.find(c => c.name === lastRelevant.cycleName);
       if (foundCycle) {
+        // В журнале не трогаем глобальный selectedCycleId — только локальный фильтр
         state.selectedJournalCategory = foundCycle.name;
-        state.selectedCycleId = foundCycle.id;
-        console.log('✅ Автовыбран цикл:', foundCycle.name);
+        console.log('✅ Автовыбран цикл (только для фильтра журнала):', foundCycle.name);
       } else {
         console.warn('⚠️ Цикл из последней тренировки не найден:', lastRelevant.cycleName);
       }
@@ -4101,17 +6135,7 @@ if (!state.selectedJournalCategory && state.journal.length > 0) {
   }
 }
 
-    // ✅ Если выбран цикл в селекте — сразу делаем его активным
-    if (state.selectedJournalCategory) {
-        const currentCycle = state.cycles.find(c => c.name === state.selectedJournalCategory);
-        if (currentCycle && state.selectedCycleId !== currentCycle.id) {
-            state.selectedCycleId = currentCycle.id;
-            console.log('✅ Цикл активирован автоматически:', currentCycle.name, currentCycle.id);
-
-            // Обновляем подписку на программы и дневник
-            setupDynamicListeners();
-        }
-    }
+    // В журнале selectedJournalCategory — это фильтр, он не обязан совпадать с глобальным selectedCycleId.
 
     contentContainer.id = 'journal-content';
 
@@ -4136,7 +6160,7 @@ if (!state.selectedJournalCategory && state.journal.length > 0) {
     contentContainer.append(calendarContainer);
 
     // После добавления calendarContainer
-    let calendarRecords = state.journal;
+    let calendarRecords = visibleJournalRecords;
 
     // фильтр по циклу
     if (state.selectedJournalCategory) {
@@ -4186,11 +6210,6 @@ if (allCycleNames.length > 0) {
             e.stopPropagation();
             state.selectedJournalCategory = name;
             state.selectedJournalProgram = '';
-            const foundCycle = state.cycles.find(c => c.name === name);
-            if (foundCycle) {
-                state.selectedCycleId = foundCycle.id;
-                setupDynamicListeners();
-            }
             render();
         });
         cyclePills.append(pill);
@@ -4212,7 +6231,7 @@ filterWrapper.append(cycleLabelBlock);
 // --- 2. СТРОКА ФИЛЬТРА ТРЕНИРОВОК (клик → выбор программы) ---
 if (state.selectedJournalCategory) {
     const programs = [...new Set(
-        state.journal
+        visibleJournalRecords
             .filter(r => r.cycleName === state.selectedJournalCategory)
             .map(r => r.programName)
             .filter(Boolean)
@@ -4284,180 +6303,386 @@ root.append(contentContainer);
 // ------------------------------------------------
 // 📅 ГЛАВНАЯ ФУНКЦИЯ — РЕНДЕР КАЛЕНДАРЯ
 // ------------------------------------------------
+let journalCalendarSuppressTapUntil = 0;
+
+function getJournalCalendarMonthDate() {
+    if (state.calendarYear === undefined) {
+        const today = new Date();
+        state.calendarYear = today.getFullYear();
+        state.calendarMonth = today.getMonth();
+    }
+
+    return new Date(state.calendarYear, state.calendarMonth, 1);
+}
+
+function setJournalCalendarMonthDate(monthDate) {
+    state.calendarYear = monthDate.getFullYear();
+    state.calendarMonth = monthDate.getMonth();
+}
+
+function addJournalCalendarMonths(monthDate, offset) {
+    return new Date(monthDate.getFullYear(), monthDate.getMonth() + offset, 1);
+}
+
+function getJournalCalendarMonthTitle(monthDate) {
+    const monthNames = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+    return `${monthNames[monthDate.getMonth()]} ${monthDate.getFullYear()}`;
+}
+
+function changeJournalCalendarMonth(direction) {
+    const nextMonthDate = addJournalCalendarMonths(getJournalCalendarMonthDate(), direction);
+    setJournalCalendarMonthDate(nextMonthDate);
+    render();
+}
+
+function suppressJournalCalendarCellTap() {
+    journalCalendarSuppressTapUntil = Date.now() + 340;
+}
+
+function shouldSuppressJournalCalendarCellTap() {
+    return Date.now() < journalCalendarSuppressTapUntil;
+}
+
+function syncJournalCalendarLayout(container, viewport, track) {
+    const activePage = track?.children?.[1];
+    if (!container || !viewport || !activePage) return;
+
+    const weeksCount = Number.parseInt(activePage.dataset.weeksCount || '', 10);
+    const safeWeeksCount = Number.isFinite(weeksCount) && weeksCount > 0 ? weeksCount : 6;
+
+    const journalRoot = document.getElementById('journal-content');
+    const journalHeader = journalRoot?.querySelector('h3');
+    const filters = journalRoot?.querySelector('.journal-filters');
+
+    const headerH = journalHeader?.getBoundingClientRect?.().height || 0;
+    const filtersH = filters?.getBoundingClientRect?.().height || 0;
+    journalRoot?.style?.setProperty?.('--journal-filters-height', `${Math.round(filtersH)}px`);
+
+    const containerTop = container.getBoundingClientRect().top || 0;
+
+    // Самый надёжный способ (особенно на iOS): ограничиваем календарь фактическим верхом фиксированных фильтров.
+    // Тогда нижний ряд дней физически не сможет уйти "под" `journal-filters`.
+    let available = 0;
+    const filtersTop = filters?.getBoundingClientRect?.().top;
+    if (Number.isFinite(filtersTop) && filtersTop > 0) {
+        // Небольшой зазор между календарём и fixed-блоком фильтров
+        // Чуть больше буфера, чтобы нижний ряд дней никогда не заходил под фильтры
+        available = Math.max(0, Math.floor(filtersTop - containerTop - 19));
+    } else {
+        // Fallback: считаем от высоты viewport (на случай, если фильтры ещё не в DOM / не измерились).
+        const vvHeight = window.visualViewport?.height || window.innerHeight || 0;
+        const topBarHeight = typeof readCssPxVar === 'function' ? readCssPxVar('--top-bar-height', 65) : 65;
+        const bottomClearance = typeof readCssPxVar === 'function' ? readCssPxVar('--bottom-nav-clearance', 0) : 0;
+        const GAP_ABOVE_BOTTOM_NAV = 10;
+        const reservedForFixedFilters = Math.round(filtersH + GAP_ABOVE_BOTTOM_NAV);
+        // -19px тот же буфер, что и в основном пути (через filtersTop)
+        available = Math.max(0, Math.floor(vvHeight - containerTop - bottomClearance - reservedForFixedFilters - headerH - 16 - 19));
+    }
+
+    const calendarHeader = container.querySelector('.calendar-header');
+    const weekHeader = container.querySelector('.calendar-row.header');
+    const headerBlockH = (calendarHeader?.getBoundingClientRect?.().height || 0) + (weekHeader?.getBoundingClientRect?.().height || 0);
+
+    // Заполняем всё доступное пространство до `journal-filters` (не перекрывая фикс-блок).
+    const targetCalendarHeight = Math.max(220, Math.floor(available));
+    container.style.height = `${targetCalendarHeight}px`;
+
+    const viewportH = Math.max(180, Math.floor(targetCalendarHeight - Math.round(headerBlockH)));
+    viewport.style.height = `${viewportH}px`;
+
+    const cellH = Math.max(38, Math.floor(viewportH / safeWeeksCount));
+    container.style.setProperty('--journal-calendar-cell-height', `${cellH}px`);
+}
+
+function attachJournalCalendarSwipe(viewport, track) {
+    let startX = 0;
+    let startY = 0;
+    let currentX = 0;
+    let currentY = 0;
+    let panAxis = null;
+    let isDragging = false;
+    let isAnimating = false;
+    const animationDuration = 220;
+    const swipeThreshold = 40;
+
+    const animateTo = (direction) => {
+        if (isAnimating) return;
+        isAnimating = true;
+        track.style.transition = `transform ${animationDuration}ms ease`;
+
+        if (direction === 'next') {
+            track.style.transform = 'translate3d(-200%, 0, 0)';
+            navigator.vibrate?.(8);
+            setTimeout(() => changeJournalCalendarMonth(1), animationDuration);
+            return;
+        }
+
+        if (direction === 'prev') {
+            track.style.transform = 'translate3d(0%, 0, 0)';
+            navigator.vibrate?.(8);
+            setTimeout(() => changeJournalCalendarMonth(-1), animationDuration);
+            return;
+        }
+
+        track.style.transform = 'translate3d(-100%, 0, 0)';
+        setTimeout(() => {
+            isAnimating = false;
+        }, animationDuration);
+    };
+
+    viewport.addEventListener('touchstart', (event) => {
+        if (isAnimating || !event.touches?.length) return;
+        const touch = event.touches[0];
+        startX = touch.clientX;
+        startY = touch.clientY;
+        currentX = startX;
+        currentY = startY;
+        panAxis = null;
+        isDragging = true;
+        track.style.transition = 'none';
+    }, { passive: true });
+
+    viewport.addEventListener('touchmove', (event) => {
+        if (!isDragging || isAnimating || !event.touches?.length) return;
+
+        const touch = event.touches[0];
+        const diffX = touch.clientX - startX;
+        const diffY = touch.clientY - startY;
+        currentX = touch.clientX;
+        currentY = touch.clientY;
+
+        if (!panAxis) {
+            panAxis = resolveSwipePanAxis(diffX, diffY);
+            if (panAxis == null) return;
+            if (panAxis === 'y') {
+                isDragging = false;
+                track.style.transition = `transform ${animationDuration}ms ease`;
+                track.style.transform = 'translate3d(-100%, 0, 0)';
+                return;
+            }
+        }
+
+        if (panAxis !== 'x') return;
+        if (event.cancelable) event.preventDefault();
+
+        const width = viewport.offsetWidth || 1;
+        const percent = (diffX / width) * 100;
+        track.style.transform = `translate3d(calc(-100% + ${percent}%), 0, 0)`;
+    }, { passive: false });
+
+    viewport.addEventListener('touchend', () => {
+        const wasHorizontalSwipe = panAxis === 'x';
+        panAxis = null;
+        if (!isDragging || isAnimating) return;
+        isDragging = false;
+
+        const diffX = currentX - startX;
+
+        if (wasHorizontalSwipe) {
+            suppressJournalCalendarCellTap();
+        }
+
+        if (diffX <= -swipeThreshold) {
+            animateTo('next');
+            return;
+        }
+
+        if (diffX >= swipeThreshold) {
+            animateTo('prev');
+            return;
+        }
+
+        animateTo('current');
+    });
+
+    viewport.addEventListener('touchcancel', () => {
+        panAxis = null;
+        isDragging = false;
+        if (!isAnimating) {
+            track.style.transition = `transform ${animationDuration}ms ease`;
+            track.style.transform = 'translate3d(-100%, 0, 0)';
+        }
+    });
+}
+
 function renderCalendar(container, journalRecords) {
     container.innerHTML = '';
 
-    if (state.calendarYear === undefined) {
-        state.calendarYear = new Date().getFullYear();
-        state.calendarMonth = new Date().getMonth();
-    }
-
-    const year = state.calendarYear;
-    const month = state.calendarMonth;
-
-    // ------------------ ШАПКА КАЛЕНДАРЯ (месяц, стрелки) ------------------
+    const monthDate = getJournalCalendarMonthDate();
     const calendarHeader = createElement('div', 'calendar-header');
 
     const prevBtn = createElement('button', 'calendar-nav-btn');
     prevBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M13.83 19a1 1 0 0 1-.78-.37l-4.83-6a1 1 0 0 1 0-1.27l5-6a1 1 0 0 1 1.54 1.28L10.29 12l4.32 5.36a1 1 0 0 1-.78 1.64"/></svg>`;
-    prevBtn.addEventListener('click', () => {
-        state.calendarMonth--;
-        if (state.calendarMonth < 0) {
-            state.calendarMonth = 11;
-            state.calendarYear--;
-        }
-        render();
-    });
+    prevBtn.addEventListener('click', () => changeJournalCalendarMonth(-1));
 
     const nextBtn = createElement('button', 'calendar-nav-btn');
     nextBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M10 19a1 1 0 0 1-.64-.23a1 1 0 0 1-.13-1.41L13.71 12L9.39 6.63a1 1 0 0 1 .15-1.41a1 1 0 0 1 1.46.15l4.83 6a1 1 0 0 1 0 1.27l-5 6A1 1 0 0 1 10 19"/></svg>`;
-    nextBtn.addEventListener('click', () => {
-        state.calendarMonth++;
-        if (state.calendarMonth > 11) {
-            state.calendarMonth = 0;
-            state.calendarYear++;
-        }
-        render();
-    });
+    nextBtn.addEventListener('click', () => changeJournalCalendarMonth(1));
 
-    const monthNames = ['Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
-    const title = createElement('div', 'calendar-title', `${monthNames[month]} ${year}`);
+    const title = createElement('div', 'calendar-title', getJournalCalendarMonthTitle(monthDate));
 
     calendarHeader.append(prevBtn, title, nextBtn);
     container.append(calendarHeader);
 
-    // ------------------ ДНИ НЕДЕЛИ ------------------
     const daysOfWeek = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
     const headerRow = createElement('div', 'calendar-row header');
     daysOfWeek.forEach(d => headerRow.append(createElement('div', 'calendar-cell header-cell', d)));
     container.append(headerRow);
 
-    // ------------------ СЕТКА ДНЕЙ ------------------
+    const viewport = createElement('div', 'calendar-months-viewport');
+    const track = createElement('div', 'calendar-months-track');
+    track.style.transform = 'translate3d(-100%, 0, 0)';
+
+    [-1, 0, 1].forEach((offset) => {
+        const page = createElement('div', 'calendar-month-page');
+        renderJournalCalendarMonthPage(page, addJournalCalendarMonths(monthDate, offset), journalRecords);
+        track.append(page);
+    });
+
+    viewport.append(track);
+    attachJournalCalendarSwipe(viewport, track);
+    container.append(viewport);
+    requestAnimationFrame(() => syncJournalCalendarLayout(container, viewport, track));
+
+    if (viewport.dataset.journalCalendarLayoutBound !== '1') {
+        viewport.dataset.journalCalendarLayoutBound = '1';
+        const resync = () => syncJournalCalendarLayout(container, viewport, track);
+        window.addEventListener('resize', resync, { passive: true });
+        window.addEventListener('orientationchange', resync, { passive: true });
+        window.visualViewport?.addEventListener?.('resize', resync, { passive: true });
+        window.visualViewport?.addEventListener?.('scroll', resync, { passive: true });
+    }
+
+    // ✅ Закрытие меню по клику вне
+    document.addEventListener('click', () => {
+        const menu = document.querySelector('.training-dropdown');
+        if (menu) menu.remove();
+    }, { once: true });
+}
+
+function renderJournalCalendarMonthPage(page, monthDate, journalRecords) {
+    const year = monthDate.getFullYear();
+    const month = monthDate.getMonth();
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
     const startOffset = (firstDay.getDay() + 6) % 7;
     const totalDays = lastDay.getDate();
-
+    page.dataset.weeksCount = String(Math.ceil((startOffset + totalDays) / 7));
+    const now = new Date();
     const grid = createElement('div', 'calendar-grid');
+
     grid.style.display = 'grid';
     grid.style.gridTemplateColumns = 'repeat(7, 1fr)';
 
-    // Пустые ячейки в начале
+    // Дни предыдущего месяца (видимые "пустышки" с датами)
+    const prevMonthLastDay = new Date(year, month, 0).getDate();
     for (let i = 0; i < startOffset; i++) {
-        grid.append(createElement('div', 'calendar-cell empty'));
+        const dayNum = prevMonthLastDay - startOffset + 1 + i;
+        const cell = createElement('div', 'calendar-cell other-month');
+        cell.innerHTML = `<div class="day-number">${dayNum}</div>`;
+        grid.append(cell);
     }
 
-    // ------------------ Основной рендер дней ------------------
     for (let day = 1; day <= totalDays; day++) {
         const dateStr = `${String(day).padStart(2, '0')}.${String(month + 1).padStart(2, '0')}.${year}`;
-        const dayRecords = journalRecords.filter(r => r.date === dateStr);
-
+        const dayRecords = journalRecords.filter((record) => record.date === dateStr);
         const cell = createElement('div', 'calendar-cell');
+        cell.dataset.date = dateStr;
         cell.innerHTML = `<div class="day-number">${day}</div>`;
 
-        // ✅ Сегодняшний день
-        const now = new Date();
         if (day === now.getDate() && month === now.getMonth() && year === now.getFullYear()) {
             cell.classList.add('today');
         }
 
-        // ✅ Есть тренировки (завершённые / плановые)
         if (dayRecords.length > 0) {
-            if (dayRecords.some(r => r.isPlanned)) cell.classList.add('planned');
-            if (dayRecords.some(r => !r.isPlanned)) cell.classList.add('has-training');
+            if (dayRecords.some((record) => record.isPlanned)) cell.classList.add('planned');
+            if (dayRecords.some((record) => !record.isPlanned)) cell.classList.add('has-training');
 
-            const label = createElement('div', 'training-label', dayRecords.map(r => r.programName).join(', '));
+            const label = createElement('div', 'training-label', dayRecords.map((record) => record.programName).join(', '));
             cell.append(label);
 
-            // Обработчик для обычного клика (переход на тренировку)
-            cell.addEventListener('click', async (e) => {
-                e.stopPropagation();
+            const openJournalDayRecord = async () => {
+                if (shouldSuppressJournalCalendarCellTap()) return;
 
                 const record = dayRecords[0];
                 if (!record.isPlanned) {
-                    // Если тренировка завершена, открываем детали
                     state.selectedJournalRecord = record.id;
                     state.currentPage = 'journal';
                     render();
-                } else {
-                    // Если запланированная, переходим к программе
-                    const cycle = state.cycles.find(c => c.name === record.cycleName);
-                    if (cycle) {
-                        state.selectedCycleId = cycle.id;
-                        state.selectedJournalCategory = cycle.name;
-                        setupDynamicListeners?.();
-                    }
-
-                    const program = state.programs.find(p => p.id === record.programId);
-                    if (program) {
-                        state.selectedProgramIdForDetails = program.id;
-                        state.programDetailsOrigin = 'journal';
-                        state.currentPage = 'programDetails';
-                        render();
-                    } else {
-                        showToast('Программа не найдена');
-                    }
+                    return;
                 }
+
+                const cycle = state.cycles.find((cycleItem) => cycleItem.name === record.cycleName);
+                // Журнал не меняет глобальный цикл. Для открытия запланированной тренировки
+                // требуется, чтобы глобально выбран был нужный цикл (на странице циклов).
+                if (cycle && state.selectedCycleId !== cycle.id) {
+                    showToast('Чтобы открыть запланированную тренировку, выберите нужный цикл на странице «Циклы»');
+                    state.currentPage = 'programs';
+                    render();
+                    return;
+                }
+
+                await openPlannedTraining(record);
+            };
+
+            cell.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                await openJournalDayRecord();
             });
 
-            // Обработчик для долгого нажатия (удаление тренировки)
-            let longPressTimer;
+            let longPressTimer = null;
             let isLongPress = false;
+            let touchMoved = false;
+            let touchStartX = 0;
+            let touchStartY = 0;
 
-            cell.addEventListener('touchstart', (e) => {
-                e.stopPropagation();
-                e.preventDefault(); // Предотвращаем выделение текста
+            cell.addEventListener('touchstart', (event) => {
+                if (shouldSuppressJournalCalendarCellTap()) return;
+                // Не глушим события: свайп месяца должен работать даже если палец на ячейке с тренировкой.
 
+                const touch = event.touches?.[0];
+                touchStartX = touch?.clientX || 0;
+                touchStartY = touch?.clientY || 0;
+                touchMoved = false;
                 isLongPress = false;
 
                 longPressTimer = setTimeout(() => {
-                    isLongPress = true; // помечаем, что был долгий тап
+                    isLongPress = true;
                     openConfirmModal(
                         `Удалить запланированную тренировку "${dayRecords[0].programName}"?`,
                         async () => {
                             await deleteDoc(doc(getUserJournalCollection(), dayRecords[0].id));
                             showToast('Тренировка удалена!');
-                            render(); // Обновляем страницу после удаления
+                            render();
                         }
                     );
-                }, 800); // 800мс = долгое удержание
-            });
+                }, 800);
+            }, { passive: true });
 
-            cell.addEventListener('touchend', async (e) => {
-                clearTimeout(longPressTimer);
-
-                // Если пользователь отпустил быстро (не долгий тап) → обычный переход
-                if (!isLongPress) {
-                    e.stopPropagation();
-
-                    const record = dayRecords[0];
-                    if (!record.isPlanned) {
-                        // Открываем завершённую тренировку
-                        state.selectedJournalRecord = record.id;
-                        state.currentPage = 'journal';
-                        render();
-                    } else {
-                        // Открываем запланированную
-                        const cycle = state.cycles.find(c => c.name === record.cycleName);
-                        if (cycle) {
-                            state.selectedCycleId = cycle.id;
-                            state.selectedJournalCategory = cycle.name;
-                            setupDynamicListeners?.();
-                        }
-
-                        await openPlannedTraining(record);
-                    }
+            cell.addEventListener('touchmove', (event) => {
+                const touch = event.touches?.[0];
+                if (!touch) return;
+                if (Math.abs(touch.clientX - touchStartX) > 10 || Math.abs(touch.clientY - touchStartY) > 10) {
+                    touchMoved = true;
+                    clearTimeout(longPressTimer);
+                    longPressTimer = null;
                 }
+            }, { passive: true });
+
+            cell.addEventListener('touchend', async (event) => {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+                if (touchMoved || isLongPress || shouldSuppressJournalCalendarCellTap()) return;
+                await openJournalDayRecord();
             });
 
-            // Очистка таймера при отпускании
-            cell.addEventListener('touchend', () => {
-                clearTimeout(longPressTimer); // отмена долгого нажатия
+            cell.addEventListener('touchcancel', () => {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
             });
-
         } else {
-            // Пустая ячейка — планирование
             cell.addEventListener('click', () => {
+                if (shouldSuppressJournalCalendarCellTap()) return;
                 openPlanTrainingDropdown(cell, dateStr);
             });
         }
@@ -4465,13 +6690,17 @@ function renderCalendar(container, journalRecords) {
         grid.append(cell);
     }
 
-    container.append(grid);
+    // Дни следующего месяца (добиваем сетку до полных недель)
+    const totalCells = startOffset + totalDays;
+    const remainder = totalCells % 7;
+    const trailing = remainder === 0 ? 0 : 7 - remainder;
+    for (let i = 1; i <= trailing; i++) {
+        const cell = createElement('div', 'calendar-cell other-month');
+        cell.innerHTML = `<div class="day-number">${i}</div>`;
+        grid.append(cell);
+    }
 
-    // ✅ Закрытие меню по клику вне
-    document.addEventListener('click', () => {
-        const menu = document.querySelector('.training-dropdown');
-        if (menu) menu.remove();
-    }, { once: true });
+    page.append(grid);
 }
 
 
@@ -4490,9 +6719,11 @@ function openPlanTrainingDropdown(cell, dateStr) {
     let currentCycleName = state.selectedJournalCategory;
     let currentCycle = state.cycles.find(c => c.name === currentCycleName);
 
-    // 2️⃣ Если цикл найден — используем его id
+    // 2️⃣ Если цикл найден — при расхождении id с активным циклом обновляем подписки
     if (currentCycle) {
-        state.selectedCycleId = currentCycle.id;
+        applyCycleSelection(currentCycle, {
+            reloadData: state.selectedCycleId !== currentCycle.id
+        });
     }
 
     // 3️⃣ Если всё ещё нет ID → предупреждаем
@@ -4608,8 +6839,18 @@ function openTrainingDropdown(cell, dayRecords) {
                     showToast('Цикл не найден, откройте его вручную.');
                     return;
                 }
-                state.selectedCycleId = cycle.id;
+                // Не меняем глобальный цикл из журнала.
+                // Если глобально выбран другой цикл — просим выбрать нужный на странице «Циклы».
+                if (state.selectedCycleId !== cycle.id) {
+                    showToast('Чтобы открыть запланированную тренировку, выберите нужный цикл на странице «Циклы»');
+                    state.currentPage = 'programs';
+                    render();
+                    return;
+                }
+
+                // Глобальный цикл уже выбран верно — просто открываем программы в цикле.
                 state.currentPage = 'programsInCycle';
+                state.lastProgramsPage = 'programsInCycle';
 
                 setTimeout(() => {
                     const program = state.programs.find(p => p.name === record.programName);
@@ -4705,10 +6946,13 @@ function smartPositionDropdown(dropdown, anchorElement) {
 // =================================================================
 const openPlannedTraining = async (record) => {
     const cycle = state.cycles.find(c => c.name === record.cycleName);
-    if (cycle) {
-        state.selectedCycleId = cycle.id;
-        state.selectedJournalCategory = cycle.name;
-        setupDynamicListeners?.();
+    // Не переключаем глобальный цикл из журнала.
+    // Запланированную тренировку можно открыть только если глобально выбран нужный цикл.
+    if (cycle && state.selectedCycleId !== cycle.id) {
+        showToast('Чтобы открыть запланированную тренировку, выберите нужный цикл на странице «Циклы»');
+        state.currentPage = 'programs';
+        render();
+        return;
     }
 
     await new Promise(r => setTimeout(r, 300));
@@ -4735,7 +6979,7 @@ const openPlannedTraining = async (record) => {
 // =================================================================
 //  модалка редактирования даты завершенной тренировки
 // =================================================================
-function openDateModal(currentDate, onSave) {
+export function openDateModal(currentDate, onSave) {
   // Парсим дату в формат YYYY-MM-DD
   let [d, m, y] = currentDate.split('.');
   const formatted = `${y}-${m}-${d}`;
@@ -4811,37 +7055,39 @@ function renderJournalRecordDetails(container) {
         return;
     }
 
-const menuRecord = createElement('div', 'menu-record');
+    container.className = 'journal-record-details';
 
+    const goBack = () => {
+        state.selectedJournalRecord = null;
+        render();
+    };
 
-// 🔥 Кнопка удаления тренировки
-const deleteBtn = createElement('button', 'btn delete-record-btn');
-deleteBtn.innerHTML = ' <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Trash-24 SVG Icon</title><path fill="currentColor" d="M16 1.75V3h5.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H8V1.75C8 .784 8.784 0 9.75 0h4.5C15.216 0 16 .784 16 1.75m-6.5 0V3h5V1.75a.25.25 0 0 0-.25-.25h-4.5a.25.25 0 0 0-.25.25M4.997 6.178a.75.75 0 1 0-1.493.144L4.916 20.92a1.75 1.75 0 0 0 1.742 1.58h10.684a1.75 1.75 0 0 0 1.742-1.581l1.413-14.597a.75.75 0 0 0-1.494-.144l-1.412 14.596a.25.25 0 0 1-.249.226H6.658a.25.25 0 0 1-.249-.226z"></path><path fill="currentColor" d="M9.206 7.501a.75.75 0 0 1 .793.705l.5 8.5A.75.75 0 1 1 9 16.794l-.5-8.5a.75.75 0 0 1 .705-.793Zm6.293.793A.75.75 0 1 0 14 8.206l-.5 8.5a.75.75 0 0 0 1.498.088l.5-8.5Z"></path></svg> ';
-deleteBtn.addEventListener('click', () => {
-    openConfirmModal('Удалить эту тренировку?', async () => {
-        try {
-            await deleteDoc(doc(getUserJournalCollection(), record.id));
-            showToast('Тренировка удалена');
-            state.selectedJournalRecord = null;
-            render();
-        } catch (error) {
-            console.error(error);
-            showToast('Ошибка удаления');
-        }
-    });
-});
+    const deleteTraining = () => {
+        openConfirmModal('Удалить эту тренировку?', async () => {
+            try {
+                await deleteDoc(doc(getUserJournalCollection(), record.id));
+                showToast('Тренировка удалена');
+                state.selectedJournalRecord = null;
+                render();
+            } catch (error) {
+                console.error(error);
+                showToast('Ошибка удаления');
+            }
+        });
+    };
 
-
-
-
+    // Верхнее меню (как было): назад + удалить
+    const menuRecord = createElement('div', 'menu-record');
 
     const backBtn = createElement('button', 'btn back-btn');
     backBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><title>Ios-arrow-ltr-24-filled SVG Icon</title><path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"></path></svg>';
-    backBtn.addEventListener('click', () => {
-        state.selectedJournalRecord = null;
-        render();
-    });
-    menuRecord.append(backBtn,deleteBtn);
+    backBtn.addEventListener('click', goBack);
+
+    const deleteBtn = createElement('button', 'btn delete-record-btn');
+    deleteBtn.innerHTML = ' <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Trash-24 SVG Icon</title><path fill="currentColor" d="M16 1.75V3h5.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H8V1.75C8 .784 8.784 0 9.75 0h4.5C15.216 0 16 .784 16 1.75m-6.5 0V3h5V1.75a.25.25 0 0 0-.25-.25h-4.5a.25.25 0 0 0-.25.25M4.997 6.178a.75.75 0 1 0-1.493.144L4.916 20.92a1.75 1.75 0 0 0 1.742 1.58h10.684a1.75 1.75 0 0 0 1.742-1.581l1.413-14.597a.75.75 0 0 0-1.494-.144l-1.412 14.596a.25.25 0 0 1-.249.226H6.658a.25.25 0 0 1-.249-.226z"></path><path fill="currentColor" d="M9.206 7.501a.75.75 0 0 1 .793.705l.5 8.5A.75.75 0 1 1 9 16.794l-.5-8.5a.75.75 0 0 1 .705-.793Zm6.293.793A.75.75 0 1 0 14 8.206l-.5 8.5a.75.75 0 0 0 1.498.088l.5-8.5Z"></path></svg> ';
+    deleteBtn.addEventListener('click', deleteTraining);
+
+    menuRecord.append(backBtn, deleteBtn);
     container.append(menuRecord);
 
     // Заголовок
@@ -4856,7 +7102,8 @@ const dateEdit = createElement('div', 'date-edit');
 let nameElement = createElement('span', 'record-name', `${record.programName}`);
 let dateElement = createElement('span', 'record-date', `${record.date}`);
 const editBtn = createElement('button', 'edit-date-btn');
-editBtn.innerHTML ='<svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24"><title>Edit SVG Icon</title><path fill="currentColor" d="M3.548 20.938h16.9a.5.5 0 0 0 0-1h-16.9a.5.5 0 0 0 0 1M9.71 17.18a2.587 2.587 0 0 0 1.12-.65l9.54-9.54a1.75 1.75 0 0 0 0-2.47l-.94-.93a1.788 1.788 0 0 0-2.47 0l-9.54 9.53a2.473 2.473 0 0 0-.64 1.12L6.04 17a.737.737 0 0 0 .19.72a.767.767 0 0 0 .53.22Zm.41-1.36a1.468 1.468 0 0 1-.67.39l-.97.26l-1-1l.26-.97a1.521 1.521 0 0 1 .39-.67l.38-.37l1.99 1.99Zm1.09-1.08l-1.99-1.99l6.73-6.73l1.99 1.99Zm8.45-8.45L18.65 7.3l-1.99-1.99l1.01-1.02a.748.748 0 0 1 1.06 0l.93.94a.754.754 0 0 1 0 1.06"></path></svg>';
+editBtn.innerHTML =
+        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Edit-settings-24-filled SVG Icon</title><path fill="currentColor" d="M15.891 3.048a3.578 3.578 0 1 1 5.061 5.06l-.892.893L15 3.94zM13.94 5.001L3.94 15a3.1 3.1 0 0 0-.825 1.476L2.02 21.078a.75.75 0 0 0 .904.903l4.601-1.096a3.1 3.1 0 0 0 1.477-.825l1.151-1.151a6.5 6.5 0 0 1 7.754-7.755L19 10.06zm-.662 8.975a2 2 0 0 1-1.441 2.497l-.584.144a5.7 5.7 0 0 0 .006 1.807l.54.13a2 2 0 0 1 1.45 2.51l-.187.632c.44.386.94.699 1.485.922l.493-.52a2 2 0 0 1 2.899.001l.499.525a5.3 5.3 0 0 0 1.482-.913l-.198-.686a2 2 0 0 1 1.442-2.496l.583-.144a5.7 5.7 0 0 0-.006-1.808l-.54-.13a2 2 0 0 1-1.449-2.51l.186-.63a5.3 5.3 0 0 0-1.484-.923l-.493.519a2 2 0 0 1-2.9 0l-.498-.525c-.544.22-1.044.53-1.483.912zm3.222 5.025c-.8 0-1.45-.672-1.45-1.5c0-.829.65-1.5 1.45-1.5s1.45.671 1.45 1.5c0 .828-.65 1.5-1.45 1.5"/></svg>';
 
 titleWrapper.append(titleDel, dateEdit);
 titleDel.append(nameElement,dateElement, editBtn);
@@ -4887,6 +7134,8 @@ editBtn.addEventListener('click', () => {
 
     // 🔹 Комментарий к тренировке + медиа
     if (record.comment || (record.trainingMedia?.length > 0)) {
+        container.append(createElement('h3', 'training-comment-heading', 'Комментарий к тренировке'));
+
         const commentBlock = createElement('div', 'training-comment-block');
 
         if (record.comment) {
@@ -4920,26 +7169,71 @@ editBtn.addEventListener('click', () => {
         const exTitle = createElement('h4', null, `${index + 1}. ${exercise.name}`);
         block.append(exTitle);
 
-const sets = createElement('div', 'sets-line');
+        const sets = createElement('div', 'sets-line');
+        const blockRegular = createElement('div', 'sets-line-block sets-line-block--regular');
+        const blockMain = createElement('div', 'sets-line-block sets-line-block--main');
 
-// Берём только заполненные подходы
-const arr = (exercise.sets || []).filter(s => s.weight || s.reps);
+        const fullSets = exercise.sets || [];
+        const setsRef = { sets: fullSets };
+        let si = 0;
+        while (si < fullSets.length) {
+            if (!(fullSets[si].weight || fullSets[si].reps)) {
+                si++;
+                continue;
+            }
+            if (fullSets[si].continuation) {
+                si++;
+                continue;
+            }
+            const [gStart, gEnd] = __getDropSetGroupBounds(setsRef, si);
+            const parts = [];
+            for (let k = gStart; k <= gEnd; k++) {
+                const sk = fullSets[k];
+                if (sk.weight || sk.reps) parts.push(sk);
+            }
+            if (!parts.length) {
+                si = gEnd + 1;
+                continue;
+            }
+            const headSet = fullSets[gStart];
+            const ord = __getApproachOrdinalForSet(fullSets, gStart);
+            const isMainGroup = !!headSet.isMain;
+            const hasExtraSetsInMain = isMainGroup && parts.length > 1;
+            let chipClasses = 'set-item';
+            if (isMainGroup) chipClasses += ' main-set';
+            if (hasExtraSetsInMain) chipClasses += ' gap';
+            const span = createElement('span', chipClasses);
+            span.append(createElement('span', 'set-item__ord', `${ord}.`));
+            parts.forEach((part, pi) => {
+                if (pi > 0) span.append(createElement('span', 'set-item__compact-gap', ' · '));
+                __appendJournalTrainingCompact(span, part.weight, part.reps);
+            });
+            if (isMainGroup) {
+                blockMain.append(span);
+            } else {
+                blockRegular.append(span);
+            }
+            si = gEnd + 1;
+        }
 
-// индекс первого main-set
-const firstMainIdx = arr.findIndex(s => s.isMain);
+        if (blockRegular.childElementCount > 0) {
+            const groupRegular = createElement('div', 'sets-line-group sets-line-group--regular');
+            groupRegular.append(
+                createElement('div', 'sets-line-group__title', 'Разминочные'),
+                blockRegular
+            );
+            sets.append(groupRegular);
+        }
+        if (blockMain.childElementCount > 0) {
+            const groupMain = createElement('div', 'sets-line-group sets-line-group--main');
+            groupMain.append(
+                createElement('div', 'sets-line-group__title', 'Рабочие'),
+                blockMain
+            );
+            sets.append(groupMain);
+        }
 
-arr.forEach((s, i) => {
-  // перед первым main-set вставляем перенос строки
-  if (i === firstMainIdx && firstMainIdx !== -1) {
-    sets.append(createElement('span', 'line-break')); // <-- перенос
-  }
-
-  const span = createElement('span', `set-item${s.isMain ? ' main-set' : ''}`);
-  span.textContent = `${s.weight || 0}x${s.reps || 0}`;
-  sets.append(span);
-});
-
-block.append(sets);
+        block.append(sets);
 
 
             const noteMediaWrap = createElement('div', 'note-media-wrap');
@@ -4969,8 +7263,6 @@ block.append(sets);
             block.append(noteMediaWrap);
         container.append(block);
     });
-
-
 
     root.append(container);
 }
@@ -5025,14 +7317,9 @@ export function ensureCycleSelected(onSelectedCallback) {
              const btn = createElement('button', 'btn btn-light', cycle.name);
 
              btn.addEventListener('click', () => {
-                 resetCycleScopedState();
-                 state.selectedCycleId = cycle.id;
-
+                 applyCycleSelection(cycle, { reloadData: true });
                  console.log('✅ Цикл выбран:', cycle.name);
-
                  document.body.removeChild(modal);
-
-                 setupDynamicListeners();
                  rerenderCurrentPage();
              });
 
@@ -5183,12 +7470,15 @@ function computeCyclesLinkKey() {
 function attachCycleDataListeners() {
     cyclesUnsubscribeTrainer();
     cyclesUnsubscribeClient();
+    linkedTrainerAccessUnsubscribe();
     cyclesTrainerBuffer = [];
     cyclesClientBuffer = [];
 
     const mergeCyclesAndMaybeRender = () => {
         mergeCyclesTrainerClientBuffers();
-        if (state.currentPage === 'programs') render();
+        if (['programs', 'programsInCycle', 'programDetails', 'journal', 'meal', 'reports', 'supplements'].includes(state.currentPage)) {
+            render();
+        }
     };
 
     if (state.currentMode === 'own') {
@@ -5203,43 +7493,88 @@ function attachCycleDataListeners() {
         cyclesUnsubscribe = () => {
             cyclesUnsubscribeTrainer();
             cyclesUnsubscribeClient();
+            linkedTrainerAccessUnsubscribe();
         };
     } else if (state.currentMode === 'personal' && state.selectedClientId) {
-        const trainerCardRef = collection(
-            db,
-            `artifacts/${appId}/users/${userId}/clients/${state.selectedClientId}/cycles`
-        );
-        cyclesUnsubscribeTrainer = onSnapshot(trainerCardRef, (snapshot) => {
-            cyclesTrainerBuffer = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-            mergeCyclesAndMaybeRender();
-        });
-
         const linkedUid = getActiveLinkedClientUid();
         if (linkedUid) {
+            cyclesUnsubscribeTrainer = () => {};
+            cyclesTrainerBuffer = [];
+            // До прихода ОБОИХ снимков (доступ + циклы) не мержим: иначе пустой merge
+            // сбрасывает выбранный цикл через syncSelectedCycleAfterVisibilityChange и тренер
+            // не может зайти в разрешённый цикл после applyCycleSelection → setupDynamicListeners.
+            let linkedAccessSnapReceived = false;
+            let clientCyclesSnapReceived = false;
+
+            const mergeLinkedTrainerCyclesAndMaybeRender = () => {
+                mergeCyclesTrainerClientBuffers();
+                if (
+                    ['programs', 'programsInCycle', 'programDetails', 'journal', 'meal', 'reports', 'supplements'].includes(
+                        state.currentPage
+                    )
+                ) {
+                    render();
+                }
+            };
+
+            const tryMergeLinkedTrainerCycles = () => {
+                if (!linkedAccessSnapReceived || !clientCyclesSnapReceived) return;
+                mergeLinkedTrainerCyclesAndMaybeRender();
+            };
+
+            const linkedAccessRef = getLinkedTrainerDocRef(linkedUid, userId);
+            linkedTrainerAccessUnsubscribe = onSnapshot(linkedAccessRef, (snapshot) => {
+                state.selectedClientTrainerAccess = snapshot.exists()
+                    ? normalizeTrainerCycleAccessSettings(snapshot.data())
+                    : null;
+                linkedAccessSnapReceived = true;
+                tryMergeLinkedTrainerCycles();
+            });
+
             const clientCanonRef = collection(db, `artifacts/${appId}/users/${linkedUid}/cycles`);
             cyclesUnsubscribeClient = onSnapshot(clientCanonRef, (snapshot) => {
                 cyclesClientBuffer = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
-                mergeCyclesAndMaybeRender();
+                clientCyclesSnapReceived = true;
+                tryMergeLinkedTrainerCycles();
             });
         } else {
+            const trainerCardRef = collection(
+                db,
+                `artifacts/${appId}/users/${userId}/clients/${state.selectedClientId}/cycles`
+            );
+            cyclesUnsubscribeTrainer = onSnapshot(trainerCardRef, (snapshot) => {
+                cyclesTrainerBuffer = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+                mergeCyclesAndMaybeRender();
+            });
+            linkedTrainerAccessUnsubscribe = () => {};
             cyclesUnsubscribeClient = () => {};
             cyclesClientBuffer = [];
         }
         cyclesUnsubscribe = () => {
             cyclesUnsubscribeTrainer();
             cyclesUnsubscribeClient();
+            linkedTrainerAccessUnsubscribe();
         };
     } else {
         cyclesUnsubscribe = () => {};
+        linkedTrainerAccessUnsubscribe = () => {};
         state.cycles = [];
     }
 
     const programsRef = getUserProgramsCollection();
     if (programsRef && state.selectedCycleId) {
+        state.isProgramsLoading = true;
         programsUnsubscribe = onSnapshot(programsRef, (snapshot) => {
-            state.programs = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+            const nextPrograms = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+            const hasOrder = nextPrograms.some((p) => typeof p.order === 'number' && Number.isFinite(p.order));
+            state.programs = hasOrder
+                ? nextPrograms.sort((a, b) => (a.order ?? Number.POSITIVE_INFINITY) - (b.order ?? Number.POSITIVE_INFINITY))
+                : nextPrograms;
+            state.isProgramsLoading = false;
             if (['programsInCycle', 'programDetails', 'supplements', 'journal', 'meal', 'reports'].includes(state.currentPage)) render();
         });
+    } else {
+        state.isProgramsLoading = false;
     }
 
     const journalRef = getUserJournalCollection();
@@ -5264,9 +7599,8 @@ function attachCycleDataListeners() {
                         state.cycles.find((c) => c.id === latestRecord.cycleId) ||
                         state.cycles.find((c) => c.name === latestRecord.cycleName);
 
-                    if (usedCycle) {
-                        state.selectedCycleId = usedCycle.id;
-                        state.selectedJournalCategory = usedCycle.name;
+                    if (usedCycle && (!state.selectedCycleId || state.selectedCycleId !== usedCycle.id)) {
+                        applyCycleSelection(usedCycle, { preserveJournalSelection: true });
                         console.log(`📘 Установлен цикл по умолчанию (журнал): ${usedCycle.name}`);
                     }
                 }
@@ -5282,10 +7616,18 @@ function attachCycleDataListeners() {
             supplementsUnsubscribe = onSnapshot(cycleRef, (docSnap) => {
                 const docData = docSnap.exists() ? docSnap.data() : {};
                 const supplementPlan = docData.supplementPlan || {};
-                state.supplementPlan = {
+                const nextPlan = {
                     supplements: Array.isArray(supplementPlan.supplements) ? supplementPlan.supplements : [],
                     data: Array.isArray(supplementPlan.data) ? supplementPlan.data : []
                 };
+                state.supplementPlan = nextPlan;
+                syncSupplementsBottomNavBadge(nextPlan);
+                const nextSignature = getSupplementPlanSnapshotSignature(nextPlan);
+                if (state._supplementsSkipNextRenderSignature === nextSignature) {
+                    delete state._supplementsSkipNextRenderSignature;
+                    return;
+                }
+                delete state._supplementsSkipNextRenderSignature;
                 if (state.currentPage === 'supplements') render();
             });
         }
@@ -5304,11 +7646,28 @@ function attachCycleDataListeners() {
     cyclesLinkKey = computeCyclesLinkKey();
 }
 
+function applyPendingAppleHealthSyncReturn() {
+    const pending = state.appleHealthSyncReturn;
+    if (!pending || pending._handled) return;
+    if (pending.target !== 'mealBurned') return;
+    if (!state.selectedCycleId) return;
+
+    state.currentPage = 'meal';
+    state.mealView = 'burnedSummary';
+    if (pending.date) {
+        state.mealBurnedSummaryDate = pending.date;
+        state.selectedDate = pending.date;
+    }
+    pending._handled = true;
+}
+
 function unsubscribeAll() {
     programsUnsubscribe();
     journalUnsubscribe();
     clientsUnsubscribe();
     cyclesUnsubscribe();
+    linkedTrainerAccessUnsubscribe();
+    ownLinkedTrainersUnsubscribe();
     // 🔥 НОВЫЕ ОТПИСКИ
     supplementsUnsubscribe();
     reportsUnsubscribe();
@@ -5318,6 +7677,19 @@ function setupDynamicListeners() {
     unsubscribeAll();
 
     if (!userId) return;
+
+    state.ownLinkedTrainersAccess = [];
+    if (state.currentMode === 'own') {
+        const linkedTrainersRef = collection(db, 'artifacts', appId, 'users', userId, 'linkedTrainers');
+        ownLinkedTrainersUnsubscribe = onSnapshot(linkedTrainersRef, (snapshot) => {
+            state.ownLinkedTrainersAccess = snapshot.docs
+                .map((item) => normalizeTrainerCycleAccessSettings(item.data()))
+                .filter((access) => access.active);
+            if (state.currentPage === 'programs') render();
+        });
+    } else {
+        ownLinkedTrainersUnsubscribe = () => {};
+    }
 
     // 1. Клиенты
     if (state.currentMode === 'personal') {
@@ -5442,18 +7814,34 @@ export function renderTopBar() {
             };
 
             if (state.currentPage === 'meal') {
+                const summaryBtn = document.createElement('button');
+                summaryBtn.type = 'button';
+                summaryBtn.className = 'calendar-btn meal-kcal-summary-btn';
+                summaryBtn.id = 'meal-kcal-summary-btn';
+                summaryBtn.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Round-graph-broken SVG Icon</title><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path d="M12 2c5.523 0 10 4.477 10 10c0 1.821-.487 3.53-1.338 5M5 4.859A9.97 9.97 0 0 0 2 12c0 5.523 4.477 10 10 10c1.821 0 3.53-.487 5-1.338"/><path d="M5 12c0 1.487.464 2.866 1.255 4M12 5a7 7 0 1 1-3 13.326"/><path d="M12 16a4 4 0 0 0 0-8"/></g></svg>
+                `;
+                summaryBtn.onclick = () => {
+                    const now = new Date();
+                    const fallback = state.selectedDate || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                    state.mealSummaryMonth = String(fallback).slice(0, 7);
+                    state.mealBurnedSummaryDate = null;
+                    state.mealView = 'monthSummary';
+                    renderMealPage();
+                };
+
                 const targetBtn = document.createElement('button');
                 targetBtn.type = 'button';
                 targetBtn.className = 'calendar-btn meal-target-btn';
                 targetBtn.id = 'meal-target-btn';
                 targetBtn.innerHTML = `
-                    <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 16 16"><title>Document-target-16-regular SVG Icon</title><path fill="currentColor" d="m9.647 1.439l2.914 2.914l.001-.001c.281.282.439.663.439 1.061v7.586a2 2 0 0 1-2 2H7.258l.133-.1a2.4 2.4 0 0 0 .281-.229c.203-.203.374-.434.534-.671h2.795a1 1 0 0 0 1-1v-7h-2.5a1.5 1.5 0 0 1-1.5-1.5v-2.5h-3a1 1 0 0 0-1 1v3.092a1.48 1.48 0 0 0-.983 1.177l-.01.004L3 7.276V3a2 2 0 0 1 2-2h3.586a1.5 1.5 0 0 1 1.061.439M9 4.499a.5.5 0 0 0 .5.5h2.293L9 2.206zm-4.5 8a1 1 0 1 0 .002-2.001a1 1 0 0 0-.002 2.001m4-1.5h-.551A3.49 3.49 0 0 0 5 8.05v-.551a.5.5 0 1 0-1 0v.551a3.49 3.49 0 0 0-2.949 2.949H.5a.5.5 0 1 0 0 1h.551A3.49 3.49 0 0 0 4 14.948v.551a.5.5 0 1 0 1 0v-.551a3.49 3.49 0 0 0 2.949-2.949H8.5a.5.5 0 1 0 0-1m-2.232 2.268a2.501 2.501 0 0 1-4.078-2.724a2.501 2.501 0 1 1 4.078 2.724"></path></svg>
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><title>Target-arrow-16-regular SVG Icon</title><path fill="currentColor" d="M11.691 1.038A.5.5 0 0 1 12 1.5V4h2.5a.5.5 0 0 1 .354.854l-2 2A.5.5 0 0 1 12.5 7H9.707l-.74.741A1 1 0 0 1 8 9a1 1 0 0 1-1-1l.001-.046a1 1 0 0 1 1.258-.92L9 6.293V3.5a.5.5 0 0 1 .146-.354l2-2a.5.5 0 0 1 .545-.108M12.293 6l1-1H11.5a.5.5 0 0 1-.5-.5V2.707l-1 1V6zm1.652 1.176q.056.405.056.825a6 6 0 1 1-5.178-5.945l-.383.383a1.5 1.5 0 0 0-.354.562L8 3a5 5 0 1 0 5 4.914a1.5 1.5 0 0 0 .56-.353zM8 4.5A3.5 3.5 0 1 0 11.5 8h-1A2.5 2.5 0 1 1 8 5.5z"/></svg>
                 `;
                 targetBtn.onclick = () => {
                     state.mealView = 'goal';
                     renderMealPage();
                 };
-                wrap.append(pdfButton, targetBtn);
+                wrap.append(pdfButton, summaryBtn, targetBtn);
             } else {
                 wrap.append(pdfButton);
             }
@@ -5615,11 +8003,7 @@ function openMenuModal() {
 // 📦 Регистрация Service Worker и уведомления
 // ============================================================
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-  const isCapacitorNative =
-    window.Capacitor?.isNativePlatform?.() === true ||
-    /Capacitor/i.test(window.navigator?.userAgent || '');
-
-  if (!isCapacitorNative) {
+  if (!isCapacitorNativePlatform()) {
     try {
       const swUrl = new URL('./sw.js', import.meta.url);
       const scope = new URL('./', import.meta.url).href;
@@ -5640,8 +8024,139 @@ if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
 // =================================================================
 // 🔄 ГЛАВНЫЙ РЕНДЕР: Определяет, что показать (ИСПРАВЛЕНО)
 // =================================================================
+let appViewportBindingsReady = false;
+let rootScrollLockFrameId = 0;
+let rootScrollLockTimeoutId = 0;
+let rootScrollLockBindingsReady = false;
+let rootScrollLockObserver = null;
+
+function syncAppViewportHeightVar() {
+    const viewportHeight = Math.round(
+        window.visualViewport?.height ||
+        window.innerHeight ||
+        document.documentElement.clientHeight ||
+        0
+    );
+
+    if (!viewportHeight) return;
+    document.documentElement.style.setProperty('--app-height', `${viewportHeight}px`);
+}
+
+function readCssPxVar(name, fallback = 0) {
+    try {
+        const raw = getComputedStyle(document.documentElement).getPropertyValue(name);
+        const parsed = Number.parseFloat(String(raw || '').trim());
+        return Number.isFinite(parsed) ? parsed : fallback;
+    } catch (error) {
+        return fallback;
+    }
+}
+
+function syncBottomNavClearanceVar() {
+    const nav = document.querySelector('.navigation');
+    if (!nav) return;
+
+    const navRect = nav.getBoundingClientRect();
+    const safeBottom = readCssPxVar('--safe-bottom', 0);
+    const extraPadding = 16; // небольшой зазор для контента над меню
+    const clearance = Math.max(0, Math.round((navRect.height || 0) + safeBottom + extraPadding));
+    if (!clearance) return;
+    document.documentElement.style.setProperty('--bottom-nav-clearance', `${clearance}px`);
+}
+
+function ensureAppViewportHeightBinding() {
+    if (appViewportBindingsReady) return;
+
+    const resyncAppViewportHeight = () => {
+        syncAppViewportHeightVar();
+        syncBottomNavClearanceVar();
+    };
+    resyncAppViewportHeight();
+
+    window.addEventListener('resize', resyncAppViewportHeight);
+    window.addEventListener('orientationchange', resyncAppViewportHeight);
+
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', resyncAppViewportHeight);
+        window.visualViewport.addEventListener('scroll', resyncAppViewportHeight);
+    }
+
+    appViewportBindingsReady = true;
+}
+
+function syncRootScrollLockState() {
+    const root = document.getElementById('root');
+    if (!root) return;
+
+    const hasScrollableOverflow = root.scrollHeight > root.clientHeight + 1;
+    root.classList.toggle('root-no-scroll', !hasScrollableOverflow);
+
+    if (!hasScrollableOverflow) {
+        window.scrollTo(0, 0);
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+    }
+}
+
+function scheduleRootScrollLockState() {
+    if (rootScrollLockFrameId) {
+        cancelAnimationFrame(rootScrollLockFrameId);
+    }
+    if (rootScrollLockTimeoutId) {
+        clearTimeout(rootScrollLockTimeoutId);
+    }
+
+    rootScrollLockFrameId = requestAnimationFrame(() => {
+        rootScrollLockFrameId = requestAnimationFrame(() => {
+            rootScrollLockFrameId = 0;
+            syncRootScrollLockState();
+        });
+    });
+
+    rootScrollLockTimeoutId = window.setTimeout(() => {
+        rootScrollLockTimeoutId = 0;
+        syncRootScrollLockState();
+    }, 120);
+}
+
+function ensureRootScrollLockBinding() {
+    const root = document.getElementById('root');
+    if (!root) return;
+
+    if (!rootScrollLockBindingsReady) {
+        const resyncRootScrollLock = () => scheduleRootScrollLockState();
+        window.addEventListener('resize', resyncRootScrollLock);
+        window.addEventListener('orientationchange', resyncRootScrollLock);
+        window.addEventListener('load', resyncRootScrollLock);
+        rootScrollLockBindingsReady = true;
+    }
+
+    if (!rootScrollLockObserver) {
+        rootScrollLockObserver = new MutationObserver(() => {
+            scheduleRootScrollLockState();
+        });
+        rootScrollLockObserver.observe(root, {
+            childList: true,
+            subtree: true,
+            characterData: true
+        });
+    }
+}
+
+ensureAppViewportHeightBinding();
+
 export function render() {
     const root = document.getElementById('root');
+    ensureAppViewportHeightBinding();
+    ensureRootScrollLockBinding();
+
+    // Сохраняем scrollTop текущего экрана перед перерисовкой.
+    if (__lastViewKeyForScrollMemory) {
+        try {
+            __scrollTopByViewKey.set(__lastViewKeyForScrollMemory, root?.scrollTop ?? 0);
+        } catch (_) {}
+    }
+
     root.innerHTML = '';
 
     renderTopBar();
@@ -5654,6 +8169,7 @@ export function render() {
     if (!userId || state.currentMode === null) {
         hideStatusBarEverywhere();
         syncBottomNavAfterRender(state.currentPage);
+        scheduleRootScrollLockState();
         return;
     }
 
@@ -5666,6 +8182,8 @@ export function render() {
     if (!hasSelectedCycle() && cycleRequiredPages.includes(state.currentPage)) {
         state.currentPage = 'programs';
     }
+
+    applyPendingAppleHealthSyncReturn();
 
     if (state.currentPage === 'programs') {
         renderCyclesPage();
@@ -5688,26 +8206,43 @@ export function render() {
     } else if (state.currentPage === 'cycleReport') {
         renderCycleReportPage(state.reportHtmlCache);
         syncBottomNavAfterRender(state.currentPage);
+        scheduleRootScrollLockState();
         hideStatusBarEverywhere();
         return;
     } else if (state.currentPage === 'mealsReport') {
         renderMealsReportPage(state.reportHtmlCache);
         syncBottomNavAfterRender(state.currentPage);
+        scheduleRootScrollLockState();
         hideStatusBarEverywhere();
         return;
     } else if (state.currentPage === 'modeSelect') {
         syncBottomNavAfterRender(state.currentPage);
+        scheduleRootScrollLockState();
         hideStatusBarEverywhere();
         return;
     }
 
     syncBottomNavAfterRender(state.currentPage);
+    scheduleRootScrollLockState();
 
     hideStatusBarEverywhere();
+
+    // Восстанавливаем scrollTop для нового экрана (или сбрасываем в 0).
+    const nextKey = getScrollMemoryViewKey();
+    const nextTop = __scrollTopByViewKey.has(nextKey) ? (__scrollTopByViewKey.get(nextKey) ?? 0) : 0;
+    requestAnimationFrame(() => {
+        try {
+            const el = document.getElementById('root');
+            if (el) el.scrollTop = nextTop;
+        } catch (_) {}
+    });
+
+    __lastViewKeyForScrollMemory = nextKey;
 }
 window.render = render;
 
 initBottomNav();
+void installCapacitorAppleHealthReturnListener();
 
 async function hideStatusBarEverywhere() {
     try {

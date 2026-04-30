@@ -22,6 +22,28 @@ import { openConfirmModal } from '../script.js';
 import { ensureCycleSelected } from '../script.js';
 import { renderTopBar } from '../script.js';
 import { render } from '../script.js';
+import { resolveSwipePanAxis } from '../gestures.js';
+import {
+    clearMealBottomNavOverlayMode,
+    setMealBottomNavOverlayMode,
+    syncSupplementsBottomNavBadge
+} from '../nav/bottom-nav.js';
+
+const SUPPLEMENTS_VIEW_MODE_KEY = 'trainingDiary:supplementsViewMode';
+const SUPPLEMENTS_TABLE_RANGE_KEY = 'trainingDiary:supplementsTableRange';
+const MAX_SUPPLEMENTS_COUNT = 20;
+const SUPPLEMENT_SHORT_NAME_LIMIT = 7;
+let supplementCalendarMonthDate = null;
+let supplementCalendarSelectedDate = null;
+let supplementTableViewportSyncController = null;
+let supplementTableScrollState = null;
+let supplementDoseClipboard = null;
+let supplementDoseClipboardMeta = null;
+let supplementDoseLongPressOverlayCleanup = null;
+
+function resetSupplementsTableScrollMemory() {
+    supplementTableScrollState = null;
+}
 
 export function resetSupplementsListener() {
     // План БАДов синхронизируется через onSnapshot на документе цикла в script.js (setupDynamicListeners).
@@ -31,12 +53,28 @@ export function resetSupplementsListener() {
 // =================================================================
 export async function renderSupplementsPage() {
     const root = document.getElementById('root');
+    supplementTableViewportSyncController?.abort?.();
+    supplementTableViewportSyncController = null;
+    clearSupplementDoseLongPressPopover();
     if (!ensureCycleSelected(render)) return;
+    const isDayDetailsPage = Boolean(state.supplementCalendarDetailDate);
 
     const currentCycle = state.cycles?.find(c => c.id === state.selectedCycleId);
     root.innerHTML = '';
 
-    renderTopBar();
+    if (state._supplementsForceDefaultOpen) {
+        state._supplementsForceDefaultOpen = false;
+        // Всегда открываем как "с нуля": таблица + без сохранённого скролла.
+        setSupplementsViewMode('calendar');
+        resetSupplementsTableScrollMemory();
+        supplementCalendarMonthDate = null;
+        supplementCalendarSelectedDate = null;
+        state.supplementCalendarDetailDate = null;
+    }
+
+    if (!isDayDetailsPage) {
+        renderTopBar();
+    }
 
     const contentContainer = document.createElement('div');
     contentContainer.id = 'supplements-content';
@@ -48,7 +86,7 @@ export async function renderSupplementsPage() {
             createElement('div', 'muted', 'Цикл не найден. Выберите другой.')
         );
         root.append(contentContainer);
-        return;
+        return false;
     }
 
 
@@ -66,12 +104,29 @@ export async function renderSupplementsPage() {
             createElement('div', 'muted', 'План добавок пока не загружен.')
         );
         root.append(contentContainer);
-        return;
+        return false;
     }
 
     // --- Всё готово, можно рендерить план ---
     console.log('✅ План добавок загружен:', state.supplementPlan);
     root.append(contentContainer);
+
+    const supplementViewMode = getSupplementsViewMode();
+    const activePlanData = state.supplementPlan || { supplements: [], data: [] };
+
+    if (state.supplementCalendarDetailDate) {
+        title.innerHTML = `Добавки: <span>${formatDayAndMonth(state.supplementCalendarDetailDate)}</span>`;
+        renderSupplementCalendarDayDetailsPage(contentContainer, activePlanData, state.supplementCalendarDetailDate);
+        return;
+    }
+
+    clearMealBottomNavOverlayMode();
+
+    if (supplementViewMode === 'calendar') {
+        renderSupplementsCalendarView(contentContainer, activePlanData, createSupplementsViewAction(supplementViewMode));
+    } else {
+        renderSupplementsTableView(contentContainer, activePlanData, createSupplementsViewAction(supplementViewMode));
+    }
 
     // TODO: здесь у тебя дальше идёт рендер таблицы / карточек добавок
 
@@ -89,9 +144,9 @@ export async function renderSupplementsPage() {
 
    // Проверяем количество добавок
    const currentSupplements = getSupplementNames(state.supplementPlan);
-   if (currentSupplements.length >= 5) {
+   const addSupplementBtnTitle = createElement('span', 'title-add-btn', 'добавить препарат');
+   if (supplementViewMode === 'table' && currentSupplements.length >= 5 && currentSupplements.length < MAX_SUPPLEMENTS_COUNT) {
        const addSupplementBtn = createElement('button', 'btn btn-primary add-supplement-btn');
-       const addSupplementBtnTitle = createElement('span', 'title-add-btn','препарат');
          addSupplementBtn.innerHTML = `
                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><title>Add-plus SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 12h6m0 0h6m-6 0v6m0-6V6"></path></svg>
            `;
@@ -99,9 +154,10 @@ export async function renderSupplementsPage() {
 
 
        addSupplementBtn.addEventListener('click', () => {
-           // 🔹 Открываем ту же модалку, что при клике на supplement-col
            openSupplementEditModal(currentSupplements.length, '');
        });
+   } else if (supplementViewMode === 'table' && currentSupplements.length >= MAX_SUPPLEMENTS_COUNT) {
+       addSupplementBtnWrap.append(addSupplementBtnTitle, createElement('span', 'supplement-limit-label', `${MAX_SUPPLEMENTS_COUNT}/${MAX_SUPPLEMENTS_COUNT}`));
    }
 
 
@@ -126,9 +182,26 @@ export async function renderSupplementsPage() {
 
 
 
-    // Добавляем обе группы управления
-    controlsWrapper.append(addSupplementBtnWrap,weekControlsGroup);
-    contentContainer.append(controlsWrapper);
+    if (supplementViewMode === 'table') {
+        const controlsLead = createElement('div', 'supplements-controls-lead');
+        const tableActions = createElement('div', 'supplements-controls-actions');
+        const actionsSpacer = createElement('div', 'supplements-controls-row-placeholder');
+        const leadSpacer = createElement('div', 'supplements-controls-row-placeholder');
+        const shouldShowAddControl = currentSupplements.length >= 5;
+        controlsWrapper.classList.add('supplements-controls-wrapper--table');
+
+        if (shouldShowAddControl) {
+            controlsLead.append(weekControlsGroup);
+            tableActions.append(addSupplementBtnWrap, actionsSpacer);
+        } else {
+            controlsLead.append(leadSpacer);
+            tableActions.append(weekControlsGroup, actionsSpacer);
+        }
+
+        controlsWrapper.append(controlsLead, tableActions);
+        contentContainer.append(controlsWrapper);
+    }
+    return;
 
 
 // -----------------------------------------------------------
@@ -155,12 +228,13 @@ if (planData.supplements.length === 0 && planData.data.length === 0) {
     dateTh.colSpan = 2;
     headerRow.append(dateTh);
 
-    const realNames = getSupplementNames(planData);
+    const activeEntries = getSupplementEntries(planData);
+    const tableColumns = getSupplementTableColumns(planData);
     const displayNames = [...realNames];
     while (displayNames.length < 5) displayNames.push(''); // минимум 5 колонок
 
     // Строим столбцы
-    displayNames.forEach((name, i) => {
+    displayNames.forEach((column) => {
         const th = createElement('th', 'supplement-col');
         th.dataset.index = i;
         const header = createElement('div', 'supplement-header');
@@ -269,20 +343,1934 @@ if (planData.supplements.length === 0 && planData.data.length === 0) {
 // =================================================================
 // 🔥 НОВАЯ ФУНКЦИЯ FIREBASE: Обновление плана добавок
 // =================================================================
+function getSupplementsViewMode() {
+    try {
+        return localStorage.getItem(SUPPLEMENTS_VIEW_MODE_KEY) === 'calendar' ? 'calendar' : 'table';
+    } catch (error) {
+        return 'table';
+    }
+}
+
+function setSupplementsViewMode(mode) {
+    try {
+        localStorage.setItem(SUPPLEMENTS_VIEW_MODE_KEY, mode);
+    } catch (error) {
+        // localStorage can be unavailable in strict privacy modes.
+    }
+}
+
+function getSupplementsTableRangeMode() {
+    return 'two-weeks';
+}
+
+function setSupplementsTableRangeMode(mode) {
+    try {
+        localStorage.setItem(SUPPLEMENTS_TABLE_RANGE_KEY, 'two-weeks');
+    } catch (error) {
+        // localStorage can be unavailable in strict privacy modes.
+    }
+}
+
+function createSupplementsTableRangeToggle(activeMode) {
+    const toggle = createElement('div', 'supplements-table-range-toggle');
+
+    const createButton = (mode, label) => {
+        const btn = createElement('button', `supplements-table-range-btn ${activeMode === mode ? 'active' : ''}`, label);
+        btn.type = 'button';
+        btn.addEventListener('click', () => {
+            if (getSupplementsTableRangeMode() === mode) return;
+            setSupplementsTableRangeMode(mode);
+            renderSupplementsPage();
+        });
+        return btn;
+    };
+
+    toggle.append(
+        createButton('week', '1 неделя'),
+        createButton('two-weeks', '2 недели')
+    );
+
+    return toggle;
+}
+
+function createSupplementsViewToggle(activeMode) {
+    const toggle = createElement('div', 'supplements-view-toggle');
+
+    const createButton = (mode, label) => {
+        const btn = createElement('button', `supplements-view-toggle-btn ${activeMode === mode ? 'active' : ''}`, label);
+        btn.type = 'button';
+        btn.addEventListener('click', () => {
+            if (getSupplementsViewMode() === mode) return;
+            // Переключение Календарь → Таблица: как вход "по умолчанию"
+            if (mode === 'table' && getSupplementsViewMode() === 'calendar') {
+                resetSupplementsTableScrollMemory();
+            }
+            setSupplementsViewMode(mode);
+            renderSupplementsPage();
+        });
+        return btn;
+    };
+
+    toggle.append(
+        createButton('table', 'Таблица'),
+        createButton('calendar', 'Календарь')
+    );
+
+    return toggle;
+}
+
+function createSupplementsViewAction(activeMode) {
+    const targetMode = activeMode === 'calendar' ? 'table' : 'calendar';
+    const label = activeMode === 'calendar' ? 'Таблица' : 'Календарь';
+    const btn = createElement('button', 'supplements-view-switch-btn', label);
+    btn.type = 'button';
+    btn.addEventListener('click', () => {
+        if (getSupplementsViewMode() === targetMode) return;
+        if (targetMode === 'table') {
+            resetSupplementsTableScrollMemory();
+        }
+        setSupplementsViewMode(targetMode);
+        renderSupplementsPage();
+    });
+    return btn;
+}
+
+function renderSupplementsTableView(contentContainer, planData, viewToggle = null) {
+    const todayDateString = getTodayDateString();
+    let todayRowElement = null;
+    let currentWeekStartRowElement = null;
+    let currentWeekFirstRowElement = null;
+    const activeEntries = getSupplementEntries(planData);
+    const tableColumns = getSupplementTableColumns(planData);
+    const records = Array.isArray(planData?.data) ? planData.data : [];
+    const tableRangeMode = getSupplementsTableRangeMode();
+    const showCellTimes = tableRangeMode === 'week';
+    const currentWeekStartDate = getSupplementWeekStartDate(parseSupplementDateString(todayDateString) || new Date());
+    const currentWeekEndDate = new Date(currentWeekStartDate);
+    currentWeekEndDate.setDate(currentWeekStartDate.getDate() + 6);
+    const currentWeekStartDateString = formatSupplementDateString(currentWeekStartDate);
+
+    // Диапазоны истории (для archived записей): подсветка всех ячеек между первой и последней дозировкой.
+    // Ключ: slot -> Map(supplementName -> { start: number, end: number })
+    const historyRangesBySlot = new Map();
+    tableColumns.forEach((column) => {
+        if (!column?.entriesWithHistory?.length) return;
+        const m = new Map();
+        column.entriesWithHistory.forEach((entry) => {
+            if (!entry?.archived) return;
+            m.set(entry.name, { start: Infinity, end: -Infinity });
+        });
+        if (m.size > 0) historyRangesBySlot.set(column.slot, m);
+    });
+    if (historyRangesBySlot.size > 0 && Array.isArray(records) && records.length > 0) {
+        records.forEach((dayRecord, rowIdx) => {
+            tableColumns.forEach((column) => {
+                const m = historyRangesBySlot.get(column.slot);
+                if (!m || !dayRecord?.doses) return;
+                m.forEach((range, name) => {
+                    if (hasSupplementDoseValue(dayRecord.doses?.[name])) {
+                        range.start = Math.min(range.start, rowIdx);
+                        range.end = Math.max(range.end, rowIdx);
+                    }
+                });
+            });
+        });
+        // чистим пустые диапазоны (если вдруг нет реальных доз)
+        historyRangesBySlot.forEach((m, slot) => {
+            m.forEach((range, name) => {
+                if (!Number.isFinite(range.start) || !Number.isFinite(range.end) || range.end < range.start) {
+                    m.delete(name);
+                }
+            });
+            if (m.size === 0) historyRangesBySlot.delete(slot);
+        });
+    }
+
+    if (activeEntries.length === 0 && records.length === 0) {
+        contentContainer.append(createElement('div', 'muted', 'Начните с добавления первого препарата.'));
+        return;
+    }
+
+    contentContainer.classList.add('supplements-page--table-range');
+
+    const tableTopBar = createElement('div', 'supplements-table-topbar');
+    const monthLabel = createElement('div', 'supplements-table-month-label');
+    tableTopBar.append(monthLabel);
+    if (viewToggle) {
+        tableTopBar.append(viewToggle);
+    }
+    contentContainer.append(tableTopBar);
+
+    const tableWrapper = createElement('div', `supplement-table-wrapper supplement-table-wrapper--${tableRangeMode}`);
+    tableWrapper.id = 'supplement-table-wrapper';
+    tableWrapper.dataset.displayColumns = String(tableColumns.length);
+    tableWrapper.classList.remove('supplement-table-wrapper--fitted');
+
+    const guard = createElement('div', 'scroll-guard');
+    const table = createElement('table', `supplement-plan-table supplement-plan-table--${tableRangeMode}`);
+    const thead = createElement('thead');
+    const headerRow = createElement('tr');
+
+    const dateTh = createElement('th', 'date-col', 'Дата / Дни');
+    dateTh.colSpan = 2;
+    headerRow.append(dateTh);
+
+    tableColumns.forEach((column) => {
+        const th = createElement('th', 'supplement-col');
+        const header = createElement('div', 'supplement-header');
+        th.dataset.slot = String(column.slot);
+
+        if (column.type === 'active') {
+            th.dataset.index = String(column.activeIndex);
+            th.dataset.activeIndex = String(column.activeIndex);
+            const nameBtn = createElement('button', 'sup-name', column.shortName || column.name);
+            nameBtn.type = 'button';
+            nameBtn.addEventListener('click', () => {
+                openSupplementEditModal({
+                    planIndex: column.planIndex,
+                    currentName: column.name,
+                    slotIndex: column.slot
+                });
+            });
+            header.append(nameBtn);
+        } else {
+            th.classList.add('supplement-col--empty');
+            const addBtn = createElement('button', 'sup-name sup-name--add', '');
+            addBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"><title>Add-plus SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 12h6m0 0h6m-6 0v6m0-6V6"></path></svg>`;
+            addBtn.type = 'button';
+            addBtn.addEventListener('click', () => {
+                openSupplementEditModal({
+                    planIndex: -1,
+                    currentName: '',
+                    slotIndex: column.slot
+                });
+            });
+            header.append(addBtn);
+        }
+
+        th.append(header);
+        headerRow.append(th);
+    });
+
+    thead.append(headerRow);
+    table.append(thead);
+    setTimeout(() => enableHeaderDnd(thead, planData), 0);
+
+    const tbody = createElement('tbody');
+    let previousRowDate = null;
+
+    records.forEach((dayRecord, rowIdx) => {
+        const rowClasses = [];
+        const parsedDate = parseSupplementDateString(dayRecord.date);
+
+        if (dayRecord.date === todayDateString) rowClasses.push('today-highlight');
+        if (parsedDate && [0, 6].includes(parsedDate.getDay())) rowClasses.push('weekend');
+        if (
+            parsedDate &&
+            previousRowDate &&
+            (
+                parsedDate.getMonth() !== previousRowDate.getMonth() ||
+                parsedDate.getFullYear() !== previousRowDate.getFullYear()
+            )
+        ) {
+            rowClasses.push('month-separator');
+        }
+
+        const tr = createElement('tr', rowClasses.join(' '));
+        tr.dataset.date = dayRecord.date;
+
+        tr.append(createElement('td', 'date-col', formatSupplementDayCell(dayRecord.date)));
+        tr.append(createElement('td', 'day-col', dayRecord.dayOfWeek || ''));
+
+        tableColumns.forEach((column) => {
+            const td = createElement('td', 'dose-col');
+
+            if (column.type === 'empty') {
+                td.append(createElement('div', 'supplement-dose-cell-btn supplement-dose-cell-btn--empty', ''));
+                tr.append(td);
+                return;
+            }
+
+            // Если текущая строка попадает в диапазон истории archived препарата — подсвечиваем ячейку.
+            let historyRangeNameForRow = null;
+            const rangesMap = historyRangesBySlot.get(column.slot);
+            if (rangesMap) {
+                for (const [name, range] of rangesMap.entries()) {
+                    if (rowIdx >= range.start && rowIdx <= range.end) {
+                        historyRangeNameForRow = name;
+                        break;
+                    }
+                }
+            }
+
+            const displayEntry = getSupplementColumnDisplayEntry(column, dayRecord);
+            const rawDose = displayEntry ? dayRecord.doses?.[displayEntry.name] : '';
+            const quantityText = formatSupplementDoseQuantity(rawDose);
+            const timeText = showCellTimes ? formatSupplementDoseTimeLabel(rawDose) : '';
+            const hasValue = Boolean(quantityText || timeText);
+            const isInteractive = Boolean(
+                column.activeEntry &&
+                (!displayEntry || displayEntry.name === column.activeEntry.name)
+            );
+            const doseBtn = createElement(
+                isInteractive ? 'button' : 'div',
+                `supplement-dose-cell-btn ${hasValue ? 'has-dose' : ''} ${timeText ? 'supplement-dose-cell-btn--with-time' : ''} ${displayEntry?.archived ? 'supplement-dose-cell-btn--history' : ''}`.trim()
+            );
+
+            // Подсветка диапазона истории: только для archived препарата (не активного).
+            if (
+                historyRangeNameForRow &&
+                (!displayEntry || displayEntry.name === historyRangeNameForRow) &&
+                column.entriesWithHistory?.some((e) => e?.archived && e?.name === historyRangeNameForRow)
+            ) {
+                doseBtn.classList.add('supplement-dose-cell-btn--history-range');
+            }
+
+            if (isInteractive) {
+                td.dataset.supplementIndex = String(column.activeIndex);
+                doseBtn.type = 'button';
+                doseBtn.dataset.supplementIndex = String(column.activeIndex);
+                doseBtn.dataset.date = dayRecord.date;
+                doseBtn.dataset.supplementName = column.activeEntry.name;
+                doseBtn.dataset.supplementSlot = String(column.slot);
+                const shouldShowHistoryLabel = shouldShowSupplementColumnHistoryLabel(column, column.activeEntry);
+                doseBtn.dataset.historyLabel = shouldShowHistoryLabel ? '1' : '0';
+                doseBtn.dataset.historyLabelText = column.activeEntry.name;
+            }
+
+            const shouldShowHistoryLabel = Boolean(
+                displayEntry &&
+                hasValue &&
+                shouldShowSupplementColumnHistoryLabel(column, displayEntry) &&
+                !column.labelShownEntries.has(displayEntry.name)
+            );
+
+            if (shouldShowHistoryLabel) {
+                doseBtn.append(createElement('span', 'supplement-dose-cell-history-label', displayEntry.name));
+                column.labelShownEntries.add(displayEntry.name);
+            }
+
+            if (hasValue) {
+                doseBtn.append(createElement('span', 'supplement-dose-cell-main', quantityText || ''));
+                if (timeText) {
+                    doseBtn.append(createElement('span', 'supplement-dose-cell-time', timeText));
+                }
+            }
+
+            if (isInteractive) {
+                doseBtn.addEventListener('click', () => {
+                    openSupplementDoseModal({ dateStr: dayRecord.date, supplementName: column.activeEntry.name });
+                });
+            }
+
+            td.append(doseBtn);
+            tr.append(td);
+        });
+
+        tbody.append(tr);
+        if (dayRecord.date === todayDateString) todayRowElement = tr;
+        if (dayRecord.date === currentWeekStartDateString) currentWeekStartRowElement = tr;
+        if (!currentWeekFirstRowElement && parsedDate && parsedDate >= currentWeekStartDate && parsedDate <= currentWeekEndDate) {
+            currentWeekFirstRowElement = tr;
+        }
+        if (parsedDate) previousRowDate = parsedDate;
+    });
+
+    table.append(tbody);
+    guard.append(table);
+    tableWrapper.append(guard);
+
+    const jumpBtnWrap = createElement('div', 'supplement-jump-btn-wrap is-hidden');
+    const jumpBtn = createElement('button', 'btn btn-secondary supplement-jump-btn', '');
+    jumpBtn.type = 'button';
+    jumpBtnWrap.append(jumpBtn);
+    tableWrapper.append(jumpBtnWrap);
+    contentContainer.append(tableWrapper);
+    enableSupplementDoseCellLongPressActions(tableWrapper);
+    enableSupplementColumnLongPressDrag(tableWrapper, planData);
+    bindSupplementJumpButton(jumpBtnWrap, tableWrapper);
+
+    supplementTableViewportSyncController?.abort?.();
+    supplementTableViewportSyncController = new AbortController();
+    const syncTableViewportLayout = () => {
+        if (!contentContainer.isConnected || !tableWrapper.isConnected) return;
+        syncSupplementsTableViewport(contentContainer, tableWrapper);
+        syncSupplementTableRangeLayout(tableWrapper, tableRangeMode);
+        syncSupplementTableMonthLabel(tableWrapper, monthLabel);
+    };
+    const scheduleTableViewportLayout = () => {
+        requestAnimationFrame(syncTableViewportLayout);
+    };
+
+    requestAnimationFrame(syncTableViewportLayout);
+    attachSupplementTableBounceLock(tableWrapper, supplementTableViewportSyncController.signal);
+    window.addEventListener('resize', scheduleTableViewportLayout, { signal: supplementTableViewportSyncController.signal });
+    window.addEventListener('orientationchange', scheduleTableViewportLayout, { signal: supplementTableViewportSyncController.signal });
+    window.visualViewport?.addEventListener('resize', scheduleTableViewportLayout, { signal: supplementTableViewportSyncController.signal });
+    window.visualViewport?.addEventListener('scroll', scheduleTableViewportLayout, { signal: supplementTableViewportSyncController.signal });
+
+    let monthLabelFrame = 0;
+    const scheduleMonthLabelSync = () => {
+        if (monthLabelFrame) return;
+        monthLabelFrame = requestAnimationFrame(() => {
+            monthLabelFrame = 0;
+            syncSupplementTableMonthLabel(tableWrapper, monthLabel);
+        });
+    };
+
+    tableWrapper.addEventListener('scroll', scheduleMonthLabelSync, { passive: true });
+
+    setTimeout(() => {
+        const wrapper = document.getElementById('supplement-table-wrapper');
+        if (!wrapper) return;
+
+        syncSupplementsTableViewport(contentContainer, wrapper);
+        syncSupplementTableRangeLayout(wrapper, tableRangeMode);
+
+        const savedScroll = getRememberedSupplementTableScroll(tableRangeMode);
+        if (savedScroll) {
+            wrapper.scrollLeft = savedScroll.left;
+            wrapper.scrollTop = savedScroll.top;
+            syncSupplementTableMonthLabel(wrapper, monthLabel);
+            return;
+        }
+
+        const targetRow = currentWeekStartRowElement || currentWeekFirstRowElement || todayRowElement;
+        if (targetRow) {
+            scrollSupplementTableRowToTop(wrapper, targetRow);
+            syncSupplementTableMonthLabel(wrapper, monthLabel);
+            return;
+        }
+
+        wrapper.scrollTop = wrapper.scrollHeight;
+        syncSupplementTableMonthLabel(wrapper, monthLabel);
+    }, 0);
+}
+function scrollSupplementTableRowToTop(wrapper, rowElement) {
+    const rowRect = rowElement.getBoundingClientRect();
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const header = wrapper.querySelector('thead');
+    const headerHeight = header?.getBoundingClientRect().height || 0;
+    const nextScrollTop = wrapper.scrollTop + rowRect.top - wrapperRect.top - headerHeight;
+
+    wrapper.scrollTop = Math.max(0, nextScrollTop);
+}
+
+function isSupplementTableRowVisible(wrapper, rowElement) {
+    if (!wrapper || !rowElement) return false;
+
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const rowRect = rowElement.getBoundingClientRect();
+    const header = wrapper.querySelector('thead');
+    const headerHeight = header?.getBoundingClientRect().height || 0;
+    const visibleTop = wrapperRect.top + headerHeight;
+    const visibleBottom = wrapperRect.bottom;
+
+    return rowRect.bottom > visibleTop && rowRect.top < visibleBottom;
+}
+
+function getSupplementDefaultWeekTargetRow(wrapper) {
+    if (!wrapper) return null;
+
+    const todayDate = parseSupplementDateString(getTodayDateString()) || new Date();
+    const currentWeekStartDate = getSupplementWeekStartDate(todayDate);
+    const currentWeekEndDate = new Date(currentWeekStartDate);
+    currentWeekEndDate.setDate(currentWeekStartDate.getDate() + 6);
+    const currentWeekStartDateString = formatSupplementDateString(currentWeekStartDate);
+
+    const tableRows = Array.from(wrapper.querySelectorAll('tbody tr[data-date]'));
+    return tableRows.find(row => row.dataset.date === currentWeekStartDateString)
+        || tableRows.find(row => {
+            const parsedDate = parseSupplementDateString(row.dataset.date);
+            return parsedDate && parsedDate >= currentWeekStartDate && parsedDate <= currentWeekEndDate;
+        })
+        || null;
+}
+
+function getSupplementJumpArrowSvg(direction) {
+    const isUp = direction === 'up';
+    // Простая стрелка (chevron) без отдельной стилизации.
+    return isUp
+        ? `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M12 8.8L6.9 13.9a1 1 0 0 1-1.4-1.4l5.8-5.8a1 1 0 0 1 1.4 0l5.8 5.8a1 1 0 1 1-1.4 1.4z"/></svg>`
+        : `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M12 15.2l5.1-5.1a1 1 0 0 1 1.4 1.4l-5.8 5.8a1 1 0 0 1-1.4 0l-5.8-5.8a1 1 0 1 1 1.4-1.4z"/></svg>`;
+}
+
+function syncSupplementJumpButtonVisibility(buttonWrap, wrapper) {
+    if (!buttonWrap) return;
+
+    const resolvedWrapper = wrapper || document.getElementById('supplement-table-wrapper');
+    const button = buttonWrap.querySelector('button.supplement-jump-btn');
+    const todayRow = resolvedWrapper?.querySelector?.(`tbody tr[data-date="${getTodayDateString()}"]`);
+
+    if (!resolvedWrapper || !button || !todayRow) {
+        buttonWrap.classList.add('is-hidden');
+        return;
+    }
+
+    if (isSupplementTableRowVisible(resolvedWrapper, todayRow)) {
+        buttonWrap.classList.add('is-hidden');
+        return;
+    }
+
+    const wrapperRect = resolvedWrapper.getBoundingClientRect();
+    const rowRect = todayRow.getBoundingClientRect();
+    const header = resolvedWrapper.querySelector('thead');
+    const headerHeight = header?.getBoundingClientRect().height || 0;
+    const visibleTop = wrapperRect.top + headerHeight;
+    const direction = rowRect.top < visibleTop ? 'up' : 'down';
+
+    button.dataset.direction = direction;
+    button.innerHTML = getSupplementJumpArrowSvg(direction);
+    buttonWrap.classList.remove('is-hidden');
+}
+
+function bindSupplementJumpButton(buttonWrap, wrapper) {
+    const resolvedWrapper = wrapper || document.getElementById('supplement-table-wrapper');
+    const button = buttonWrap?.querySelector?.('button.supplement-jump-btn');
+    if (!buttonWrap || !resolvedWrapper || !button) {
+        buttonWrap?.classList.add('is-hidden');
+        return;
+    }
+
+    button.addEventListener('click', () => {
+        const targetRow = getSupplementDefaultWeekTargetRow(resolvedWrapper);
+        const monthLabel = document.querySelector('.supplements-table-month-label');
+        if (!targetRow) return;
+        scrollSupplementTableRowToTop(resolvedWrapper, targetRow);
+        syncSupplementTableMonthLabel(resolvedWrapper, monthLabel);
+        syncSupplementJumpButtonVisibility(buttonWrap, resolvedWrapper);
+    });
+
+    let frameId = 0;
+    const syncVisibility = () => {
+        if (frameId) return;
+        frameId = requestAnimationFrame(() => {
+            frameId = 0;
+            syncSupplementJumpButtonVisibility(buttonWrap, resolvedWrapper);
+        });
+    };
+
+    syncVisibility();
+    resolvedWrapper.addEventListener('scroll', syncVisibility, { passive: true, signal: supplementTableViewportSyncController?.signal });
+    window.addEventListener('resize', syncVisibility, { signal: supplementTableViewportSyncController?.signal });
+    window.visualViewport?.addEventListener('resize', syncVisibility, { signal: supplementTableViewportSyncController?.signal });
+}
+
+function syncSupplementsTableViewport(contentContainer, tableWrapper) {
+    if (!contentContainer || !tableWrapper) return;
+
+    const viewportHeight = Math.round(
+        window.visualViewport?.height ||
+        window.innerHeight ||
+        document.documentElement?.clientHeight ||
+        0
+    );
+    if (!viewportHeight) return;
+
+    const contentRect = contentContainer.getBoundingClientRect();
+    let bottomLimit = viewportHeight;
+
+    const nav = document.querySelector('.navigation');
+    if (nav) {
+        const navRect = nav.getBoundingClientRect();
+        if (Number.isFinite(navRect.top) && navRect.top > 0) {
+            bottomLimit = Math.min(bottomLimit, navRect.top);
+        }
+    }
+
+    const availableHeight = Math.max(0, Math.floor(bottomLimit - contentRect.top - 12));
+    if (!availableHeight) return;
+
+    contentContainer.style.height = `${availableHeight}px`;
+    contentContainer.style.minHeight = `${availableHeight}px`;
+    contentContainer.style.maxHeight = `${availableHeight}px`;
+}
+
+function attachSupplementTableBounceLock(tableWrapper, signal) {
+    if (!tableWrapper) return;
+
+    let startX = 0;
+    let startY = 0;
+    let axis = null;
+
+    tableWrapper.addEventListener('touchstart', event => {
+        if (event.touches.length !== 1) {
+            axis = null;
+            return;
+        }
+
+        const touch = event.touches[0];
+        startX = touch.clientX;
+        startY = touch.clientY;
+        axis = null;
+    }, { passive: true, signal });
+
+    tableWrapper.addEventListener('touchmove', event => {
+        if (event.touches.length !== 1 || tableWrapper.classList.contains('supplement-table-wrapper--column-dragging')) {
+            return;
+        }
+
+        const touch = event.touches[0];
+        const diffX = touch.clientX - startX;
+        const diffY = touch.clientY - startY;
+
+        if (!axis && (Math.abs(diffX) > 6 || Math.abs(diffY) > 6)) {
+            axis = Math.abs(diffX) > Math.abs(diffY) ? 'x' : 'y';
+        }
+
+        if (axis === 'y') {
+            const maxScrollTop = Math.max(0, tableWrapper.scrollHeight - tableWrapper.clientHeight);
+            const atTop = tableWrapper.scrollTop <= 0;
+            const atBottom = tableWrapper.scrollTop >= maxScrollTop - 1;
+            const noVerticalOverflow = maxScrollTop <= 1;
+            const pullingPastTop = diffY > 0;
+            const pullingPastBottom = diffY < 0;
+
+            if (noVerticalOverflow || (atTop && pullingPastTop) || (atBottom && pullingPastBottom)) {
+                event.preventDefault();
+            }
+            return;
+        }
+
+        if (axis === 'x') {
+            const maxScrollLeft = Math.max(0, tableWrapper.scrollWidth - tableWrapper.clientWidth);
+            const atLeft = tableWrapper.scrollLeft <= 0;
+            const atRight = tableWrapper.scrollLeft >= maxScrollLeft - 1;
+            const noHorizontalOverflow = maxScrollLeft <= 1;
+            const pullingPastLeft = diffX > 0;
+            const pullingPastRight = diffX < 0;
+
+            if (noHorizontalOverflow || (atLeft && pullingPastLeft) || (atRight && pullingPastRight)) {
+                event.preventDefault();
+            }
+        }
+    }, { passive: false, signal });
+}
+
+function syncSupplementTableRangeLayout(tableWrapper, tableRangeMode) {
+    if (!tableWrapper) return;
+
+    const visibleDays = tableRangeMode === 'week' ? 7 : 14;
+    const header = tableWrapper.querySelector('thead');
+    const table = tableWrapper.querySelector('.supplement-plan-table');
+    const guard = tableWrapper.querySelector('.scroll-guard');
+    const headerHeight = header?.getBoundingClientRect().height || 43;
+    const availableHeight = Math.max(tableWrapper.clientHeight - headerHeight, 0);
+    const overflowCompensation = tableRangeMode === 'week' ? 4 : 2;
+    const fittedHeight = Math.max(availableHeight - overflowCompensation, 0);
+    const rowHeight = availableHeight > 0
+        ? Math.max(1, Math.floor(fittedHeight / visibleDays))
+        : (tableRangeMode === 'week' ? 52 : 28);
+
+    tableWrapper.style.setProperty('--supplement-table-row-height', `${rowHeight}px`);
+
+    const displayColumns = Number(tableWrapper.dataset.displayColumns || 0);
+    if (displayColumns > 0) {
+        const leadWidth = getSupplementStickyLeadWidth(table);
+        const minColumnWidth = tableRangeMode === 'week' ? 64 : 53;
+        const fitAvailableWidth = Math.max(tableWrapper.clientWidth - leadWidth, 0);
+        const dividerCompensation = Math.max(6, displayColumns + 1);
+        const fittedCandidate = fitAvailableWidth > 0
+            ? Math.floor((fitAvailableWidth - dividerCompensation) / displayColumns)
+            : minColumnWidth;
+        const canFitMinColumns = fitAvailableWidth >= (minColumnWidth * displayColumns);
+        let columnWidth = Math.max(minColumnWidth, fittedCandidate);
+        let fitted = canFitMinColumns;
+
+        tableWrapper.classList.toggle('supplement-table-wrapper--fitted', fitted);
+        tableWrapper.style.setProperty('--supplement-table-column-width', `${columnWidth}px`);
+
+        if (table && fitted) {
+            const initialOverflow = Math.max(0, Math.ceil(table.scrollWidth - tableWrapper.clientWidth));
+            if (initialOverflow > 0) {
+                columnWidth = Math.max(minColumnWidth, columnWidth - Math.ceil(initialOverflow / displayColumns));
+                tableWrapper.style.setProperty('--supplement-table-column-width', `${columnWidth}px`);
+            } else {
+                const remainingWidth = Math.floor(tableWrapper.clientWidth - table.scrollWidth);
+                const canGrow = remainingWidth > displayColumns ? Math.floor((remainingWidth - 1) / displayColumns) : 0;
+                if (canGrow > 0) {
+                    columnWidth += canGrow;
+                    tableWrapper.style.setProperty('--supplement-table-column-width', `${columnWidth}px`);
+                }
+            }
+
+            fitted = table.scrollWidth <= tableWrapper.clientWidth + 1;
+            tableWrapper.classList.toggle('supplement-table-wrapper--fitted', fitted);
+        }
+    } else {
+        tableWrapper.style.removeProperty('--supplement-table-column-width');
+    }
+}
+
+function formatSupplementDayCell(dateString) {
+    return String(dateString || '').split('.')[0] || '';
+}
+
+function syncSupplementTableMonthLabel(tableWrapper, labelElement) {
+    if (!tableWrapper || !labelElement) return;
+
+    const visibleDates = getVisibleSupplementTableDates(tableWrapper);
+    const firstDate = visibleDates[0];
+    const lastDate = visibleDates[visibleDates.length - 1] || firstDate;
+
+    labelElement.textContent = getSupplementMonthRangeLabel(firstDate, lastDate);
+}
+
+function getVisibleSupplementTableDates(tableWrapper) {
+    const rows = Array.from(tableWrapper.querySelectorAll('tbody tr[data-date]'));
+    if (!rows.length) return [];
+
+    const wrapperRect = tableWrapper.getBoundingClientRect();
+    const header = tableWrapper.querySelector('thead');
+    const headerHeight = header?.getBoundingClientRect().height || 0;
+    const visibleTop = wrapperRect.top + headerHeight;
+    const visibleBottom = wrapperRect.bottom;
+
+    const visibleRows = rows.filter((row) => {
+        const rowRect = row.getBoundingClientRect();
+        return rowRect.bottom > visibleTop && rowRect.top < visibleBottom;
+    });
+
+    return (visibleRows.length ? visibleRows : rows).map((row) => row.dataset.date).filter(Boolean);
+}
+
+function getSupplementMonthRangeLabel(startDateString, endDateString) {
+    const startDate = parseSupplementDateString(startDateString);
+    const endDate = parseSupplementDateString(endDateString || startDateString);
+
+    if (!startDate && !endDate) return '';
+    if (!startDate) return formatSupplementMonthLabel(endDate);
+    if (!endDate) return formatSupplementMonthLabel(startDate);
+
+    const sameMonth = startDate.getMonth() === endDate.getMonth() && startDate.getFullYear() === endDate.getFullYear();
+    if (sameMonth) {
+        return formatSupplementMonthLabel(startDate);
+    }
+
+    const sameYear = startDate.getFullYear() === endDate.getFullYear();
+    return sameYear
+        ? `${formatSupplementMonthLabel(startDate)} - ${formatSupplementMonthLabel(endDate)}`
+        : `${formatSupplementMonthLabel(startDate, true)} - ${formatSupplementMonthLabel(endDate, true)}`;
+}
+
+function formatSupplementMonthLabel(date, withYear = false) {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+
+    const monthName = capitalizeFirstLetter(
+        date.toLocaleDateString('ru-RU', { month: 'long' })
+    );
+
+    return withYear ? `${monthName} ${date.getFullYear()}` : monthName;
+}
+
+function capitalizeFirstLetter(value) {
+    if (!value) return '';
+    return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function renderSupplementsCalendarView(contentContainer, planData, viewToggle = null) {
+    ensureSupplementCalendarState(planData);
+    contentContainer.classList.add('supplements-page--calendar-range');
+
+    const monthDate = getSupplementMonthStart(supplementCalendarMonthDate || new Date());
+    const wrapper = createElement('div', 'supplements-calendar-view');
+    const calendarCard = createElement('div', 'supplement-calendar-card');
+    const header = createElement('div', 'supplement-calendar-header');
+    const monthControls = createElement('div', 'supplement-calendar-month-controls');
+
+    const prevBtn = createElement('button', 'supplement-calendar-nav-btn');
+    prevBtn.type = 'button';
+    prevBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M13.83 19a1 1 0 0 1-.78-.37l-4.83-6a1 1 0 0 1 0-1.27l5-6a1 1 0 0 1 1.54 1.28L10.29 12l4.32 5.36a1 1 0 0 1-.78 1.64"/></svg>`;
+    prevBtn.addEventListener('click', () => changeSupplementCalendarMonth(planData, -1));
+
+    const title = createElement('div', 'supplement-calendar-title', getSupplementMonthTitle(monthDate));
+
+    const nextBtn = createElement('button', 'supplement-calendar-nav-btn');
+    nextBtn.type = 'button';
+    nextBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M10 19a1 1 0 0 1-.64-.23a1 1 0 0 1-.13-1.41L13.71 12L9.39 6.63a1 1 0 0 1 .15-1.41a1 1 0 0 1 1.46.15l4.83 6a1 1 0 0 1 0 1.27l-5 6A1 1 0 0 1 10 19"/></svg>`;
+    nextBtn.addEventListener('click', () => changeSupplementCalendarMonth(planData, 1));
+
+    monthControls.append(prevBtn, title, nextBtn);
+    header.append(monthControls);
+    if (viewToggle) {
+        header.append(viewToggle);
+    }
+
+    const weekdays = createElement('div', 'supplement-calendar-weekdays');
+    ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].forEach(day => {
+        weekdays.append(createElement('div', 'supplement-calendar-weekday', day));
+    });
+
+    const viewport = createElement('div', 'supplement-calendar-months-viewport');
+    const track = createElement('div', 'supplement-calendar-months-track');
+    track.style.transform = 'translate3d(-100%, 0, 0)';
+
+    [-1, 0, 1].forEach(offset => {
+        const page = createElement('div', 'supplement-calendar-month-page');
+        renderSupplementCalendarMonthPage(page, addSupplementMonths(monthDate, offset), planData);
+        track.append(page);
+    });
+
+    viewport.append(track);
+    attachSupplementCalendarSwipe(viewport, track, planData);
+
+    calendarCard.append(header, weekdays, viewport);
+
+    wrapper.append(calendarCard);
+    contentContainer.append(wrapper);
+
+    supplementTableViewportSyncController?.abort?.();
+    supplementTableViewportSyncController = new AbortController();
+    const syncCalendarLayout = () => {
+        if (!contentContainer.isConnected) return;
+
+        // 1) Сначала фиксируем высоту всего контента под текущий viewport (как в таблице).
+        syncSupplementsTableViewport(contentContainer, viewport);
+
+        // 2) Затем задаём высоту именно области месяцев (внизу карточки),
+        // чтобы на любом экране календарь занимал весь доступный диапазон и
+        // ячейки дней растягивались/сжимались по высоте.
+        const cardRect = calendarCard.getBoundingClientRect();
+        const headerRect = header.getBoundingClientRect();
+        const weekdaysRect = weekdays.getBoundingClientRect();
+        const paddingBottom = 10;
+        const paddingTop = 10;
+        const fixedParts = (headerRect.height || 0) + (weekdaysRect.height || 0) + paddingTop + paddingBottom;
+        const nextHeight = Math.max(120, Math.floor((cardRect.height || 0) - fixedParts));
+        viewport.style.height = `${nextHeight}px`;
+
+        const weeksCount = 6;
+        const gridGap = 6;
+        const availableForCells = Math.max(0, nextHeight - gridGap * (weeksCount - 1));
+        const nextCellHeight = Math.max(44, Math.floor(availableForCells / weeksCount));
+        calendarCard.style.setProperty('--supplement-calendar-cell-height', `${nextCellHeight}px`);
+    };
+    const scheduleCalendarLayout = () => requestAnimationFrame(syncCalendarLayout);
+    requestAnimationFrame(syncCalendarLayout);
+    window.addEventListener('resize', scheduleCalendarLayout, { signal: supplementTableViewportSyncController.signal });
+    window.addEventListener('orientationchange', scheduleCalendarLayout, { signal: supplementTableViewportSyncController.signal });
+    window.visualViewport?.addEventListener('resize', scheduleCalendarLayout, { signal: supplementTableViewportSyncController.signal });
+    window.visualViewport?.addEventListener('scroll', scheduleCalendarLayout, { signal: supplementTableViewportSyncController.signal });
+}
+
+function renderSupplementCalendarMonthPage(page, monthDate, planData) {
+    const grid = createElement('div', 'supplement-calendar-grid');
+    const dateMap = getSupplementPlanDateMap(planData);
+    const todayDateString = getTodayDateString();
+    const firstDay = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+    const startOffset = (firstDay.getDay() + 6) % 7;
+    const totalDays = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
+    const trailingDays = (7 - ((startOffset + totalDays) % 7)) % 7;
+    const totalCells = startOffset + totalDays + trailingDays;
+    const prevMonthTotalDays = new Date(monthDate.getFullYear(), monthDate.getMonth(), 0).getDate();
+
+    for (let cellIndex = 0; cellIndex < totalCells; cellIndex++) {
+        // Показываем дни соседних месяцев (полупрозрачные), вместо пустых плейсхолдеров
+        if (cellIndex < startOffset) {
+            const dayNum = prevMonthTotalDays - startOffset + 1 + cellIndex;
+            const cell = createElement('div', 'supplement-calendar-day supplement-calendar-day--placeholder supplement-calendar-day--other-month');
+            cell.append(createElement('span', 'supplement-calendar-day-num', String(dayNum)));
+            grid.append(cell);
+            continue;
+        }
+        if (cellIndex >= startOffset + totalDays) {
+            const dayNum = cellIndex - (startOffset + totalDays) + 1;
+            const cell = createElement('div', 'supplement-calendar-day supplement-calendar-day--placeholder supplement-calendar-day--other-month');
+            cell.append(createElement('span', 'supplement-calendar-day-num', String(dayNum)));
+            grid.append(cell);
+            continue;
+        }
+
+        const dayNumber = cellIndex - startOffset + 1;
+        const cellDate = new Date(monthDate.getFullYear(), monthDate.getMonth(), dayNumber);
+        const dateStr = formatSupplementDateString(cellDate);
+        const dayRecord = dateMap.get(dateStr);
+        const doseEntries = getSupplementDayDoseEntries(dayRecord, planData);
+        const doseCount = doseEntries.length;
+        const isCompleted = doseCount > 0 && doseEntries.every(entry => entry.taken);
+        const cell = createElement('button', 'supplement-calendar-day');
+        cell.type = 'button';
+        cell.dataset.date = dateStr;
+
+        const isToday = dateStr === todayDateString;
+        const isSelected = dateStr === todayDateString;
+        const isEmptySelected = isSelected && doseCount === 0;
+
+        if (isToday) cell.classList.add('is-today');
+        if (isSelected) cell.classList.add('is-selected');
+        if (isEmptySelected) cell.classList.add('is-selected-empty');
+        if (dayRecord) cell.classList.add('is-in-plan');
+        if (!dayRecord) cell.classList.add('is-out-of-plan');
+        if (doseCount > 0) cell.classList.add('has-doses');
+        if (doseCount > 0 && isCompleted) cell.classList.add('is-completed');
+        if (doseCount > 0 && !isCompleted) cell.classList.add('is-planned');
+
+        cell.append(createElement('span', 'supplement-calendar-day-num', String(cellDate.getDate())));
+
+        if (doseCount > 0) {
+            const supplementsList = createElement('span', 'supplement-calendar-day-supplements');
+            doseEntries.slice(0, 4).forEach(entry => {
+                supplementsList.append(createElement('span', 'supplement-calendar-day-supplement', entry.shortName || entry.name));
+            });
+
+            if (doseEntries.length > 4) {
+                const hiddenCount = doseEntries.length - 4;
+                supplementsList.append(
+                    createElement('span', 'supplement-calendar-day-more', `еще +${hiddenCount}`)
+                );
+            }
+
+            cell.append(supplementsList);
+        }
+
+        cell.addEventListener('click', () => {
+            supplementCalendarMonthDate = getSupplementMonthStart(cellDate);
+            state.supplementCalendarDetailDate = dateStr;
+            setSupplementsViewMode('calendar');
+            renderSupplementsPage();
+        });
+
+        grid.append(cell);
+    }
+
+    page.append(grid);
+}
+
+function syncSupplementCalendarViewportHeight(viewport, track) {
+    const activePage = track?.children?.[1];
+    if (!viewport || !activePage) return;
+    viewport.style.height = `${activePage.scrollHeight}px`;
+}
+
+function renderSupplementCalendarDayDetailsPage(contentContainer, planData, dateStr) {
+    contentContainer.classList.add('supplements-page--day-details');
+
+    const screen = createElement('div', 'supplement-day-details-screen');
+    const panel = createElement('div', 'supplement-calendar-day-panel supplement-calendar-day-panel--screen');
+    renderSupplementCalendarDayPanel(panel, planData, dateStr, {
+        allowAdd: false,
+        showHeader: false,
+        markable: true
+    });
+
+    screen.append(panel);
+    contentContainer.append(screen);
+
+    syncSupplementDayDetailsBottomNav();
+}
+
+function closeSupplementDayDetailsPage() {
+    state.supplementCalendarDetailDate = null;
+    setSupplementsViewMode('calendar');
+    clearMealBottomNavOverlayMode();
+    renderSupplementsPage();
+}
+
+function syncSupplementDayDetailsBottomNav() {
+    setMealBottomNavOverlayMode({
+        visible: true,
+        backLabel: 'Назад к календарю',
+        onBack: closeSupplementDayDetailsPage,
+        actionVisible: false,
+        secondaryActionVisible: false
+    });
+}
+
+function attachSupplementDayDetailsSwipe(screen, planData, dateStr) {
+    let startX = 0;
+    let startY = 0;
+    let lastX = 0;
+    let isHorizontal = false;
+    let isTracking = false;
+
+    screen.addEventListener('touchstart', event => {
+        const touch = event.touches[0];
+        startX = touch.clientX;
+        startY = touch.clientY;
+        lastX = startX;
+        isHorizontal = false;
+        isTracking = true;
+    }, { passive: true });
+
+    screen.addEventListener('touchmove', event => {
+        if (!isTracking) return;
+        const touch = event.touches[0];
+        const diffX = touch.clientX - startX;
+        const diffY = touch.clientY - startY;
+        lastX = touch.clientX;
+
+        if (!isHorizontal && (Math.abs(diffX) > 10 || Math.abs(diffY) > 10)) {
+            isHorizontal = Math.abs(diffX) > Math.abs(diffY);
+        }
+
+        if (isHorizontal) event.preventDefault();
+    }, { passive: false });
+
+    screen.addEventListener('touchend', () => {
+        if (!isTracking) return;
+
+        const diffX = lastX - startX;
+        if (isHorizontal && Math.abs(diffX) > 52) {
+            const nextDate = getAdjacentSupplementPlanDate(planData, dateStr, diffX < 0 ? 1 : -1);
+            if (nextDate) {
+                state.supplementCalendarDetailDate = nextDate;
+                const parsed = parseSupplementDateString(nextDate);
+                if (parsed) supplementCalendarMonthDate = getSupplementMonthStart(parsed);
+                renderSupplementsPage();
+            }
+        }
+
+        isTracking = false;
+    });
+}
+
+function getAdjacentSupplementPlanDate(planData, dateStr, direction) {
+    const dates = (Array.isArray(planData?.data) ? planData.data : [])
+        .map(day => day?.date)
+        .filter(Boolean);
+    const index = dates.indexOf(dateStr);
+    if (index === -1) return null;
+    return dates[index + direction] || null;
+}
+
+function openSupplementCalendarDayModal(planData, dateStr) {
+    const backdrop = createElement('div', 'modal-backdrop supplement-calendar-day-backdrop');
+    const modal = createElement('div', 'modal-window supplement-calendar-day-modal');
+    const closeBtn = createElement('button', 'supplement-calendar-day-modal-close');
+    closeBtn.type = 'button';
+    closeBtn.innerHTML = '&times;';
+
+    const panel = createElement('div', 'supplement-calendar-day-panel supplement-calendar-day-panel--modal');
+    const closeModal = () => backdrop.remove();
+
+    renderSupplementCalendarDayPanel(panel, planData, dateStr, {
+        allowAdd: false,
+        onAction: closeModal
+    });
+
+    closeBtn.addEventListener('click', closeModal);
+    modal.append(closeBtn, panel);
+    backdrop.append(modal);
+    document.body.append(backdrop);
+
+    backdrop.addEventListener('click', event => {
+        if (event.target === backdrop) closeModal();
+    });
+}
+
+function renderSupplementCalendarDayPanel(panel, planData, dateStr, options = {}) {
+    panel.innerHTML = '';
+
+    const record = getSupplementDayRecord(planData, dateStr);
+    const allowAdd = options.allowAdd !== false;
+    const showHeader = options.showHeader !== false;
+    const markable = Boolean(options.markable);
+    const editable = options.editable !== false && !markable;
+    const showTableHint = options.showTableHint ?? (!allowAdd && !markable);
+
+    if (showHeader) {
+        const title = createElement('div', 'supplement-day-panel-head');
+        title.append(
+            createElement('span', 'supplement-day-panel-title', dateStr ? formatDayAndMonth(dateStr) : 'День'),
+            createElement('span', 'supplement-day-panel-subtitle', dateStr || '')
+        );
+        panel.append(title);
+    }
+
+    if (!record) {
+        panel.append(createElement('div', 'supplement-day-empty', 'Этот день пока не входит в план добавок.'));
+        return;
+    }
+
+    const list = createElement('div', 'supplement-day-dose-list');
+    const doseEntries = getSupplementDayDoseEntries(record, planData);
+
+    if (doseEntries.length === 0) {
+        list.append(createElement('div', 'supplement-day-empty', 'На этот день пока ничего не запланировано.'));
+    } else {
+        doseEntries.forEach(entry => {
+            const row = createElement(editable ? 'button' : 'div', `supplement-day-dose-row ${entry.taken ? 'is-taken' : 'is-planned'}${editable ? ' is-editable' : ''}`);
+            if (editable) row.type = 'button';
+
+            const main = createElement('div', 'supplement-day-dose-main');
+            main.append(createElement('span', 'supplement-day-dose-name', entry.name));
+
+            if (entry.quantityText) {
+                main.append(createElement('span', 'supplement-day-dose-amount', entry.quantityText));
+            }
+
+            if (entry.timesText) {
+                main.append(createElement('span', 'supplement-day-dose-time-text', `В ${entry.timesText}`));
+            }
+
+            row.append(main);
+
+            if (markable) {
+                const actionBtn = createElement(
+                    'button',
+                    `supplement-day-dose-action${entry.taken ? ' is-active' : ''}`,
+                    entry.taken ? 'Отмечено' : 'Отметить'
+                );
+                actionBtn.type = 'button';
+
+                if (entry.taken) {
+                    actionBtn.prepend(createElement('span', 'supplement-day-dose-action-check', '✓'));
+                }
+
+                actionBtn.addEventListener('click', async () => {
+                    actionBtn.disabled = true;
+                    await toggleSupplementDoseTaken({ dateStr, supplementName: entry.name });
+                });
+
+                row.append(actionBtn);
+            }
+
+            if (editable) {
+                row.addEventListener('click', () => {
+                    options.onAction?.();
+                    openSupplementDoseModal({ dateStr, supplementName: entry.name });
+                });
+            }
+
+            list.append(row);
+        });
+    }
+
+    panel.append(list);
+
+    if (!allowAdd) {
+        if (showTableHint) {
+            const info = createElement('div', 'supplement-calendar-add-info');
+            info.innerHTML = `
+                <span class="supplement-calendar-add-info-icon">i</span>
+                <span>Добавить новый препарат можно во вкладке «Таблица».</span>
+            `;
+            panel.append(info);
+        }
+        return;
+    }
+
+    const addBtn = createElement('button', 'btn btn-primary supplement-day-add-btn', 'Добавить');
+    addBtn.type = 'button';
+    addBtn.addEventListener('click', () => {
+        options.onAction?.();
+        openSupplementDoseModal({ dateStr, supplementName: '', isNew: true });
+    });
+    panel.append(addBtn);
+}
+
+async function toggleSupplementDoseTaken({ dateStr, supplementName }) {
+    const plan = JSON.parse(JSON.stringify(state.supplementPlan || { supplements: [], data: [] }));
+    const dayIndex = (plan.data || []).findIndex(day => day.date === dateStr);
+
+    if (dayIndex === -1) return;
+
+    const dayRecord = plan.data[dayIndex];
+    dayRecord.doses = dayRecord.doses || {};
+
+    if (!hasSupplementDoseValue(dayRecord.doses[supplementName])) return;
+
+    const currentDose = parseSupplementDoseValue(dayRecord.doses[supplementName]);
+    dayRecord.doses[supplementName] = buildSupplementDoseValue({
+        dosage: currentDose.dosage,
+        tablets: currentDose.tablets,
+        times: currentDose.times,
+        taken: !currentDose.taken
+    });
+
+    await updateSupplementPlanInFirestore(plan);
+    renderSupplementsPage();
+}
+
+function openSupplementDoseModal({ dateStr, supplementName = '', isNew = false }) {
+    if (isNew && getSupplementsViewMode() !== 'table') {
+        showToast('Добавить новый препарат можно только во вкладке «Таблица».');
+        return;
+    }
+
+    const plan = JSON.parse(JSON.stringify(state.supplementPlan || { supplements: [], data: [] }));
+    ensureSupplementEntrySlots(plan);
+    const dayIndex = (plan.data || []).findIndex(day => day.date === dateStr);
+
+    if (dayIndex === -1) {
+        showToast('Этот день пока не добавлен в план.');
+        return;
+    }
+
+    const names = getSupplementNames(plan, { includeArchived: true });
+    const record = plan.data[dayIndex];
+    const currentDose = parseSupplementDoseValue(supplementName ? record.doses?.[supplementName] : '');
+    const backdrop = createElement('div', 'modal-backdrop supplement-dose-backdrop');
+    const modal = createElement('div', 'modal-window supplement-dose-modal');
+
+    modal.append(createElement('h3', null, isNew ? 'Добавить БАД' : supplementName));
+
+    let nameInput = null;
+    if (isNew) {
+        const nameLabel = createElement('label', 'supplement-dose-field');
+        nameLabel.append(createElement('span', null, 'Название БАДа'));
+        nameInput = createElement('input', 'modal-input supplement-dose-name-input');
+        nameInput.type = 'text';
+        nameInput.placeholder = 'Например: Омега-3';
+        nameLabel.append(nameInput);
+        modal.append(nameLabel);
+    }
+
+    const doseLabel = createElement('label', 'supplement-dose-field');
+    doseLabel.append(createElement('span', null, 'Дозировка препарата'));
+    const doseInput = createElement('input', 'modal-input supplement-dose-value-input');
+    doseInput.type = 'text';
+    doseInput.value = currentDose.dosage;
+    doseInput.placeholder = 'Например: 500 мг';
+    doseLabel.append(doseInput);
+    modal.append(doseLabel);
+
+    const tabletsLabel = createElement('label', 'supplement-dose-field');
+    tabletsLabel.append(createElement('span', null, 'Количество таблеток'));
+    const tabletsInput = createElement('input', 'modal-input supplement-dose-tablets-input');
+    tabletsInput.type = 'number';
+    tabletsInput.inputMode = 'decimal';
+    tabletsInput.min = '0';
+    tabletsInput.step = '0.5';
+    tabletsInput.value = currentDose.tablets;
+    tabletsInput.placeholder = 'Например: 2';
+    tabletsLabel.append(tabletsInput);
+    modal.append(tabletsLabel);
+
+    const timesSection = createElement('div', 'supplement-dose-times-section');
+    const timesHeader = createElement('div', 'supplement-dose-times-header');
+    const timesHeaderText = createElement('div', 'supplement-dose-times-header-text');
+    timesHeaderText.append(
+        createElement('span', 'supplement-dose-times-title', 'Время приема'),
+        createElement('span', 'supplement-dose-times-hint', 'Можно указать несколько приемов за день')
+    );
+    timesHeader.append(timesHeaderText);
+
+    const timesList = createElement('div', 'supplement-dose-times-list');
+
+    const updateTimeRows = () => {
+        const rows = Array.from(timesList.querySelectorAll('.supplement-dose-time-row'));
+        rows.forEach((row, index) => {
+            const indexEl = row.querySelector('.supplement-dose-time-index');
+            const removeBtn = row.querySelector('.supplement-dose-time-remove');
+            if (indexEl) indexEl.textContent = `Прием ${index + 1}`;
+            if (removeBtn) {
+                removeBtn.disabled = rows.length <= 1;
+                removeBtn.style.visibility = rows.length <= 1 ? 'hidden' : '';
+            }
+        });
+    };
+
+    const addTimeRow = (value = '') => {
+        const row = createElement('div', 'supplement-dose-time-row');
+        const indexEl = createElement('span', 'supplement-dose-time-index', 'Прием');
+        const input = createElement('input', 'modal-input supplement-dose-time-input');
+        input.type = 'time';
+        input.value = normalizeSupplementTimeValue(value);
+
+        const removeBtn = createElement('button', 'supplement-dose-time-remove');
+        removeBtn.type = 'button';
+        removeBtn.setAttribute('aria-label', 'Удалить время приема');
+        removeBtn.innerHTML = '&times;';
+        removeBtn.addEventListener('click', () => {
+            row.remove();
+            updateTimeRows();
+        });
+
+        row.append(indexEl, input, removeBtn);
+        timesList.append(row);
+        updateTimeRows();
+    };
+
+    const savedTimes = currentDose.times.length > 0 ? currentDose.times : [''];
+    savedTimes.forEach(time => addTimeRow(time));
+
+    const addTimeBtn = createElement('button', 'supplement-dose-add-time-btn');
+    addTimeBtn.type = 'button';
+    addTimeBtn.textContent = '+ Добавить прием';
+    addTimeBtn.addEventListener('click', () => {
+        addTimeRow('');
+        timesList.querySelector('.supplement-dose-time-row:last-child .supplement-dose-time-input')?.focus();
+    });
+
+    timesSection.append(timesHeader, timesList, addTimeBtn);
+    modal.append(timesSection);
+
+    const buttons = createElement('div', 'modal-buttons supplement-dose-buttons');
+
+    if (!isNew) {
+        const deleteBtn = createElement('button', 'btn btn-danger', 'Удалить');
+        deleteBtn.type = 'button';
+        deleteBtn.addEventListener('click', async () => {
+            record.doses = record.doses || {};
+            record.doses[supplementName] = '';
+            await updateSupplementPlanInFirestore(plan);
+            backdrop.remove();
+            renderSupplementsPage();
+        });
+        buttons.append(deleteBtn);
+    }
+
+    const cancelBtn = createElement('button', 'btn btn-secondary', 'Отмена');
+    cancelBtn.type = 'button';
+    cancelBtn.addEventListener('click', () => backdrop.remove());
+
+    const saveBtn = createElement('button', 'btn btn-primary', 'Сохранить');
+    saveBtn.type = 'button';
+    saveBtn.addEventListener('click', async () => {
+        const nextName = isNew ? nameInput.value.trim() : supplementName;
+        const nextDose = doseInput.value.trim();
+        const nextTablets = tabletsInput.value.trim();
+        const nextTimes = getSupplementDoseModalTimes(timesList);
+
+        if (!nextName) {
+            showToast('Введите название БАДа.');
+            return;
+        }
+
+        if (nextTimes.length > 0 && !nextDose && !nextTablets) {
+            showToast('Укажите дозировку или количество таблеток для выбранного времени.');
+            return;
+        }
+
+        if (!names.includes(nextName)) {
+            if (names.length >= MAX_SUPPLEMENTS_COUNT) {
+                showToast(`Можно добавить не больше ${MAX_SUPPLEMENTS_COUNT} препаратов.`);
+                return;
+            }
+
+            plan.supplements = Array.isArray(plan.supplements) ? plan.supplements : [];
+            plan.supplements.push(createSupplementMeta(nextName, '', false, getNextAvailableSupplementSlot(plan)));
+            plan.data = (plan.data || []).map(day => {
+                day.doses = day.doses || {};
+                day.doses[nextName] = day.doses[nextName] || '';
+                return day;
+            });
+        }
+
+        plan.data[dayIndex].doses = plan.data[dayIndex].doses || {};
+        plan.data[dayIndex].doses[nextName] = buildSupplementDoseValue({
+            dosage: nextDose,
+            tablets: nextTablets,
+            times: nextTimes,
+            taken: currentDose.taken
+        });
+
+        rememberCurrentSupplementTableScroll();
+        await updateSupplementPlanInFirestore(plan);
+        backdrop.remove();
+        renderSupplementsPage();
+    });
+
+    buttons.append(cancelBtn, saveBtn);
+    modal.append(buttons);
+    backdrop.append(modal);
+    document.body.append(backdrop);
+
+    setTimeout(() => (isNew ? nameInput : doseInput)?.focus(), 0);
+
+    backdrop.addEventListener('click', event => {
+        if (event.target === backdrop) backdrop.remove();
+    });
+}
+
+function ensureSupplementCalendarState(planData) {
+    const todayDateString = getTodayDateString();
+    if (!supplementCalendarSelectedDate) {
+        supplementCalendarSelectedDate = todayDateString;
+    }
+
+    if (!supplementCalendarMonthDate) {
+        const selectedDate = parseSupplementDateString(supplementCalendarSelectedDate) || new Date();
+        supplementCalendarMonthDate = getSupplementMonthStart(selectedDate);
+    }
+}
+
+function changeSupplementCalendarMonth(planData, direction) {
+    const baseDate = supplementCalendarMonthDate || new Date();
+    const nextMonth = addSupplementMonths(baseDate, direction);
+    supplementCalendarMonthDate = getSupplementMonthStart(nextMonth);
+    renderSupplementsPage();
+}
+
+function attachSupplementCalendarSwipe(viewport, track, planData) {
+    let startX = 0;
+    let startY = 0;
+    let currentX = 0;
+    let currentY = 0;
+    let panAxis = null;
+    let isDragging = false;
+    let isAnimating = false;
+    const animationDuration = 220;
+    const swipeThreshold = 40;
+
+    const animateTo = (direction) => {
+        if (isAnimating) return;
+        isAnimating = true;
+
+        track.style.transition = `transform ${animationDuration}ms ease`;
+
+        if (direction === 'next') {
+            track.style.transform = 'translate3d(-200%, 0, 0)';
+            navigator.vibrate?.(8);
+            setTimeout(() => changeSupplementCalendarMonth(planData, 1), animationDuration);
+            return;
+        }
+
+        if (direction === 'prev') {
+            track.style.transform = 'translate3d(0%, 0, 0)';
+            navigator.vibrate?.(8);
+            setTimeout(() => changeSupplementCalendarMonth(planData, -1), animationDuration);
+            return;
+        }
+
+        track.style.transform = 'translate3d(-100%, 0, 0)';
+        setTimeout(() => {
+            isAnimating = false;
+        }, animationDuration);
+    };
+
+    viewport.addEventListener('touchstart', event => {
+        if (isAnimating || !event.touches?.length) return;
+        const touch = event.touches[0];
+        startX = touch.clientX;
+        startY = touch.clientY;
+        currentX = startX;
+        currentY = startY;
+        panAxis = null;
+        isDragging = true;
+        track.style.transition = 'none';
+    }, { passive: true });
+
+    viewport.addEventListener('touchmove', event => {
+        if (!isDragging || isAnimating || !event.touches?.length) return;
+
+        const touch = event.touches[0];
+        const diffX = touch.clientX - startX;
+        const diffY = touch.clientY - startY;
+        currentX = touch.clientX;
+        currentY = touch.clientY;
+
+        if (!panAxis) {
+            panAxis = resolveSwipePanAxis(diffX, diffY);
+            if (panAxis == null) return;
+            if (panAxis === 'y') {
+                isDragging = false;
+                track.style.transition = `transform ${animationDuration}ms ease`;
+                track.style.transform = 'translate3d(-100%, 0, 0)';
+                return;
+            }
+        }
+
+        if (panAxis !== 'x') return;
+        if (event.cancelable) event.preventDefault();
+
+        const width = viewport.offsetWidth || 1;
+        const percent = (diffX / width) * 100;
+        track.style.transform = `translate3d(calc(-100% + ${percent}%), 0, 0)`;
+    }, { passive: false });
+
+    viewport.addEventListener('touchend', () => {
+        panAxis = null;
+        if (!isDragging || isAnimating) return;
+        isDragging = false;
+
+        const diffX = currentX - startX;
+
+        if (diffX <= -swipeThreshold) {
+            animateTo('next');
+            return;
+        }
+
+        if (diffX >= swipeThreshold) {
+            animateTo('prev');
+            return;
+        }
+
+        animateTo('current');
+    });
+
+    viewport.addEventListener('touchcancel', () => {
+        panAxis = null;
+        isDragging = false;
+        if (!isAnimating) {
+            track.style.transition = `transform ${animationDuration}ms ease`;
+            track.style.transform = 'translate3d(-100%, 0, 0)';
+        }
+    });
+}
+
+function getSupplementPlanDateMap(planData) {
+    const dateMap = new Map();
+    (Array.isArray(planData?.data) ? planData.data : []).forEach(day => {
+        if (day?.date) dateMap.set(day.date, day);
+    });
+    return dateMap;
+}
+
+function getSupplementDayRecord(planData, dateStr) {
+    if (!dateStr) return null;
+    return getSupplementPlanDateMap(planData).get(dateStr) || null;
+}
+
+function getSupplementDoseCount(dayRecord, planData) {
+    return getSupplementDayDoseEntries(dayRecord, planData).length;
+}
+
+function getSupplementDayDoseEntries(dayRecord, planData) {
+    if (!dayRecord || !dayRecord.doses) return [];
+
+    const metadataMap = new Map(
+        getSupplementEntries(planData, { includeArchived: true }).map(entry => [entry.name, entry])
+    );
+
+    const orderedNames = [
+        ...metadataMap.keys(),
+        ...Object.keys(dayRecord.doses || {}).filter(name => !metadataMap.has(name))
+    ];
+
+    return orderedNames
+        .map(name => {
+            const rawDose = dayRecord.doses?.[name];
+            const dose = formatSupplementDoseSummary(rawDose);
+            if (!dose) return null;
+            const parsed = parseSupplementDoseValue(rawDose);
+            const meta = metadataMap.get(name) || {
+                name,
+                shortName: normalizeSupplementShortName('', name)
+            };
+            return {
+                name,
+                shortName: meta.shortName || normalizeSupplementShortName('', name),
+                dose,
+                quantityText: formatSupplementDoseQuantity(rawDose, { compactTabletSuffix: false }),
+                timesText: formatSupplementDoseTimeLine(rawDose),
+                taken: parsed.taken
+            };
+        })
+        .filter(Boolean);
+}
+function parseSupplementDoseValue(rawDose) {
+    if (rawDose && typeof rawDose === 'object' && !Array.isArray(rawDose)) {
+        const times = normalizeSupplementTimes(rawDose.times || rawDose.time || rawDose.at);
+
+        return {
+            dosage: String(rawDose.dosage || rawDose.dose || rawDose.value || '').trim(),
+            tablets: String(rawDose.tablets || rawDose.pills || rawDose.count || '').trim(),
+            time: times[0] || '',
+            times,
+            taken: Boolean(rawDose.taken || rawDose.completed || rawDose.done || rawDose.isTaken)
+        };
+    }
+
+    return {
+        dosage: rawDose == null ? '' : String(rawDose).trim(),
+        tablets: '',
+        time: '',
+        times: [],
+        taken: false
+    };
+}
+
+function buildSupplementDoseValue({ dosage = '', tablets = '', time = '', times = [], taken = false } = {}) {
+    const cleanDose = String(dosage || '').trim();
+    const cleanTablets = String(tablets || '').trim();
+    const cleanTimes = normalizeSupplementTimes(times.length > 0 ? times : time);
+    const isTaken = Boolean(taken);
+
+    if (!cleanDose && !cleanTablets && cleanTimes.length === 0) return '';
+    if (cleanDose && !cleanTablets && cleanTimes.length === 0 && !isTaken) return cleanDose;
+
+    const value = {
+        dosage: cleanDose,
+        tablets: cleanTablets,
+        times: cleanTimes
+    };
+
+    if (isTaken) {
+        value.taken = true;
+    }
+
+    return value;
+}
+
+function hasSupplementDoseValue(rawDose) {
+    const dose = parseSupplementDoseValue(rawDose);
+    return Boolean(dose.dosage || dose.tablets || dose.times.length);
+}
+
+function cloneSupplementDoseValue(rawDose) {
+    const dose = parseSupplementDoseValue(rawDose);
+    return buildSupplementDoseValue({
+        dosage: dose.dosage,
+        tablets: dose.tablets,
+        times: dose.times,
+        taken: dose.taken
+    });
+}
+
+function setSupplementDoseClipboardValue(rawDose, meta = {}) {
+    supplementDoseClipboard = cloneSupplementDoseValue(rawDose);
+    supplementDoseClipboardMeta = {
+        cellKey: meta.cellKey || '',
+        dateStr: meta.dateStr || '',
+        supplementName: meta.supplementName || ''
+    };
+}
+
+function hasSupplementDoseClipboardValue() {
+    return hasSupplementDoseValue(supplementDoseClipboard);
+}
+
+export function getSupplementPlanSnapshotSignature(planData) {
+    const normalizedPlan = {
+        supplements: Array.isArray(planData?.supplements)
+            ? planData.supplements.map((item) => {
+                if (item && typeof item === 'object' && !Array.isArray(item)) {
+                    return {
+                        name: String(item.name || '').trim(),
+                        shortName: String(item.shortName || '').trim(),
+                        archived: Boolean(item.archived)
+                    };
+                }
+                return String(item || '').trim();
+            })
+            : [],
+        data: Array.isArray(planData?.data)
+            ? planData.data.map((day) => ({
+                date: String(day?.date || ''),
+                dayOfWeek: String(day?.dayOfWeek || ''),
+                doses: Object.fromEntries(
+                    Object.entries(day?.doses || {})
+                        .sort(([left], [right]) => left.localeCompare(right))
+                        .map(([name, value]) => [name, cloneSupplementDoseValue(value)])
+                )
+            }))
+            : []
+    };
+
+    return JSON.stringify(normalizedPlan);
+}
+
+function clearSupplementDoseLongPressPopover() {
+    if (typeof supplementDoseLongPressOverlayCleanup === 'function') {
+        supplementDoseLongPressOverlayCleanup();
+    }
+    supplementDoseLongPressOverlayCleanup = null;
+}
+
+function getSupplementDoseFromState(dateStr, supplementName) {
+    const plan = state.supplementPlan || { data: [] };
+    const dayRecord = (plan.data || []).find(day => day.date === dateStr);
+    return dayRecord?.doses?.[supplementName] || '';
+}
+
+function updateSupplementDoseCellButton(button, rawDose) {
+    if (!button) return;
+
+    const showCellTimes = getSupplementsTableRangeMode() === 'week';
+    const quantityText = formatSupplementDoseQuantity(rawDose);
+    const timeText = showCellTimes ? formatSupplementDoseTimeLabel(rawDose) : '';
+    const hasValue = Boolean(quantityText || timeText);
+
+    button.classList.toggle('has-dose', hasValue);
+    button.classList.toggle('supplement-dose-cell-btn--with-time', Boolean(timeText));
+    button.replaceChildren();
+
+    if (!hasValue) return;
+
+    const shouldRenderHistoryLabel =
+        button.dataset.historyLabel === '1' &&
+        (() => {
+            const wrapper = button.closest('.supplement-table-wrapper');
+            const supplementName = button.dataset.supplementName || '';
+            const currentDate = button.dataset.date || '';
+            if (!wrapper || !supplementName || !currentDate) return false;
+
+            const rows = Array.from(wrapper.querySelectorAll('tbody tr[data-date]'));
+            for (const row of rows) {
+                if (row.dataset.date === currentDate) return true;
+                if (hasSupplementDoseValue(getSupplementDoseFromState(row.dataset.date, supplementName))) {
+                    return false;
+                }
+            }
+            return true;
+        })();
+
+    if (shouldRenderHistoryLabel) {
+        button.append(
+            createElement(
+                'span',
+                'supplement-dose-cell-history-label',
+                button.dataset.historyLabelText || button.dataset.supplementName || ''
+            )
+        );
+    }
+
+    button.append(createElement('span', 'supplement-dose-cell-main', quantityText || ''));
+    if (timeText) {
+        button.append(createElement('span', 'supplement-dose-cell-time', timeText));
+    }
+}
+
+function getSupplementDoseLongPressAction(dateStr, supplementName, rawDose) {
+    if (hasSupplementDoseValue(rawDose)) {
+        return 'copy';
+    }
+    if (hasSupplementDoseClipboardValue()) {
+        return 'paste';
+    }
+    return '';
+}
+
+function showSupplementDoseLongPressPopover(tableWrapper, anchorElement, label, onAction) {
+    clearSupplementDoseLongPressPopover();
+    if (!tableWrapper || !anchorElement || !label || typeof onAction !== 'function') return;
+
+    const popover = createElement('div', 'supplement-dose-longpress-popover');
+    const button = createElement('button', 'supplement-dose-longpress-action', label);
+    button.type = 'button';
+    popover.append(button);
+    document.body.append(popover);
+
+    let closed = false;
+    const syncPosition = () => {
+        if (closed || !popover.isConnected || !anchorElement.isConnected) return;
+        const anchorRect = anchorElement.getBoundingClientRect();
+        const viewportWidth = Math.round(window.visualViewport?.width || window.innerWidth || document.documentElement?.clientWidth || 0);
+        const viewportHeight = Math.round(window.visualViewport?.height || window.innerHeight || document.documentElement?.clientHeight || 0);
+        const popoverWidth = Math.round(popover.offsetWidth || 92);
+        const popoverHeight = Math.round(popover.offsetHeight || 46);
+        const nextLeft = clampValue(
+            Math.round(anchorRect.left + (anchorRect.width - popoverWidth) / 2),
+            8,
+            Math.max(8, viewportWidth - popoverWidth - 8)
+        );
+        const nextTop = clampValue(
+            Math.round(anchorRect.top - popoverHeight - 8),
+            8,
+            Math.max(8, viewportHeight - popoverHeight - 8)
+        );
+
+        popover.style.left = `${nextLeft}px`;
+        popover.style.top = `${nextTop}px`;
+    };
+
+    const close = () => {
+        if (closed) return;
+        closed = true;
+        document.removeEventListener('pointerdown', handlePointerDown, true);
+        tableWrapper.removeEventListener('scroll', handleWrapperScroll);
+        window.removeEventListener('resize', handleViewportChange);
+        window.visualViewport?.removeEventListener('resize', handleViewportChange);
+        window.visualViewport?.removeEventListener('scroll', handleViewportChange);
+        popover.remove();
+        if (supplementDoseLongPressOverlayCleanup === close) {
+            supplementDoseLongPressOverlayCleanup = null;
+        }
+    };
+
+    const handleViewportChange = () => syncPosition();
+    const handleWrapperScroll = () => close();
+    const handlePointerDown = (event) => {
+        if (popover.contains(event.target)) return;
+        close();
+    };
+
+    button.addEventListener('click', async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        close();
+        await onAction();
+    });
+
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    tableWrapper.addEventListener('scroll', handleWrapperScroll, { passive: true });
+    window.addEventListener('resize', handleViewportChange);
+    window.visualViewport?.addEventListener('resize', handleViewportChange);
+    window.visualViewport?.addEventListener('scroll', handleViewportChange);
+
+    requestAnimationFrame(syncPosition);
+    supplementDoseLongPressOverlayCleanup = close;
+}
+
+function formatSupplementDoseQuantity(rawDose, options = {}) {
+    const dose = parseSupplementDoseValue(rawDose);
+    const hasManyTimes = dose.times.length > 1;
+    const quantityPrefix = hasManyTimes ? 'по ' : '';
+    const tabletSuffix = options.compactTabletSuffix === false ? ' табл.' : 'табл';
+    const quantityParts = [];
+
+    if (dose.dosage) quantityParts.push(`${quantityPrefix}${dose.dosage}`);
+    if (dose.tablets) quantityParts.push(`${quantityPrefix}${dose.tablets}${tabletSuffix}`);
+
+    return quantityParts.join(' · ');
+}
+
+function formatSupplementDoseTimeLabel(rawDose) {
+    const dose = parseSupplementDoseValue(rawDose);
+    return formatSupplementTimesText(dose.times);
+}
+
+function formatSupplementDoseTimeLine(rawDose) {
+    return normalizeSupplementTimes(parseSupplementDoseValue(rawDose).times)
+        .map(time => time.replace(':', '.'))
+        .join(', ');
+}
+
+function formatSupplementDoseSummary(rawDose) {
+    const dose = parseSupplementDoseValue(rawDose);
+    const hasManyTimes = dose.times.length > 1;
+    const quantityPrefix = hasManyTimes ? 'по ' : '';
+    const quantityParts = [];
+    const timesText = formatSupplementTimesText(dose.times);
+
+    if (dose.dosage) quantityParts.push(`${quantityPrefix}${dose.dosage}`);
+    if (dose.tablets) quantityParts.push(`${quantityPrefix}${dose.tablets} табл.`);
+
+    const quantityText = quantityParts.join(' · ');
+
+    if (quantityText && timesText) return `${quantityText} в ${timesText}`;
+    if (quantityText) return quantityText;
+    if (timesText) return `в ${timesText}`;
+
+    return '';
+}
+
+function normalizeSupplementTimes(value) {
+    const values = Array.isArray(value) ? value : [value];
+    const normalized = values
+        .map(item => normalizeSupplementTimeValue(item))
+        .filter(Boolean);
+
+    return Array.from(new Set(normalized));
+}
+
+function normalizeSupplementTimeValue(value) {
+    const clean = String(value || '').trim().replace('.', ':');
+    if (!clean) return '';
+
+    const match = clean.match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) return clean;
+
+    const hours = Math.min(Math.max(Number(match[1]), 0), 23);
+    const minutes = Math.min(Math.max(Number(match[2]), 0), 59);
+
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+function formatSupplementTimesText(times) {
+    const labels = normalizeSupplementTimes(times).map(time => time.replace(':', '.'));
+
+    if (labels.length <= 1) return labels[0] || '';
+    if (labels.length === 2) return `${labels[0]} и ${labels[1]}`;
+
+    return `${labels.slice(0, -1).join(', ')} и ${labels[labels.length - 1]}`;
+}
+
+function getSupplementDoseModalTimes(timesList) {
+    return normalizeSupplementTimes(
+        Array.from(timesList.querySelectorAll('.supplement-dose-time-input')).map(input => input.value)
+    );
+}
+
+function getSupplementPlural(count) {
+    const lastTwo = count % 100;
+    const last = count % 10;
+
+    if (lastTwo >= 11 && lastTwo <= 14) return 'препаратов';
+    if (last === 1) return 'препарат';
+    if (last >= 2 && last <= 4) return 'препарата';
+    return 'препаратов';
+}
+
+function getFirstSupplementRecordInMonth(planData, monthDate) {
+    const records = Array.isArray(planData?.data) ? planData.data : [];
+    const match = records.find(day => {
+        const parsed = parseSupplementDateString(day.date);
+        return parsed &&
+            parsed.getFullYear() === monthDate.getFullYear() &&
+            parsed.getMonth() === monthDate.getMonth();
+    });
+
+    return match?.date || null;
+}
+
+function parseSupplementDateString(dateString) {
+    if (!dateString || typeof dateString !== 'string') return null;
+
+    const [day, month, year] = dateString.split('.').map(Number);
+    if (!day || !month || !year) return null;
+
+    const date = new Date(year, month - 1, day);
+    return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatSupplementDateString(date) {
+    return [
+        String(date.getDate()).padStart(2, '0'),
+        String(date.getMonth() + 1).padStart(2, '0'),
+        date.getFullYear()
+    ].join('.');
+}
+
+function getSupplementWeekStartDate(date) {
+    const weekStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const dayIndex = weekStart.getDay();
+    const mondayOffset = dayIndex === 0 ? -6 : 1 - dayIndex;
+    weekStart.setDate(weekStart.getDate() + mondayOffset);
+    return weekStart;
+}
+
+function getSupplementMonthStart(date) {
+    return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function addSupplementMonths(date, offset) {
+    return new Date(date.getFullYear(), date.getMonth() + offset, 1);
+}
+
+function getSupplementMonthTitle(date) {
+    const monthNames = [
+        'Январь',
+        'Февраль',
+        'Март',
+        'Апрель',
+        'Май',
+        'Июнь',
+        'Июль',
+        'Август',
+        'Сентябрь',
+        'Октябрь',
+        'Ноябрь',
+        'Декабрь'
+    ];
+
+    return `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
+}
+
 async function updateSupplementPlanInFirestore(newPlan) {
     const cycleRef = getCycleDocRef(); // 👈 теперь цикл, а не supplements
     if (!cycleRef) {
         showToast('Ошибка: Не выбран цикл для сохранения плана добавок.');
-        return;
+        return false;
     }
 
     try {
+        // Любое изменение плана вызывает перерендер страницы; фиксируем текущий скролл таблицы,
+        // чтобы после добавления/удаления/редактирования не сбрасывало на текущую неделю.
+        rememberCurrentSupplementTableScroll();
         await updateDoc(cycleRef, { supplementPlan: newPlan });
+        state.supplementPlan = newPlan;
+        syncSupplementsBottomNavBadge(newPlan);
+        // return true;
         // showToast('План добавок сохранен!');
         console.log("✅ supplementPlan обновлён в документе цикла:", newPlan);
+        return true;
     } catch (error) {
         console.error("Ошибка при сохранении плана добавок:", error);
         showToast('Ошибка сохранения плана добавок. Проверьте правила Firestore!');
+        return false;
     }
 }
 
@@ -291,13 +2279,19 @@ async function addSupplement(supplementName) {
     if (!state.supplementPlan) return;
 
     const newPlan = JSON.parse(JSON.stringify(state.supplementPlan));
+    ensureSupplementEntrySlots(newPlan);
 
-    if (newPlan.supplements.includes(supplementName)) {
+    if (getSupplementNames(newPlan).length >= MAX_SUPPLEMENTS_COUNT) {
+        showToast(`Можно добавить не больше ${MAX_SUPPLEMENTS_COUNT} препаратов.`);
+        return;
+    }
+
+    if (getSupplementNames(newPlan, { includeArchived: true }).includes(supplementName)) {
         showToast('Этот препарат уже добавлен!');
         return;
     }
 
-    newPlan.supplements.push(supplementName);
+    newPlan.supplements.push(createSupplementMeta(supplementName, '', false, getNextAvailableSupplementSlot(newPlan)));
 
     // Добавляем пустые поля для нового препарата во все существующие записи
     newPlan.data = newPlan.data.map(dayRecord => {
@@ -306,6 +2300,7 @@ async function addSupplement(supplementName) {
         return dayRecord;
     });
 
+    rememberCurrentSupplementTableScroll();
     await updateSupplementPlanInFirestore(newPlan);
     showToast(`Препарат "${supplementName}" добавлен!`);
 }
@@ -340,7 +2335,7 @@ async function addWeek() {
     const newRecords = newDates.map(dateInfo => {
         const doseMap = {};
         // Заполняем пустые дозировки для всех существующих препаратов
-        newPlan.supplements.forEach(supName => {
+        getSupplementNames(newPlan).forEach(supName => {
             doseMap[supName] = '';
         });
 
@@ -850,7 +2845,10 @@ function createJournalSummaryHtml(journalData, startDateString, endDateString) {
 
 
 function createSupplementsCalendarHtml(planData, filteredSupplementsData) {
-    if (planData.supplements.length === 0 || filteredSupplementsData.length === 0) {
+    const supplementEntries = getSupplementEntries(planData, { includeArchived: true })
+        .filter(entry => supplementHasHistoryInRecords(filteredSupplementsData, entry.name));
+
+    if (supplementEntries.length === 0 || filteredSupplementsData.length === 0) {
         return `
             <div style="margin-bottom: 20px;">
                 <h3 style="color: #6c757d; border-bottom: 1px solid #ccc; padding-bottom: 5px;">План приема БАДов</h3>
@@ -859,11 +2857,10 @@ function createSupplementsCalendarHtml(planData, filteredSupplementsData) {
         `;
     }
 
-    const supplementNames = planData.supplements.map(name => {
-        return typeof name === 'object' && name.name ? name.name : name;
-    });
+    // Важно для PDF: даже если в таблице несколько препаратов "живут" в одном визуальном slot,
+    // в PDF каждый препарат должен иметь свой собственный столбец.
+    const supplementNames = supplementEntries.map(entry => entry.name);
 
-    // 🔥 НОВЫЙ ПАРАМЕТР: МАКСИМАЛЬНОЕ КОЛИЧЕСТВО СТОЛБЦОВ НА ЭКРАН (для мобильного)
     const MAX_COLUMNS_PER_TABLE = 5;
     let finalHtml = `
         <div class="pdf-supplements-section" style="margin-top: 20px;">
@@ -902,8 +2899,9 @@ function createSupplementsCalendarHtml(planData, filteredSupplementsData) {
                     <td>${dayRecord.dayOfWeek || '—'}</td>
 
                     ${chunkedNames.map(supName => {
-                const dose = dayRecord.doses && dayRecord.doses[supName] ? dayRecord.doses[supName] : '';
-                return `<td style="font-size: 0.9em;">${dose || '—'}</td>`;
+                const rawDose = dayRecord.doses?.[supName] ?? '';
+                const doseText = formatSupplementDoseSummary(rawDose);
+                return `<td style="font-size: 0.9em;">${doseText || '—'}</td>`;
             }).join('')}
                 </tr>
             `;
@@ -980,20 +2978,250 @@ function createProgramsHtml(programsInCycle) {
 // ====== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ======
 
 // Безопасно получить список имён добавок
-function getSupplementNames(planData) {
+function normalizeSupplementShortName(value, fallback = '') {
+  const cleanValue = String(value || '').trim().replace(/\s+/g, ' ');
+  const baseValue = cleanValue || String(fallback || '').trim().replace(/\s+/g, ' ');
+  return baseValue.slice(0, SUPPLEMENT_SHORT_NAME_LIMIT);
+}
+
+function normalizeSupplementSlot(slot) {
+  const numericSlot = Number(slot);
+  return Number.isInteger(numericSlot) && numericSlot >= 0 ? numericSlot : null;
+}
+
+function createSupplementMeta(name, shortName = '', archived = false, slot = null) {
+  const cleanName = String(name || '').trim();
+  const normalizedSlot = normalizeSupplementSlot(slot);
+  return {
+    name: cleanName,
+    shortName: normalizeSupplementShortName(shortName, cleanName),
+    archived: Boolean(archived),
+    ...(normalizedSlot !== null ? { slot: normalizedSlot } : {})
+  };
+}
+
+function collectSupplementEntries(planData) {
   if (!planData || !Array.isArray(planData.supplements)) return [];
-  return planData.supplements.map(s => (typeof s === 'object' && s?.name) ? s.name : String(s));
+
+  const reservedSlots = new Set();
+  planData.supplements.forEach(item => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return;
+    const slot = normalizeSupplementSlot(item.slot);
+    if (slot !== null) reservedSlots.add(slot);
+  });
+
+  let nextAutoSlot = 0;
+  const takeNextAutoSlot = () => {
+    while (reservedSlots.has(nextAutoSlot)) {
+      nextAutoSlot += 1;
+    }
+    const resolvedSlot = nextAutoSlot;
+    reservedSlots.add(resolvedSlot);
+    nextAutoSlot += 1;
+    return resolvedSlot;
+  };
+
+  return planData.supplements
+    .map((item, planIndex) => {
+      if (item && typeof item === 'object' && !Array.isArray(item)) {
+        const name = String(item.name || '').trim();
+        if (!name) return null;
+        return {
+          name,
+          shortName: normalizeSupplementShortName(item.shortName, name),
+          archived: Boolean(item.archived),
+          slot: normalizeSupplementSlot(item.slot) ?? takeNextAutoSlot(),
+          planIndex
+        };
+      }
+
+      const name = String(item || '').trim();
+      if (!name) return null;
+      return {
+        name,
+        shortName: normalizeSupplementShortName('', name),
+        archived: false,
+        slot: takeNextAutoSlot(),
+        planIndex
+      };
+    })
+    .filter(Boolean);
+}
+
+function ensureSupplementEntrySlots(planData) {
+  if (!planData) return [];
+  const entries = collectSupplementEntries(planData);
+  planData.supplements = entries
+    .sort((left, right) => left.planIndex - right.planIndex)
+    .map(entry => createSupplementMeta(entry.name, entry.shortName, entry.archived, entry.slot));
+  return entries;
+}
+
+function getSupplementEntries(planData, options = {}) {
+  const includeArchived = Boolean(options.includeArchived);
+
+  return collectSupplementEntries(planData)
+    .filter(Boolean)
+    .filter(entry => includeArchived || !entry.archived)
+    .sort((left, right) => left.slot - right.slot || left.planIndex - right.planIndex);
+}
+
+function getSupplementNames(planData, options = {}) {
+  return getSupplementEntries(planData, options).map(entry => entry.name);
+}
+
+function getSupplementEntryByName(planData, supplementName) {
+  return getSupplementEntries(planData, { includeArchived: true }).find(entry => entry.name === supplementName) || {
+    name: supplementName,
+    shortName: normalizeSupplementShortName('', supplementName),
+    archived: false,
+    slot: null,
+    planIndex: -1
+  };
+}
+
+function supplementHasHistoryInRecords(records, supplementName) {
+  return Array.isArray(records) && records.some(dayRecord => hasSupplementDoseValue(dayRecord?.doses?.[supplementName]));
+}
+
+function supplementHasHistory(planData, supplementName) {
+  return supplementHasHistoryInRecords(planData?.data, supplementName);
+}
+
+function getSupplementHistoryMap(planData, records = null) {
+  const dataset = Array.isArray(records) ? records : planData?.data;
+  const historyMap = new Map();
+  getSupplementEntries(planData, { includeArchived: true }).forEach(entry => {
+    if (historyMap.has(entry.name)) return;
+    historyMap.set(entry.name, supplementHasHistoryInRecords(dataset, entry.name));
+  });
+  return historyMap;
+}
+
+function getSupplementTableColumns(planData) {
+  const allEntries = getSupplementEntries(planData, { includeArchived: true })
+    .sort((left, right) => left.slot - right.slot || left.planIndex - right.planIndex);
+  const historyMap = getSupplementHistoryMap(planData);
+  const slotMap = new Map();
+  let maxSlot = -1;
+
+  allEntries.forEach(entry => {
+    maxSlot = Math.max(maxSlot, entry.slot);
+    const column = slotMap.get(entry.slot) || {
+      slot: entry.slot,
+      entries: [],
+      entriesWithHistory: [],
+      activeEntry: null,
+      hasHistory: false
+    };
+    column.entries.push(entry);
+    if (!entry.archived) column.activeEntry = entry;
+    if (historyMap.get(entry.name)) {
+      column.entriesWithHistory.push(entry);
+      column.hasHistory = true;
+    }
+    slotMap.set(entry.slot, column);
+  });
+
+  const totalColumns = Math.max(5, maxSlot + 1);
+  const columns = [];
+  let activeIndex = 0;
+
+  for (let slot = 0; slot < totalColumns; slot += 1) {
+    const column = slotMap.get(slot);
+    if (!column || (!column.activeEntry && !column.hasHistory)) {
+      columns.push({
+        type: 'empty',
+        slot,
+        entries: [],
+        entriesWithHistory: [],
+        activeEntry: null,
+        activeIndex: -1,
+        hasHistory: false,
+        labelShownEntries: new Set()
+      });
+      continue;
+    }
+
+    const isActiveColumn = Boolean(column.activeEntry);
+    columns.push({
+      type: isActiveColumn ? 'active' : 'history',
+      slot,
+      entries: column.entries,
+      entriesWithHistory: column.entriesWithHistory,
+      activeEntry: column.activeEntry,
+      activeIndex: isActiveColumn ? activeIndex++ : -1,
+      hasHistory: column.hasHistory,
+      name: column.activeEntry?.name || '',
+      shortName: column.activeEntry?.shortName || '',
+      planIndex: column.activeEntry?.planIndex ?? -1,
+      labelShownEntries: new Set()
+    });
+  }
+
+  return columns;
+}
+
+function getNextAvailableSupplementSlot(planData) {
+  const columns = getSupplementTableColumns(planData);
+  const reusableColumn = columns.find(column => !column.activeEntry && !column.hasHistory);
+  if (reusableColumn) return reusableColumn.slot;
+  return columns.length;
+}
+
+function getSupplementColumnDisplayEntry(column, dayRecord) {
+  if (!column || !dayRecord?.doses) return null;
+
+  const visibleEntries = (column.entries || []).filter(entry => hasSupplementDoseValue(dayRecord.doses?.[entry.name]));
+  if (visibleEntries.length === 0) return null;
+
+  if (column.activeEntry) {
+    const activeMatch = visibleEntries.find(entry => entry.name === column.activeEntry.name);
+    if (activeMatch) return activeMatch;
+  }
+
+  return visibleEntries[visibleEntries.length - 1];
+}
+
+function shouldShowSupplementColumnHistoryLabel(column, entry) {
+  if (!column || !entry) return false;
+  if (entry.archived) return true;
+  return (column.entriesWithHistory || []).some(item => item.name !== entry.name);
+}
+
+function rememberSupplementTableScroll(tableWrapper) {
+  if (!tableWrapper) return;
+  supplementTableScrollState = {
+    cycleId: state.selectedCycleId || '',
+    rangeMode: getSupplementsTableRangeMode(),
+    left: tableWrapper.scrollLeft,
+    top: tableWrapper.scrollTop
+  };
+}
+
+function getRememberedSupplementTableScroll(rangeMode) {
+  if (!supplementTableScrollState) return null;
+  if (supplementTableScrollState.cycleId !== (state.selectedCycleId || '')) return null;
+  if (supplementTableScrollState.rangeMode !== rangeMode) return null;
+  // Не обнуляем: используем как "последний известный скролл" и при входе на страницу,
+  // и после любых изменений данных.
+  return supplementTableScrollState;
+}
+
+function rememberCurrentSupplementTableScroll() {
+  rememberSupplementTableScroll(document.getElementById('supplement-table-wrapper'));
 }
 
 // Переименование препарата
 async function renameSupplement(oldName, newName) {
   if (!oldName || !newName || oldName === newName) return;
   const plan = JSON.parse(JSON.stringify(state.supplementPlan || { supplements: [], data: [] }));
-  const names = getSupplementNames(plan);
-  const idx = names.indexOf(oldName);
-  if (idx === -1) return;
+  ensureSupplementEntrySlots(plan);
+  const entries = getSupplementEntries(plan, { includeArchived: true });
+  const currentEntry = entries.find(entry => entry.name === oldName);
+  if (!currentEntry) return;
 
-  plan.supplements[idx] = newName;
+  plan.supplements[currentEntry.planIndex] = createSupplementMeta(newName, currentEntry.shortName, currentEntry.archived, currentEntry.slot);
 
   (plan.data || []).forEach(day => {
     if (!day.doses) day.doses = {};
@@ -1009,17 +3237,547 @@ async function renameSupplement(oldName, newName) {
 }
 
 // Drag&Drop перестановка колонок
+async function reorderSupplementColumns(dragFrom, dragTo) {
+  const plan = JSON.parse(JSON.stringify(state.supplementPlan || { supplements: [], data: [] }));
+  ensureSupplementEntrySlots(plan);
+  const activeEntries = getSupplementEntries(plan);
+  if (dragFrom === dragTo) return false;
+  if (dragFrom < 0 || dragTo < 0 || dragFrom >= activeEntries.length || dragTo >= activeEntries.length) return false;
+
+  const fromEntry = activeEntries[dragFrom];
+  const toEntry = activeEntries[dragTo];
+  if (!fromEntry || !toEntry || fromEntry.slot === toEntry.slot) return false;
+
+  const fromSlot = fromEntry.slot;
+  const toSlot = toEntry.slot;
+
+  plan.supplements = (Array.isArray(plan.supplements) ? plan.supplements : []).map(item => {
+    const meta = item && typeof item === 'object' && !Array.isArray(item)
+      ? createSupplementMeta(item.name, item.shortName, item.archived, item.slot)
+      : createSupplementMeta(item);
+
+    if (meta.slot === fromSlot) {
+      meta.slot = toSlot;
+    } else if (meta.slot === toSlot) {
+      meta.slot = fromSlot;
+    }
+    return meta;
+  });
+
+  await updateSupplementPlanInFirestore(plan);
+  return true;
+}
+
+function enableSupplementDoseCellLongPressActions(tableWrapper) {
+  const table = tableWrapper?.querySelector('.supplement-plan-table');
+  if (!tableWrapper || !table) return;
+
+  const longPressDelay = 420;
+  const moveCancelDistance = 20;
+  let pressTimer = null;
+  let pointerId = null;
+  let startX = 0;
+  let startY = 0;
+  let sourceButton = null;
+  let longPressTriggered = false;
+
+  tableWrapper.addEventListener('click', event => {
+    if (tableWrapper.dataset.supplementDoseLongPressSuppress !== '1') return;
+    event.preventDefault();
+    event.stopPropagation();
+    delete tableWrapper.dataset.supplementDoseLongPressSuppress;
+  }, true);
+
+  const clearPressTimer = () => {
+    if (!pressTimer) return;
+    clearTimeout(pressTimer);
+    pressTimer = null;
+  };
+
+  const suppressNextClick = () => {
+    tableWrapper.dataset.supplementDoseLongPressSuppress = '1';
+    setTimeout(() => {
+      if (tableWrapper.dataset.supplementDoseLongPressSuppress === '1') {
+        delete tableWrapper.dataset.supplementDoseLongPressSuppress;
+      }
+    }, 260);
+  };
+
+  const cleanup = () => {
+    clearPressTimer();
+    document.removeEventListener('pointermove', handlePointerMove);
+    document.removeEventListener('pointerup', handlePointerEnd);
+    document.removeEventListener('pointercancel', handlePointerEnd);
+    pointerId = null;
+    sourceButton = null;
+    longPressTriggered = false;
+  };
+
+  const runCellAction = async (button, action) => {
+    const dateStr = button?.dataset.date || '';
+    const supplementName = button?.dataset.supplementName || '';
+    if (!dateStr || !supplementName) return;
+
+    if (action === 'copy') {
+      const rawDose = getSupplementDoseFromState(dateStr, supplementName);
+      if (!hasSupplementDoseValue(rawDose)) return;
+      setSupplementDoseClipboardValue(rawDose, {
+        cellKey: `${dateStr}::${supplementName}`,
+        dateStr,
+        supplementName
+      });
+      navigator.vibrate?.(8);
+      showToast('Скопировано');
+      return;
+    }
+
+    if (action === 'paste') {
+      if (!hasSupplementDoseClipboardValue()) return;
+
+      const plan = JSON.parse(JSON.stringify(state.supplementPlan || { supplements: [], data: [] }));
+      const dayIndex = (plan.data || []).findIndex(day => day.date === dateStr);
+      if (dayIndex === -1) return;
+      const previousPlan = state.supplementPlan;
+      const previousRawDose = getSupplementDoseFromState(dateStr, supplementName);
+
+      plan.data[dayIndex].doses = plan.data[dayIndex].doses || {};
+      plan.data[dayIndex].doses[supplementName] = cloneSupplementDoseValue(supplementDoseClipboard);
+      state.supplementPlan = plan;
+      syncSupplementsBottomNavBadge(plan);
+      updateSupplementDoseCellButton(button, plan.data[dayIndex].doses[supplementName]);
+      state._supplementsSkipNextRenderSignature = getSupplementPlanSnapshotSignature(plan);
+
+      rememberCurrentSupplementTableScroll();
+      navigator.vibrate?.(8);
+      const saved = await updateSupplementPlanInFirestore(plan);
+      if (!saved) {
+        state.supplementPlan = previousPlan;
+        syncSupplementsBottomNavBadge(previousPlan);
+        delete state._supplementsSkipNextRenderSignature;
+        updateSupplementDoseCellButton(button, previousRawDose);
+        return;
+      }
+      showToast('Вставлено');
+    }
+  };
+
+  const triggerLongPressAction = (button) => {
+    const dateStr = button?.dataset.date || '';
+    const supplementName = button?.dataset.supplementName || '';
+    if (!dateStr || !supplementName) return;
+
+    const rawDose = getSupplementDoseFromState(dateStr, supplementName);
+    const action = getSupplementDoseLongPressAction(dateStr, supplementName, rawDose);
+    if (!action) return;
+
+    longPressTriggered = true;
+    suppressNextClick();
+    navigator.vibrate?.(8);
+    showSupplementDoseLongPressPopover(
+      tableWrapper,
+      button,
+      action === 'copy' ? 'Копировать' : 'Вставить',
+      async () => runCellAction(button, action)
+    );
+  };
+
+  function handlePointerMove(event) {
+    if (pointerId !== null && event.pointerId !== pointerId) return;
+    const diffX = event.clientX - startX;
+    const diffY = event.clientY - startY;
+
+    if (Math.hypot(diffX, diffY) > moveCancelDistance) {
+      clearPressTimer();
+    }
+  }
+
+  function handlePointerEnd(event) {
+    if (pointerId !== null && event.pointerId !== pointerId) return;
+    if (longPressTriggered) {
+      event.preventDefault();
+    }
+    cleanup();
+  }
+
+  const bindLongPressHandle = (button) => {
+    button.addEventListener('contextmenu', event => event.preventDefault());
+    button.addEventListener('pointerdown', event => {
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+
+      clearSupplementDoseLongPressPopover();
+      cleanup();
+      pointerId = event.pointerId;
+      sourceButton = button;
+      startX = event.clientX;
+      startY = event.clientY;
+      longPressTriggered = false;
+
+      document.addEventListener('pointermove', handlePointerMove, { passive: false });
+      document.addEventListener('pointerup', handlePointerEnd);
+      document.addEventListener('pointercancel', handlePointerEnd);
+      pressTimer = setTimeout(() => triggerLongPressAction(sourceButton), longPressDelay);
+    });
+  };
+
+  tableWrapper.querySelectorAll('button.supplement-dose-cell-btn').forEach(bindLongPressHandle);
+}
+
+function enableSupplementColumnLongPressDrag(tableWrapper, planData) {
+  const activeEntries = getSupplementEntries(planData);
+  const table = tableWrapper?.querySelector('.supplement-plan-table');
+  if (!tableWrapper || !table || activeEntries.length < 2) return;
+
+  const longPressDelay = 420;
+  const moveCancelDistance = 24;
+  let pressTimer = null;
+  let active = false;
+  let dragFrom = null;
+  let dragTo = null;
+  let startX = 0;
+  let startY = 0;
+  let pointerId = null;
+  let sourceButton = null;
+  let lockedScrollTop = 0;
+  let rootHadNoScroll = false;
+  let documentScrollLocked = false;
+
+  const syncDragAffordances = () => {
+    if (!active || dragFrom === null) return;
+    syncSupplementColumnDragChip(tableWrapper, table, dragTo ?? dragFrom);
+    syncSupplementColumnDragDoseOverlay(tableWrapper, table, dragFrom, activeEntries.length);
+  };
+
+  tableWrapper.addEventListener('click', event => {
+    if (tableWrapper.dataset.supplementColumnDragSuppress !== '1') return;
+    event.preventDefault();
+    event.stopPropagation();
+    delete tableWrapper.dataset.supplementColumnDragSuppress;
+  }, true);
+
+  const clearPressTimer = () => {
+    if (!pressTimer) return;
+    clearTimeout(pressTimer);
+    pressTimer = null;
+  };
+
+  const cleanup = () => {
+    const wasActive = active;
+    clearPressTimer();
+    document.removeEventListener('pointermove', handlePointerMove);
+    document.removeEventListener('pointerup', handlePointerEnd);
+    document.removeEventListener('pointercancel', handlePointerEnd);
+    document.removeEventListener('touchmove', handleTouchMove);
+    tableWrapper.classList.remove('supplement-table-wrapper--column-dragging');
+    table.classList.remove('supplement-plan-table--column-dragging');
+    if (wasActive) {
+      const root = document.getElementById('root');
+      if (root && !rootHadNoScroll) root.classList.remove('root-no-scroll');
+      tableWrapper.scrollTop = lockedScrollTop;
+    }
+    if (documentScrollLocked) {
+      document.documentElement.classList.remove('supplement-column-drag-lock');
+      document.body.classList.remove('supplement-column-drag-lock');
+    }
+    clearSupplementColumnDragClasses(table);
+    removeSupplementColumnDragChip(tableWrapper);
+    removeSupplementColumnDragDoseOverlay();
+    active = false;
+    dragFrom = null;
+    dragTo = null;
+    pointerId = null;
+    sourceButton = null;
+    lockedScrollTop = 0;
+    rootHadNoScroll = false;
+    documentScrollLocked = false;
+  };
+
+  const suppressNextClick = () => {
+    tableWrapper.dataset.supplementColumnDragSuppress = '1';
+    setTimeout(() => {
+      if (tableWrapper.dataset.supplementColumnDragSuppress === '1') {
+        delete tableWrapper.dataset.supplementColumnDragSuppress;
+      }
+    }, 260);
+  };
+
+  const startColumnDrag = () => {
+    if (dragFrom === null) return;
+    active = true;
+    dragTo = dragFrom;
+    lockedScrollTop = tableWrapper.scrollTop;
+    const root = document.getElementById('root');
+    rootHadNoScroll = Boolean(root?.classList.contains('root-no-scroll'));
+    root?.classList.add('root-no-scroll');
+    document.documentElement.classList.add('supplement-column-drag-lock');
+    document.body.classList.add('supplement-column-drag-lock');
+    documentScrollLocked = true;
+    tableWrapper.classList.add('supplement-table-wrapper--column-dragging');
+    table.classList.add('supplement-plan-table--column-dragging');
+    applySupplementColumnDragState(table, dragFrom, dragTo, activeEntries.length);
+    syncDragAffordances();
+
+    try {
+      sourceButton?.setPointerCapture?.(pointerId);
+    } catch (error) {
+      // Pointer capture can fail if the pointer was already released.
+    }
+
+    navigator.vibrate?.(8);
+  };
+
+  function handleTouchMove(event) {
+    if (!active) return;
+    event.preventDefault();
+    tableWrapper.scrollTop = lockedScrollTop;
+    syncDragAffordances();
+  }
+
+  function handlePointerMove(event) {
+    if (pointerId !== null && event.pointerId !== pointerId) return;
+
+    const diffX = event.clientX - startX;
+    const diffY = event.clientY - startY;
+
+    if (!active) {
+      if (Math.hypot(diffX, diffY) > moveCancelDistance) {
+        clearPressTimer();
+      }
+      return;
+    }
+
+    event.preventDefault();
+    tableWrapper.scrollTop = lockedScrollTop;
+    autoScrollSupplementTableHorizontally(tableWrapper, event.clientX);
+
+    const nextColumnIndex = getSupplementColumnIndexFromPoint(table, activeEntries.length, event.clientX);
+    if (nextColumnIndex === null) {
+      syncDragAffordances();
+      return;
+    }
+
+    if (nextColumnIndex !== dragTo) {
+      dragTo = nextColumnIndex;
+      applySupplementColumnDragState(table, dragFrom, dragTo, activeEntries.length);
+    }
+    syncDragAffordances();
+  }
+
+  async function handlePointerEnd(event) {
+    if (pointerId !== null && event.pointerId !== pointerId) return;
+
+    const wasActive = active;
+    const from = dragFrom;
+    const to = dragTo;
+
+    if (wasActive) {
+      event.preventDefault();
+      suppressNextClick();
+    }
+
+    cleanup();
+
+    if (wasActive && from !== null && to !== null && from !== to) {
+      await reorderSupplementColumns(from, to);
+    }
+  }
+
+  const bindColumnDragHandle = (element, columnIndex) => {
+    if (!Number.isInteger(columnIndex) || columnIndex >= activeEntries.length) return;
+
+    element.addEventListener('pointerdown', event => {
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+
+      cleanup();
+      pointerId = event.pointerId;
+      sourceButton = element;
+      dragFrom = columnIndex;
+      dragTo = columnIndex;
+      startX = event.clientX;
+      startY = event.clientY;
+
+      document.addEventListener('pointermove', handlePointerMove, { passive: false });
+      document.addEventListener('touchmove', handleTouchMove, { passive: false });
+      document.addEventListener('pointerup', handlePointerEnd);
+      document.addEventListener('pointercancel', handlePointerEnd);
+      pressTimer = setTimeout(startColumnDrag, longPressDelay);
+    });
+  };
+
+  table.querySelectorAll('th.supplement-col[data-active-index]').forEach((headerCell) => {
+    const columnIndex = Number(headerCell.dataset.activeIndex);
+    if (!Number.isInteger(columnIndex)) return;
+    bindColumnDragHandle(headerCell.querySelector('.supplement-header') || headerCell, columnIndex);
+  });
+
+  tableWrapper.addEventListener('scroll', () => {
+    if (!active) return;
+    tableWrapper.scrollTop = lockedScrollTop;
+    syncDragAffordances();
+  }, { passive: true });
+}
+
+function getSupplementColumnIndexFromPoint(table, realColumnsCount, clientX) {
+  const headers = Array.from(table.querySelectorAll('th.supplement-col[data-index]'))
+    .sort((left, right) => Number(left.dataset.index) - Number(right.dataset.index))
+    .slice(0, realColumnsCount);
+  if (headers.length === 0) return null;
+
+  let nearestIndex = 0;
+  let nearestDistance = Infinity;
+
+  headers.forEach((header, index) => {
+    const rect = header.getBoundingClientRect();
+    if (clientX >= rect.left && clientX <= rect.right) {
+      nearestIndex = index;
+      nearestDistance = -1;
+      return;
+    }
+
+    const distance = Math.abs(clientX - (rect.left + rect.width / 2));
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestIndex = index;
+    }
+  });
+
+  return nearestIndex;
+}
+
+function autoScrollSupplementTableHorizontally(tableWrapper, clientX) {
+  const rect = tableWrapper.getBoundingClientRect();
+  const edge = 42;
+  const speed = 14;
+
+  if (clientX < rect.left + edge) {
+    tableWrapper.scrollLeft -= speed;
+  } else if (clientX > rect.right - edge) {
+    tableWrapper.scrollLeft += speed;
+  }
+}
+
+function clearSupplementColumnDragClasses(table) {
+  table.querySelectorAll('.supplement-column-selected, .supplement-column-drop-target').forEach(element => {
+    element.classList.remove('supplement-column-selected', 'supplement-column-drop-target');
+  });
+  table.classList.remove(
+    'supplement-plan-table--can-move-left',
+    'supplement-plan-table--can-move-right'
+  );
+}
+
+function syncSupplementColumnDragChip(tableWrapper, table, columnIndex) {
+  if (!tableWrapper || !table || !Number.isInteger(columnIndex)) return;
+
+  const headerCell = table.querySelector(`th.supplement-col[data-index="${columnIndex}"]`);
+  if (!headerCell) return;
+  const stickyHeader = table.querySelector('thead');
+
+  let chip = document.body.querySelector('.supplement-column-drag-chip');
+  if (!chip) {
+    chip = createElement('div', 'supplement-column-drag-chip');
+    document.body.append(chip);
+  }
+
+  chip.textContent = headerCell.querySelector('.sup-name')?.textContent?.trim() || '';
+
+  const viewportHeight = Math.round(window.visualViewport?.height || window.innerHeight || document.documentElement?.clientHeight || 0);
+  const viewportWidth = Math.round(window.visualViewport?.width || window.innerWidth || document.documentElement?.clientWidth || 0);
+  const wrapperRect = tableWrapper.getBoundingClientRect();
+  const stickyHeaderRect = stickyHeader?.getBoundingClientRect() || wrapperRect;
+  const columnRect = headerCell.getBoundingClientRect();
+  const chipWidth = Math.min(Math.max(Math.round(columnRect.width + 18), 78), Math.max(78, viewportWidth - 12));
+  const nextLeft = clampValue(
+    Math.round(columnRect.left + (columnRect.width - chipWidth) / 2),
+    6,
+    Math.max(6, viewportWidth - chipWidth - 6)
+  );
+  const chipHeight = 42;
+  const visibleTop = 6;
+  const visibleBottom = Math.max(6, viewportHeight - chipHeight - 18);
+  const stickyTop = Math.round(Math.max(wrapperRect.top, stickyHeaderRect.top));
+  const nextTop = clampValue(stickyTop - chipHeight - 8, visibleTop, visibleBottom);
+
+  chip.style.width = `${chipWidth}px`;
+  chip.style.left = `${nextLeft}px`;
+  chip.style.top = `${nextTop}px`;
+}
+
+function removeSupplementColumnDragChip(tableWrapper) {
+  document.body.querySelector('.supplement-column-drag-chip')?.remove();
+}
+
+function syncSupplementColumnDragDoseOverlay(tableWrapper, table, columnIndex, realColumnsCount = 0) {
+  if (!tableWrapper || !table || !Number.isInteger(columnIndex)) return;
+
+  const headerCell = table.querySelector(`th.supplement-col[data-index="${columnIndex}"]`);
+  if (!headerCell) return;
+
+  let overlay = document.body.querySelector('.supplement-column-drag-dose-overlay');
+  if (!overlay) {
+    overlay = createElement('div', 'supplement-column-drag-dose-overlay');
+    document.body.append(overlay);
+  }
+
+  overlay.classList.toggle('can-move-left', columnIndex > 0);
+  overlay.classList.toggle('can-move-right', columnIndex < realColumnsCount - 1);
+
+  const wrapperRect = tableWrapper.getBoundingClientRect();
+  const header = table.querySelector('thead');
+  const headerRect = header?.getBoundingClientRect() || headerCell.getBoundingClientRect();
+  const columnRect = headerCell.getBoundingClientRect();
+  const nextTop = Math.round(Math.max(wrapperRect.top, headerRect.bottom));
+  const nextHeight = Math.max(0, Math.round(wrapperRect.bottom - nextTop));
+
+  overlay.style.left = `${Math.round(columnRect.left)}px`;
+  overlay.style.top = `${nextTop}px`;
+  overlay.style.width = `${Math.round(columnRect.width)}px`;
+  overlay.style.height = `${nextHeight}px`;
+}
+
+function removeSupplementColumnDragDoseOverlay() {
+  document.body.querySelector('.supplement-column-drag-dose-overlay')?.remove();
+}
+
+function getSupplementStickyLeadWidth(table) {
+  if (!table) return 72;
+
+  const dateCellWidth = table.querySelector('tbody td.date-col')?.getBoundingClientRect().width || 40;
+  const dayCellWidth = table.querySelector('tbody td.day-col')?.getBoundingClientRect().width || 29;
+  return Math.round(dateCellWidth + dayCellWidth);
+}
+
+function clampValue(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function applySupplementColumnDragState(table, dragFrom, dragTo, realColumnsCount = 0) {
+  clearSupplementColumnDragClasses(table);
+  table.classList.toggle('supplement-plan-table--can-move-left', dragFrom > 0);
+  table.classList.toggle('supplement-plan-table--can-move-right', dragFrom < realColumnsCount - 1);
+  markSupplementColumn(table, dragFrom, 'supplement-column-selected');
+  if (dragTo !== dragFrom) {
+    markSupplementColumn(table, dragTo, 'supplement-column-drop-target');
+  }
+}
+
+function markSupplementColumn(table, columnIndex, className) {
+  table.querySelectorAll(`th.supplement-col[data-index="${columnIndex}"], td.dose-col[data-supplement-index="${columnIndex}"]`).forEach(element => {
+    element.classList.add(className);
+  });
+}
+
 function enableHeaderDnd(thead, planData) {
-  const names = getSupplementNames(planData);
+  const activeEntries = getSupplementEntries(planData);
   let dragFrom = null;
 
-  thead.querySelectorAll('th.supplement-col').forEach((th, i) => {
-    const isReal = i < names.length;
+  thead.querySelectorAll('th.supplement-col').forEach((th) => {
+    const activeIndex = Number(th.dataset.activeIndex);
+    const isReal = Number.isInteger(activeIndex);
     th.draggable = isReal;
 
     th.addEventListener('dragstart', e => {
       if (!isReal) return;
-      dragFrom = i;
+      dragFrom = activeIndex;
       e.dataTransfer.effectAllowed = 'move';
       th.classList.add('dragging');
     });
@@ -1037,16 +3795,10 @@ function enableHeaderDnd(thead, planData) {
       thead.querySelectorAll('th.supplement-col').forEach(el => el.classList.remove('dragging'));
       if (dragFrom === null) return;
 
-      const dragTo = i;
-      if (dragTo === dragFrom || dragTo >= names.length) { dragFrom = null; return; }
+      const dragTo = Number(th.dataset.activeIndex);
+      if (!Number.isInteger(dragTo) || dragTo === dragFrom || dragTo >= activeEntries.length) { dragFrom = null; return; }
 
-      const plan = JSON.parse(JSON.stringify(state.supplementPlan));
-      const arr = getSupplementNames(plan);
-      const moved = arr.splice(dragFrom, 1)[0];
-      arr.splice(dragTo, 0, moved);
-      plan.supplements = arr;
-
-      await updateSupplementPlanInFirestore(plan);
+      await reorderSupplementColumns(dragFrom, dragTo);
       dragFrom = null;
     });
 
@@ -1061,120 +3813,200 @@ function enableHeaderDnd(thead, planData) {
 // 🌟 функцию модалки БАДОВ/ДОБАВОК
 // =================================================================
 
-function openSupplementEditModal(index, currentName) {
-  const plan = JSON.parse(JSON.stringify(state.supplementPlan));
-  const names = getSupplementNames(plan);
-  const isExisting = !!currentName && currentName.trim() !== '';
+function openSupplementEditModal(planIndexOrOptions, currentName = '') {
+  const modalOptions = (typeof planIndexOrOptions === 'object' && planIndexOrOptions !== null)
+    ? planIndexOrOptions
+    : { planIndex: planIndexOrOptions, currentName };
+  const planIndex = Number.isInteger(Number(modalOptions.planIndex)) ? Number(modalOptions.planIndex) : -1;
+  const requestedSlot = normalizeSupplementSlot(modalOptions.slotIndex);
+  const plan = JSON.parse(JSON.stringify(state.supplementPlan || { supplements: [], data: [] }));
+  plan.supplements = Array.isArray(plan.supplements) ? plan.supplements : [];
+  ensureSupplementEntrySlots(plan);
+  const allEntries = getSupplementEntries(plan, { includeArchived: true });
+  const activeEntries = getSupplementEntries(plan);
+  const currentEntry = allEntries.find(entry => entry.planIndex === planIndex) || null;
+  const isExisting = Boolean(currentEntry && !currentEntry.archived);
+  const targetSlot = isExisting ? currentEntry.slot : (requestedSlot ?? getNextAvailableSupplementSlot(plan));
+  const currentFullName = currentEntry?.name || modalOptions.currentName || '';
+  const currentShortName = currentEntry?.shortName || normalizeSupplementShortName('', currentFullName);
 
-  // Создаём затемнение
   const backdrop = document.createElement('div');
   backdrop.className = 'modal-backdrop';
 
   const modal = document.createElement('div');
-  modal.className = 'modal-window';
-  modal.innerHTML = `
-    <h3>${isExisting ? 'Редактирование препарата' : 'Добавить препарат'}</h3>
-    <input type="text" class="modal-input" value="${currentName || ''}" placeholder="Введите имя препарата">
-    ${isExisting ? `
-      <div class="position-controls">
-        <button class="btn small-btn" id="pos-left">←</button>
-        <span>Позиция: <b id="pos-value">${index + 1}</b></span>
-        <button class="btn small-btn" id="pos-right">→</button>
-      </div>
-    ` : ''}
-    <div class="modal-buttons">
-      ${isExisting ? '<button class="btn btn-danger" id="delete-sup">Удалить</button>' : ''}
-      <button class="btn btn-secondary" id="cancel-modal">Отмена</button>
-      <button class="btn btn-primary" id="save-modal">ОК</button>
-    </div>
-  `;
+  modal.className = 'modal-window supplement-edit-modal';
 
-  backdrop.append(modal);
-  document.body.append(backdrop);
+  const title = createElement('h3', null, isExisting ? 'Редактировать препарат' : 'Добавить препарат');
 
-  const input = modal.querySelector('.modal-input');
-  const posValue = modal.querySelector('#pos-value');
-  let newPos = index;
+  const fullNameLabel = createElement('label', 'supplement-edit-field');
+  fullNameLabel.append(createElement('span', 'supplement-edit-field-label', 'Введите полное название препарата'));
+  const fullNameInput = createElement('input', 'modal-input supplement-edit-input');
+  fullNameInput.type = 'text';
+  fullNameInput.value = currentFullName;
+  fullNameLabel.append(fullNameInput);
 
-  // ===== стрелки для позиции =====
+  const shortNameLabel = createElement('label', 'supplement-edit-field');
+  shortNameLabel.append(createElement('span', 'supplement-edit-field-label', 'Подпись для таблицы и календаря'));
+  const shortNameInput = createElement('input', 'modal-input supplement-edit-input');
+  shortNameInput.type = 'text';
+  shortNameInput.maxLength = SUPPLEMENT_SHORT_NAME_LIMIT;
+  shortNameInput.value = currentShortName;
+  shortNameLabel.append(shortNameInput);
+  shortNameLabel.append(createElement('span', 'supplement-edit-field-hint', 'До 7 символов. Это название будет видно в таблице и календаре.'));
+
+  modal.append(title, fullNameLabel, shortNameLabel);
+
   if (isExisting) {
-    modal.querySelector('#pos-left').addEventListener('click', () => {
-      if (newPos > 0) {
-        newPos--;
-        posValue.textContent = newPos + 1;
-      }
-    });
-    modal.querySelector('#pos-right').addEventListener('click', () => {
-      if (newPos < names.length - 1) {
-        newPos++;
-        posValue.textContent = newPos + 1;
-      }
-    });
+    modal.append(
+      createElement(
+        'div',
+        'supplement-edit-reorder-hint',
+        'Чтобы изменить позицию препарата, зажмите его в шапке таблицы и перетащите в нужное место.'
+      )
+    );
   }
 
-  // ===== удаление через openConfirmModal =====
+  const buttons = createElement('div', 'modal-buttons');
   if (isExisting) {
-    modal.querySelector('#delete-sup').addEventListener('click', () => {
-      // Сначала закрываем текущее окно редактирования
+    const deleteBtn = createElement('button', 'btn btn-danger', 'Удалить препарат');
+    deleteBtn.type = 'button';
+    deleteBtn.addEventListener('click', () => {
       backdrop.remove();
-
-      // Затем вызываем твою модалку подтверждения
-      openConfirmModal(`Удалить препарат "${currentName}"?`, async () => {
-        plan.supplements = names.filter((_, i) => i !== index);
-        plan.data = (plan.data || []).map(d => {
-          if (d.doses) delete d.doses[currentName];
-          return d;
-        });
-
-        await updateSupplementPlanInFirestore(plan);
-      });
+      openSupplementDeleteOptionsModal({ planIndex: currentEntry.planIndex, entry: currentEntry });
     });
+    buttons.append(deleteBtn);
   }
 
-  // ===== сохранение =====
-  modal.querySelector('#save-modal').addEventListener('click', async () => {
-    const newName = input.value.trim();
-    if (!newName) return showToast('Введите имя препарата');
+  const cancelBtn = createElement('button', 'btn btn-secondary', 'Отмена');
+  cancelBtn.type = 'button';
+  cancelBtn.addEventListener('click', () => backdrop.remove());
 
-    if (names.includes(newName) && newName !== currentName) {
-      return showToast('Такой препарат уже есть.');
+  const saveBtn = createElement('button', 'btn btn-primary', isExisting ? 'Сохранить' : 'Добавить');
+  saveBtn.type = 'button';
+  saveBtn.addEventListener('click', async () => {
+    const nextFullName = fullNameInput.value.trim();
+    const nextShortName = normalizeSupplementShortName(shortNameInput.value, nextFullName);
+
+    if (!nextFullName) {
+      showToast('Введите название препарата');
+      return;
     }
 
-    // Добавление нового
+    const hasDuplicate = allEntries.some(entry => entry.name === nextFullName && entry.planIndex !== currentEntry?.planIndex);
+    if (hasDuplicate) {
+      showToast('Такое название уже используется.');
+      return;
+    }
+
     if (!isExisting) {
-      plan.supplements[index] = newName;
-      plan.data = (plan.data || []).map(d => {
-        d.doses = d.doses || {};
-        d.doses[newName] = '';
-        return d;
+      if (activeEntries.length >= MAX_SUPPLEMENTS_COUNT) {
+        showToast(`Можно добавить не больше ${MAX_SUPPLEMENTS_COUNT} препаратов.`);
+        return;
+      }
+
+      plan.supplements.push(createSupplementMeta(nextFullName, nextShortName, false, targetSlot));
+      plan.data = (plan.data || []).map(day => {
+        day.doses = day.doses || {};
+        if (!Object.prototype.hasOwnProperty.call(day.doses, nextFullName)) {
+          day.doses[nextFullName] = '';
+        }
+        return day;
       });
+
+      rememberCurrentSupplementTableScroll();
       await updateSupplementPlanInFirestore(plan);
       backdrop.remove();
       return;
     }
 
-    // Переименование
-    (plan.data || []).forEach(d => {
-      if (!d.doses) d.doses = {};
-      if (d.doses[currentName]) {
-        d.doses[newName] = d.doses[currentName];
-        delete d.doses[currentName];
-      }
-    });
+    plan.supplements[currentEntry.planIndex] = createSupplementMeta(nextFullName, nextShortName, false, currentEntry.slot);
 
-    plan.supplements[index] = newName;
-
-    // Перемещение
-    if (newPos !== index) {
-      const moved = plan.supplements.splice(index, 1)[0];
-      plan.supplements.splice(newPos, 0, moved);
+    if (nextFullName !== currentEntry.name) {
+      (plan.data || []).forEach(day => {
+        if (!day.doses) day.doses = {};
+        if (Object.prototype.hasOwnProperty.call(day.doses, currentEntry.name)) {
+          day.doses[nextFullName] = day.doses[currentEntry.name];
+          delete day.doses[currentEntry.name];
+        }
+      });
     }
 
     await updateSupplementPlanInFirestore(plan);
     backdrop.remove();
   });
 
-  modal.querySelector('#cancel-modal').addEventListener('click', () => backdrop.remove());
+  buttons.append(cancelBtn, saveBtn);
+  modal.append(buttons);
+  backdrop.append(modal);
+  document.body.append(backdrop);
+
+  setTimeout(() => fullNameInput.focus(), 0);
+
+  backdrop.addEventListener('click', e => {
+    if (e.target === backdrop) backdrop.remove();
+  });
+}
+
+async function archiveSupplementKeepHistory(planIndex, entry) {
+  const plan = JSON.parse(JSON.stringify(state.supplementPlan || { supplements: [], data: [] }));
+  ensureSupplementEntrySlots(plan);
+  if (!Array.isArray(plan.supplements) || !plan.supplements[planIndex]) return;
+
+  plan.supplements[planIndex] = createSupplementMeta(entry.name, entry.shortName, true, entry.slot);
+  await updateSupplementPlanInFirestore(plan);
+  showToast('Препарат убран из шапки. История сохранена.');
+}
+
+async function deleteSupplementCompletely(planIndex, entry) {
+  const plan = JSON.parse(JSON.stringify(state.supplementPlan || { supplements: [], data: [] }));
+  ensureSupplementEntrySlots(plan);
+  if (!Array.isArray(plan.supplements) || !plan.supplements[planIndex]) return;
+
+  plan.supplements.splice(planIndex, 1);
+  plan.data = (plan.data || []).map(day => {
+    if (day.doses) delete day.doses[entry.name];
+    return day;
+  });
+
+  await updateSupplementPlanInFirestore(plan);
+  showToast('Препарат удален полностью.');
+}
+
+function openSupplementDeleteOptionsModal({ planIndex, entry }) {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-window supplement-delete-modal';
+  modal.append(
+    createElement('h3', null, 'Как удалить препарат?'),
+    createElement('div', 'supplement-delete-modal-text', 'Можно убрать препарат из шапки и сохранить его историю в таблице, или удалить его полностью вместе со всеми старыми записями.')
+  );
+
+  const buttons = createElement('div', 'modal-buttons supplement-delete-modal-actions');
+  const keepHistoryBtn = createElement('button', 'btn btn-secondary', 'Убрать из шапки, сохранить историю');
+  keepHistoryBtn.type = 'button';
+  keepHistoryBtn.addEventListener('click', async () => {
+    backdrop.remove();
+    await archiveSupplementKeepHistory(planIndex, entry);
+  });
+
+  const deleteAllBtn = createElement('button', 'btn btn-danger', 'Удалить полностью');
+  deleteAllBtn.type = 'button';
+  deleteAllBtn.addEventListener('click', async () => {
+    backdrop.remove();
+    await deleteSupplementCompletely(planIndex, entry);
+  });
+
+  const cancelBtn = createElement('button', 'btn btn-primary', 'Отмена');
+  cancelBtn.type = 'button';
+  cancelBtn.addEventListener('click', () => backdrop.remove());
+
+  buttons.append(keepHistoryBtn, deleteAllBtn, cancelBtn);
+  modal.append(buttons);
+  backdrop.append(modal);
+  document.body.append(backdrop);
+
   backdrop.addEventListener('click', e => {
     if (e.target === backdrop) backdrop.remove();
   });
@@ -1260,7 +4092,3 @@ export function debounce(func, delay) {
         timeout = setTimeout(() => func.apply(context, args), delay);
     };
 }
-
-
-
-

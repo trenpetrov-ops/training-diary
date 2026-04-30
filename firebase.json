@@ -1,4 +1,7 @@
 {
+  "storage": {
+    "rules": "storage.rules"
+  },
   "firestore": {
     "rules": "firestore.rules"
   },
@@ -21,6 +24,10 @@
       {
         "source": "/api/fatsecret/food",
         "function": "fatsecretFoodGet"
+      },
+      {
+        "source": "/api/apple-health/import",
+        "function": "appleHealthImport"
       },
       {
         "source": "**",
