@@ -3899,7 +3899,7 @@ function renderMealMonthlySummaryPage() {
         cleanupSticky?.();
     };
 
-    pushMealOverlay(screen);
+    openMealOverlay(screen);
     setupCreateFoodStickyTitleBorder({ titleEl: title, watchEl: selector });
     cleanupSticky = () => {
         if (typeof title._cleanupStickyBorder === 'function') {
@@ -4222,10 +4222,6 @@ function renderMealBurnedSummaryStubPage() {
 
     const handleBack = () => {
         state.mealView = 'monthSummary';
-        if (mealOverlayStack.length > 1) {
-            popMealOverlay();
-            return;
-        }
         renderMealPage();
     };
 
@@ -4244,7 +4240,7 @@ function renderMealBurnedSummaryStubPage() {
         cleanupSticky?.();
     };
 
-    pushMealOverlay(screen);
+    openMealOverlay(screen);
     void loadDailyHealth();
 }
 

@@ -6349,16 +6349,16 @@ function syncJournalCalendarLayout(container, viewport, track) {
 
     const weeksCount = Number.parseInt(activePage.dataset.weeksCount || '', 10);
     const safeWeeksCount = Number.isFinite(weeksCount) && weeksCount > 0 ? weeksCount : 6;
+    syncBottomNavClearanceVar();
 
     const journalRoot = document.getElementById('journal-content');
-    const journalHeader = journalRoot?.querySelector('h3');
     const filters = journalRoot?.querySelector('.journal-filters');
 
-    const headerH = journalHeader?.getBoundingClientRect?.().height || 0;
     const filtersH = filters?.getBoundingClientRect?.().height || 0;
     journalRoot?.style?.setProperty?.('--journal-filters-height', `${Math.round(filtersH)}px`);
 
     const containerTop = container.getBoundingClientRect().top || 0;
+    const gapBeforeFilters = 14;
 
     // Самый надёжный способ (особенно на iOS): ограничиваем календарь фактическим верхом фиксированных фильтров.
     // Тогда нижний ряд дней физически не сможет уйти "под" `journal-filters`.
@@ -6367,16 +6367,13 @@ function syncJournalCalendarLayout(container, viewport, track) {
     if (Number.isFinite(filtersTop) && filtersTop > 0) {
         // Небольшой зазор между календарём и fixed-блоком фильтров
         // Чуть больше буфера, чтобы нижний ряд дней никогда не заходил под фильтры
-        available = Math.max(0, Math.floor(filtersTop - containerTop - 19));
+        available = Math.max(0, Math.floor(filtersTop - containerTop - gapBeforeFilters));
     } else {
         // Fallback: считаем от высоты viewport (на случай, если фильтры ещё не в DOM / не измерились).
-        const vvHeight = window.visualViewport?.height || window.innerHeight || 0;
-        const topBarHeight = typeof readCssPxVar === 'function' ? readCssPxVar('--top-bar-height', 65) : 65;
+        const vvHeight = window.visualViewport?.height || window.innerHeight || document.documentElement.clientHeight || 0;
         const bottomClearance = typeof readCssPxVar === 'function' ? readCssPxVar('--bottom-nav-clearance', 0) : 0;
-        const GAP_ABOVE_BOTTOM_NAV = 10;
-        const reservedForFixedFilters = Math.round(filtersH + GAP_ABOVE_BOTTOM_NAV);
         // -19px тот же буфер, что и в основном пути (через filtersTop)
-        available = Math.max(0, Math.floor(vvHeight - containerTop - bottomClearance - reservedForFixedFilters - headerH - 16 - 19));
+        available = Math.max(0, Math.floor(vvHeight - containerTop - bottomClearance - filtersH - gapBeforeFilters));
     }
 
     const calendarHeader = container.querySelector('.calendar-header');
@@ -8029,6 +8026,103 @@ let rootScrollLockFrameId = 0;
 let rootScrollLockTimeoutId = 0;
 let rootScrollLockBindingsReady = false;
 let rootScrollLockObserver = null;
+let lastKnownNativeStatusBarHeight = 0;
+
+function isMealOverlaySubpageActive() {
+    return state.currentPage === 'meal' && Boolean(state.mealView && state.mealView !== 'main');
+}
+
+function isSupplementsDetailSubpageActive() {
+    return state.currentPage === 'supplements' && Boolean(state.supplementCalendarDetailDate);
+}
+
+function shouldShowNativeStatusBarForCurrentView() {
+    if (!userId || state.currentMode === null) return false;
+
+    if (state.currentPage === 'auth' || state.currentPage === 'modeSelect') return false;
+    if (state.currentPage === 'profile' || state.currentPage === 'journalRecordDetails') return false;
+    if (state.currentPage === 'meal') return !isMealOverlaySubpageActive();
+    if (state.currentPage === 'supplements') return !isSupplementsDetailSubpageActive();
+
+    return ['programs', 'programsInCycle', 'programDetails', 'journal', 'reports', 'cycleReport', 'mealsReport'].includes(state.currentPage);
+}
+
+function shouldApplyStandaloneTopGapForCurrentView() {
+    if (state.currentPage === 'auth' || state.currentPage === 'modeSelect') return true;
+    if (state.currentPage === 'journalRecordDetails') return true;
+    if (isMealOverlaySubpageActive()) return true;
+    if (isSupplementsDetailSubpageActive()) return true;
+    return false;
+}
+
+function syncAppChromeClasses() {
+    const docEl = document.documentElement;
+    const bodyEl = document.body;
+    const shouldShowNativeStatusBar = shouldShowNativeStatusBarForCurrentView();
+    const shouldApplyStandaloneTopGap = shouldApplyStandaloneTopGapForCurrentView();
+
+    docEl.classList.toggle('app-native-statusbar-visible', shouldShowNativeStatusBar);
+    docEl.classList.toggle('app-native-statusbar-hidden', !shouldShowNativeStatusBar);
+    docEl.classList.toggle('app-standalone-top-gap', shouldApplyStandaloneTopGap);
+
+    if (bodyEl) {
+        bodyEl.classList.toggle('app-native-statusbar-visible', shouldShowNativeStatusBar);
+        bodyEl.classList.toggle('app-native-statusbar-hidden', !shouldShowNativeStatusBar);
+        bodyEl.classList.toggle('app-standalone-top-gap', shouldApplyStandaloneTopGap);
+    }
+}
+
+async function syncNativeStatusBarMetrics(StatusBar) {
+    if (!StatusBar?.getInfo) return;
+
+    try {
+        const info = await StatusBar.getInfo();
+        const nextHeight = Number(info?.height || 0);
+        if (Number.isFinite(nextHeight) && nextHeight > 0) {
+            lastKnownNativeStatusBarHeight = nextHeight;
+        }
+    } catch (err) {
+        console.error('StatusBar.getInfo error:', err);
+    }
+
+    const cssHeight = Math.max(0, Math.round(lastKnownNativeStatusBarHeight || 0));
+    document.documentElement.style.setProperty('--native-statusbar-height', `${cssHeight}px`);
+}
+
+async function syncAppChrome() {
+    syncAppChromeClasses();
+
+    if (!isCapacitorNativePlatform()) {
+        if (!lastKnownNativeStatusBarHeight) {
+            document.documentElement.style.setProperty('--native-statusbar-height', '0px');
+        }
+        return;
+    }
+
+    try {
+        const StatusBar = window.Capacitor?.Plugins?.StatusBar;
+        if (!StatusBar) return;
+
+        if (StatusBar.setOverlaysWebView) {
+            await StatusBar.setOverlaysWebView({ overlay: true });
+        }
+
+        await syncNativeStatusBarMetrics(StatusBar);
+
+        if (shouldShowNativeStatusBarForCurrentView()) {
+            if (StatusBar.setStyle) {
+                await StatusBar.setStyle({ style: 'DARK' });
+            }
+            await StatusBar.show({ animation: 'NONE' });
+        } else {
+            await StatusBar.hide({ animation: 'NONE' });
+        }
+
+        await syncNativeStatusBarMetrics(StatusBar);
+    } catch (err) {
+        console.error('StatusBar error:', err);
+    }
+}
 
 function syncAppViewportHeightVar() {
     const viewportHeight = Math.round(
@@ -8056,10 +8150,23 @@ function syncBottomNavClearanceVar() {
     const nav = document.querySelector('.navigation');
     if (!nav) return;
 
+    const navStyles = window.getComputedStyle?.(nav);
+    if (navStyles?.display === 'none' || navStyles?.visibility === 'hidden') return;
+
     const navRect = nav.getBoundingClientRect();
+    const viewportHeight = Math.round(
+        window.visualViewport?.height ||
+        window.innerHeight ||
+        document.documentElement.clientHeight ||
+        0
+    );
     const safeBottom = readCssPxVar('--safe-bottom', 0);
     const extraPadding = 16; // небольшой зазор для контента над меню
-    const clearance = Math.max(0, Math.round((navRect.height || 0) + safeBottom + extraPadding));
+    const occupiedFromBottom = Number.isFinite(navRect.top)
+        ? Math.max(0, viewportHeight - navRect.top)
+        : 0;
+    const effectiveNavBlock = Math.max(navRect.height || 0, occupiedFromBottom);
+    const clearance = Math.max(0, Math.round(effectiveNavBlock + safeBottom + extraPadding));
     if (!clearance) return;
     document.documentElement.style.setProperty('--bottom-nav-clearance', `${clearance}px`);
 }
@@ -8167,7 +8274,7 @@ export function render() {
     toggleAppVisibility(!!userId);
 
     if (!userId || state.currentMode === null) {
-        hideStatusBarEverywhere();
+        void syncAppChrome();
         syncBottomNavAfterRender(state.currentPage);
         scheduleRootScrollLockState();
         return;
@@ -8207,25 +8314,25 @@ export function render() {
         renderCycleReportPage(state.reportHtmlCache);
         syncBottomNavAfterRender(state.currentPage);
         scheduleRootScrollLockState();
-        hideStatusBarEverywhere();
+        void syncAppChrome();
         return;
     } else if (state.currentPage === 'mealsReport') {
         renderMealsReportPage(state.reportHtmlCache);
         syncBottomNavAfterRender(state.currentPage);
         scheduleRootScrollLockState();
-        hideStatusBarEverywhere();
+        void syncAppChrome();
         return;
     } else if (state.currentPage === 'modeSelect') {
         syncBottomNavAfterRender(state.currentPage);
         scheduleRootScrollLockState();
-        hideStatusBarEverywhere();
+        void syncAppChrome();
         return;
     }
 
     syncBottomNavAfterRender(state.currentPage);
     scheduleRootScrollLockState();
 
-    hideStatusBarEverywhere();
+    void syncAppChrome();
 
     // Восстанавливаем scrollTop для нового экрана (или сбрасываем в 0).
     const nextKey = getScrollMemoryViewKey();
@@ -8248,6 +8355,9 @@ async function hideStatusBarEverywhere() {
     try {
         const StatusBar = window.Capacitor?.Plugins?.StatusBar;
         if (!StatusBar) return;
+        if (StatusBar.setOverlaysWebView) {
+            await StatusBar.setOverlaysWebView({ overlay: true });
+        }
         await StatusBar.hide({ animation: 'NONE' });
     } catch (err) {
         console.error('StatusBar error:', err);

@@ -13,10 +13,11 @@
     --app-height: 100vh;
     /* iOS: Ð¿Ð¾Ð´ Â«Ñ‡Ñ‘Ð»ÐºÐ¾Ð¹Â» / Dynamic Island Ð¾Ð±Ñ‹Ñ‡Ð½Ð¾ ~47â€“59px; Ð±ÐµÐ· Ð²Ñ‹Ñ€ÐµÐ·Ð° 0â€“20px */
     --safe-top: env(safe-area-inset-top, 0px);
+    --native-statusbar-height: 0px;
     --safe-bottom: env(safe-area-inset-bottom, 0px);
     /* ÐŸÑ€Ð¸ env() = 0 (Ð¸Ð½Ð¾Ð³Ð´Ð° Ð² Capacitor ÑÐ¾ ÑÐºÑ€Ñ‹Ñ‚Ñ‹Ð¼ ÑÑ‚Ð°Ñ‚ÑƒÑ-Ð±Ð°Ñ€Ð¾Ð¼) â€” Ð¿Ð¾Ð´Ð½Ð¸Ð¼Ð¸ Ð´Ð¾ 44â€“54px */
     --safe-top-min: 6px;
-    --safe-top-fallback: max(var(--safe-top), var(--safe-top-min));
+    --safe-top-fallback: max(var(--safe-top), var(--native-statusbar-height), var(--safe-top-min));
     --top-bar-pad-top: calc(var(--safe-top-fallback) + 0px);
     --top-bar-pad-bottom: 10px;
     --top-bar-row: 30px;
@@ -23874,4 +23875,49 @@ html.program-reorder-lock #root {
     to {
         background-position: -200% 0;
     }
+}
+
+/* ===== iOS / PWA safe-top overrides ===== */
+#mode-select-screen {
+    padding: max(20px, var(--safe-top-fallback)) 20px max(20px, calc(20px + var(--safe-bottom))) 20px;
+}
+
+#auth-screen.auth-screen {
+    padding: max(20px, var(--safe-top-fallback)) max(20px, env(safe-area-inset-right)) max(28px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+}
+
+.journal-record-details {
+    padding-top: var(--top-bar-pad-top);
+    box-sizing: border-box;
+    min-height: 100%;
+}
+
+.meal-overlay-layer {
+    padding-top: var(--top-bar-pad-top);
+}
+
+.meal-overlay-layer--search .meal-overlay-subpage {
+    padding-top: var(--top-bar-pad-top);
+}
+
+.supplements-page--day-details {
+    padding-top: var(--top-bar-pad-top);
+}
+
+#journal-content.journal-page {
+    padding: 0 10px calc(var(--bottom-nav-clearance, 0px) + var(--journal-filters-height, 0px) + 24px) 10px;
+    box-sizing: border-box;
+}
+
+#journal-content.journal-page .journal-filters {
+    left: 10px;
+    right: 10px;
+    bottom: var(--bottom-nav-clearance, 0px);
+    margin-bottom: 0;
+    z-index: 50;
+}
+
+#journal-content.journal-page .calendar-container {
+    margin-bottom: 0;
+    min-height: 0;
 }
