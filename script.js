@@ -16,6 +16,7 @@ import { attachSwipeRow, closeSwipeRowVisual } from './swipe-engine.js';
 import { renderCycleReportPage } from './pages/supplement.js';
 import { resetSupplementsListener } from './pages/supplement.js';
 import { getSupplementPlanSnapshotSignature } from './pages/supplement.js';
+import { attachMonthCarouselSwipe } from './calendar-month-carousel.js';
 import {
     initBottomNav,
     syncBottomNavAfterRender,
@@ -5662,6 +5663,7 @@ let longPressTimer = null;
 let dragDX = 0;
 let dragDY = 0;
 let cleanupProgramDetailsTopBarTitleSync = null;
+let cleanupJournalRecordDetailsTopBarTitleSync = null;
 
 function cleanupFloatingTimer() {
     if (timerObserver) {
@@ -5675,6 +5677,13 @@ function teardownProgramDetailsTopBarTitleSync() {
         try { cleanupProgramDetailsTopBarTitleSync(); } catch (_) {}
     }
     cleanupProgramDetailsTopBarTitleSync = null;
+}
+
+function teardownJournalRecordDetailsTopBarTitleSync() {
+    if (typeof cleanupJournalRecordDetailsTopBarTitleSync === 'function') {
+        try { cleanupJournalRecordDetailsTopBarTitleSync(); } catch (_) {}
+    }
+    cleanupJournalRecordDetailsTopBarTitleSync = null;
 }
 
 function setupProgramDetailsTopBarTitleSync() {
@@ -5737,6 +5746,100 @@ function setupProgramDetailsTopBarTitleSync() {
         pageTitle.style.opacity = '1';
         topBar.classList.remove('top-bar-stuck-border');
     };
+}
+
+function setupJournalRecordDetailsTopBarTitleSync() {
+    teardownJournalRecordDetailsTopBarTitleSync();
+
+    if (state.currentPage !== 'journal' || !state.selectedJournalRecord) return;
+
+    const rootScroll = document.getElementById('root');
+    const topBar = document.querySelector('.top-bar.top-bar--journal-record-details');
+    const headerBlock = document.querySelector('.journal-record-details .record-header');
+    const barTitle = topBar?.querySelector('.top-bar-program-title');
+    const deleteBtn = topBar?.querySelector('.top-delete-btn');
+    const headerTitleGroup = headerBlock?.querySelector('.title-del');
+    if (!rootScroll || !topBar || !headerBlock || !barTitle || !headerTitleGroup || !deleteBtn) return;
+
+    let frameId = 0;
+    const EPS = 0.5;
+    const titleSwapThreshold = 25;
+
+    const update = () => {
+        frameId = 0;
+
+        const topBarRect = topBar.getBoundingClientRect();
+        const headerRect = headerBlock.getBoundingClientRect();
+        const overlapPx = topBarRect.bottom - headerRect.top;
+        const shouldShowBorder = overlapPx > EPS;
+        const shouldSwapTitles = overlapPx >= titleSwapThreshold;
+
+        barTitle.style.opacity = shouldSwapTitles ? '1' : '0';
+        headerTitleGroup.style.opacity = shouldSwapTitles ? '0' : '1';
+        deleteBtn.style.opacity = shouldSwapTitles ? '0' : '1';
+        deleteBtn.style.pointerEvents = shouldSwapTitles ? 'none' : 'auto';
+        topBar.classList.toggle('top-bar-stuck-border', shouldShowBorder);
+    };
+
+    const requestUpdate = () => {
+        if (frameId) return;
+        frameId = window.requestAnimationFrame(update);
+    };
+
+    barTitle.style.opacity = '0';
+    headerTitleGroup.style.opacity = '1';
+    deleteBtn.style.opacity = '1';
+    deleteBtn.style.pointerEvents = 'auto';
+    topBar.classList.remove('top-bar-stuck-border');
+
+    rootScroll.addEventListener('scroll', requestUpdate, { passive: true });
+    window.addEventListener('resize', requestUpdate);
+    window.visualViewport?.addEventListener?.('resize', requestUpdate);
+    window.visualViewport?.addEventListener?.('scroll', requestUpdate);
+
+    requestUpdate();
+
+    cleanupJournalRecordDetailsTopBarTitleSync = () => {
+        if (frameId) {
+            window.cancelAnimationFrame(frameId);
+            frameId = 0;
+        }
+        rootScroll.removeEventListener('scroll', requestUpdate);
+        window.removeEventListener('resize', requestUpdate);
+        window.visualViewport?.removeEventListener?.('resize', requestUpdate);
+        window.visualViewport?.removeEventListener?.('scroll', requestUpdate);
+        barTitle.style.opacity = '0';
+        headerTitleGroup.style.opacity = '1';
+        deleteBtn.style.opacity = '1';
+        deleteBtn.style.pointerEvents = 'auto';
+        topBar.classList.remove('top-bar-stuck-border');
+    };
+}
+
+function closeSelectedJournalRecordDetails() {
+    state.selectedJournalRecord = null;
+    render();
+}
+
+function deleteSelectedJournalRecordFromDetails() {
+    const record = state.journal.find(r => r.id === state.selectedJournalRecord);
+    if (!record) {
+        state.selectedJournalRecord = null;
+        render();
+        return;
+    }
+
+    openConfirmModal('Удалить эту тренировку?', async () => {
+        try {
+            await deleteDoc(doc(getUserJournalCollection(), record.id));
+            showToast('Тренировка удалена');
+            state.selectedJournalRecord = null;
+            render();
+        } catch (error) {
+            console.error(error);
+            showToast('Ошибка удаления');
+        }
+    });
 }
 
 // -----------------------------------------------------------
@@ -7048,7 +7151,8 @@ const openPlannedTraining = async (record) => {
 // =================================================================
 //  модалка редактирования даты завершенной тренировки
 // =================================================================
-export function openDateModal(currentDate, onSave) {
+export function openDateModal(currentDate, onSave, options = {}) {
+  return openCustomDateModal(currentDate, onSave, options);
   // Парсим дату в формат YYYY-MM-DD
   let [d, m, y] = currentDate.split('.');
   const formatted = `${y}-${m}-${d}`;
@@ -7114,9 +7218,553 @@ export function openDateModal(currentDate, onSave) {
 // =================================================================
 // 🔥 новая страница с завершенными тренировками
 // =================================================================
-function renderJournalRecordDetails(container) {
-        root.innerHTML = '';
+const DATE_MODAL_MONTH_NAMES = [
+    'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+    'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
+];
+const DATE_MODAL_WEEKDAY_SHORT_NAMES = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
+function parseDateModalSource(dateStr) {
+    if (typeof dateStr !== 'string' || !dateStr.trim()) {
+        const today = new Date();
+        return new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    }
+
+    if (/^\d{2}\.\d{2}\.\d{4}$/.test(dateStr)) {
+        const [day, month, year] = dateStr.split('.').map(Number);
+        return new Date(year, month - 1, day);
+    }
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        const [year, month, day] = dateStr.split('-').map(Number);
+        return new Date(year, month - 1, day);
+    }
+
+    const parsed = new Date(dateStr);
+    if (!Number.isNaN(parsed.getTime())) {
+        return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+    }
+
+    const today = new Date();
+    return new Date(today.getFullYear(), today.getMonth(), today.getDate());
+}
+
+function formatDateModalIso(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function formatDateModalHuman(date) {
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    return `${day}.${month}.${date.getFullYear()}`;
+}
+
+function getDateModalMonthStart(date) {
+    return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function addDateModalMonths(date, delta) {
+    return new Date(date.getFullYear(), date.getMonth() + delta, 1);
+}
+
+function isSameDateModalDay(dateA, dateB) {
+    return (
+        dateA.getFullYear() === dateB.getFullYear() &&
+        dateA.getMonth() === dateB.getMonth() &&
+        dateA.getDate() === dateB.getDate()
+    );
+}
+
+function isSameDateModalMonth(dateA, dateB) {
+    return (
+        dateA.getFullYear() === dateB.getFullYear() &&
+        dateA.getMonth() === dateB.getMonth()
+    );
+}
+
+function getDateModalMonthMatrix(monthDate) {
+    const firstDay = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+    const startWeekday = (firstDay.getDay() + 6) % 7;
+    const gridStart = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1 - startWeekday);
+    const cells = [];
+
+    for (let index = 0; index < 42; index += 1) {
+        const cellDate = new Date(gridStart);
+        cellDate.setDate(gridStart.getDate() + index);
+        cells.push(cellDate);
+    }
+
+    return cells;
+}
+
+function getDateModalMonthTitle(date) {
+    return `${DATE_MODAL_MONTH_NAMES[date.getMonth()]} ${date.getFullYear()}`;
+}
+
+function openCustomDateModal(currentDate, onSave, options = {}) {
+    const initialDate = parseDateModalSource(currentDate);
+    const today = parseDateModalSource(formatDateModalIso(new Date()));
+    let selectedDate = new Date(initialDate.getFullYear(), initialDate.getMonth(), initialDate.getDate());
+    let visibleMonth = getDateModalMonthStart(selectedDate);
+    const requireConfirm = options?.requireConfirm === true;
+    const confirmLabel = options?.confirmLabel || 'Изменить дату';
+
+    {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay modal-overlay--date-picker';
+
+        const modal = document.createElement('div');
+        modal.className = 'date-modal-sheet';
+
+        const header = document.createElement('div');
+        header.className = 'date-modal-header';
+
+        const eyebrow = document.createElement('span');
+        eyebrow.className = 'date-modal-eyebrow';
+        eyebrow.textContent = 'Изменение даты';
+
+        const title = document.createElement('h3');
+        title.className = 'date-modal-title';
+        title.textContent = 'Выбери дату';
+
+        const selectedValue = document.createElement('div');
+        selectedValue.className = 'date-modal-selected-value';
+        header.append(eyebrow, title, selectedValue);
+
+        const monthNav = document.createElement('div');
+        monthNav.className = 'date-modal-month-nav';
+
+        const prevBtn = document.createElement('button');
+        prevBtn.type = 'button';
+        prevBtn.className = 'date-modal-nav-btn date-modal-nav-btn--prev';
+        prevBtn.setAttribute('aria-label', 'Предыдущий месяц');
+        prevBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M14.53 5.47a.75.75 0 0 1 0 1.06L9.06 12l5.47 5.47a.75.75 0 1 1-1.06 1.06l-6-6a.75.75 0 0 1 0-1.06l6-6a.75.75 0 0 1 1.06 0"/></svg>';
+
+        const monthTitle = document.createElement('div');
+        monthTitle.className = 'date-modal-month-title';
+
+        const nextBtn = document.createElement('button');
+        nextBtn.type = 'button';
+        nextBtn.className = 'date-modal-nav-btn date-modal-nav-btn--next';
+        nextBtn.setAttribute('aria-label', 'Следующий месяц');
+        nextBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M9.47 18.53a.75.75 0 0 1 0-1.06L14.94 12L9.47 6.53a.75.75 0 1 1 1.06-1.06l6 6a.75.75 0 0 1 0 1.06l-6 6a.75.75 0 0 1-1.06 0"/></svg>';
+
+        monthNav.append(prevBtn, monthTitle, nextBtn);
+
+        const weekdayRow = document.createElement('div');
+        weekdayRow.className = 'date-modal-weekdays';
+        DATE_MODAL_WEEKDAY_SHORT_NAMES.forEach((weekdayName) => {
+            const weekday = document.createElement('span');
+            weekday.className = 'date-modal-weekday';
+            weekday.textContent = weekdayName;
+            weekdayRow.append(weekday);
+        });
+
+        const calendarBody = document.createElement('div');
+        calendarBody.className = 'date-modal-calendar-body';
+
+        const monthsViewport = document.createElement('div');
+        monthsViewport.className = 'date-modal-months-viewport';
+
+        const monthsTrack = document.createElement('div');
+        monthsTrack.className = 'date-modal-months-track';
+        monthsViewport.append(monthsTrack);
+        calendarBody.append(weekdayRow, monthsViewport);
+
+        const quickActions = document.createElement('div');
+        quickActions.className = 'date-modal-quick-actions';
+
+        const todayBtn = document.createElement('button');
+        todayBtn.type = 'button';
+        todayBtn.className = 'date-modal-today-btn';
+        todayBtn.textContent = 'Сегодня';
+        quickActions.append(todayBtn);
+
+        const actions = document.createElement('div');
+        actions.className = 'date-modal-actions';
+
+        const confirmBtn = document.createElement('button');
+        confirmBtn.type = 'button';
+        confirmBtn.className = 'btn date-modal-action-btn date-modal-action-btn--save';
+        confirmBtn.textContent = confirmLabel;
+        actions.append(confirmBtn);
+
+        modal.append(header, monthNav, calendarBody, quickActions);
+        if (requireConfirm) {
+            modal.append(actions);
+        }
+        overlay.append(modal);
+        document.body.append(overlay);
+
+        let suppressDayTapUntil = 0;
+
+        function syncConfirmButtonState() {
+            if (!requireConfirm) return;
+            const hasChanged = !isSameDateModalDay(selectedDate, initialDate);
+            confirmBtn.disabled = !hasChanged;
+            confirmBtn.setAttribute('aria-disabled', hasChanged ? 'false' : 'true');
+        }
+
+        function closeModal(result = null) {
+            document.removeEventListener('keydown', handleKeydown);
+            overlay.classList.remove('visible');
+            setTimeout(() => {
+                overlay.remove();
+                onSave(result);
+            }, 200);
+        }
+
+        function handleKeydown(event) {
+            if (event.key === 'Escape') {
+                closeModal(null);
+            }
+        }
+
+        function buildMonthPage(monthDate) {
+            const page = document.createElement('div');
+            page.className = 'date-modal-month-page';
+
+            const pageGrid = document.createElement('div');
+            pageGrid.className = 'date-modal-grid';
+
+            getDateModalMonthMatrix(monthDate).forEach((cellDate) => {
+                const dayBtn = document.createElement('button');
+                dayBtn.type = 'button';
+                dayBtn.className = 'date-modal-day';
+                dayBtn.textContent = String(cellDate.getDate());
+
+                if (!isSameDateModalMonth(cellDate, monthDate)) {
+                    dayBtn.classList.add('is-outside');
+                }
+                if (isSameDateModalDay(cellDate, today)) {
+                    dayBtn.classList.add('is-today');
+                }
+                if (isSameDateModalDay(cellDate, selectedDate)) {
+                    dayBtn.classList.add('is-selected');
+                }
+
+                dayBtn.addEventListener('click', () => {
+                    if (Date.now() < suppressDayTapUntil) {
+                        return;
+                    }
+                    selectedDate = new Date(cellDate.getFullYear(), cellDate.getMonth(), cellDate.getDate());
+                    visibleMonth = getDateModalMonthStart(selectedDate);
+                    if (requireConfirm) {
+                        renderTriplet();
+                        return;
+                    }
+                    closeModal(formatDateModalIso(selectedDate));
+                });
+
+                pageGrid.append(dayBtn);
+            });
+
+            page.append(pageGrid);
+            return page;
+        }
+
+        function renderTriplet() {
+            selectedValue.textContent = formatDateModalHuman(selectedDate);
+            monthTitle.textContent = getDateModalMonthTitle(visibleMonth);
+            syncConfirmButtonState();
+            todayBtn.style.display = isSameDateModalDay(selectedDate, today) ? 'none' : 'inline-flex';
+
+            monthsTrack.replaceChildren(
+                buildMonthPage(addDateModalMonths(visibleMonth, -1)),
+                buildMonthPage(visibleMonth),
+                buildMonthPage(addDateModalMonths(visibleMonth, 1))
+            );
+            monthsTrack.style.transition = 'none';
+            monthsTrack.style.transform = 'translate3d(-100%, 0, 0)';
+            requestAnimationFrame(() => {
+                monthsTrack.style.transition = 'transform 220ms ease';
+            });
+        }
+
+        function shiftMonth(delta) {
+            visibleMonth = addDateModalMonths(visibleMonth, delta);
+            renderTriplet();
+            try {
+                navigator.vibrate?.(8);
+            } catch (_) {}
+        }
+
+        prevBtn.addEventListener('click', () => shiftMonth(-1));
+        nextBtn.addEventListener('click', () => shiftMonth(1));
+
+        todayBtn.addEventListener('click', () => {
+            selectedDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+            visibleMonth = getDateModalMonthStart(selectedDate);
+            if (requireConfirm) {
+                renderTriplet();
+                return;
+            }
+            closeModal(formatDateModalIso(selectedDate));
+        });
+
+        if (requireConfirm) {
+            confirmBtn.addEventListener('click', () => {
+                closeModal(formatDateModalIso(selectedDate));
+            });
+        }
+
+        attachMonthCarouselSwipe(monthsViewport, monthsTrack, {
+            animationDuration: 220,
+            swipeThreshold: 40,
+            onCommitNext: () => {
+                visibleMonth = addDateModalMonths(visibleMonth, 1);
+                renderTriplet();
+            },
+            onCommitPrev: () => {
+                visibleMonth = addDateModalMonths(visibleMonth, -1);
+                renderTriplet();
+            },
+            onHorizontalSwipeEnd: () => {
+                suppressDayTapUntil = Date.now() + 280;
+            }
+        });
+
+        overlay.addEventListener('click', (event) => {
+            if (event.target === overlay) {
+                closeModal(null);
+            }
+        });
+
+        document.addEventListener('keydown', handleKeydown);
+        renderTriplet();
+        requestAnimationFrame(() => overlay.classList.add('visible'));
+        return;
+    }
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay modal-overlay--date-picker';
+
+    const modal = document.createElement('div');
+    modal.className = 'date-modal-sheet';
+
+    const header = document.createElement('div');
+    header.className = 'date-modal-header';
+
+    const eyebrow = document.createElement('span');
+    eyebrow.className = 'date-modal-eyebrow';
+    eyebrow.textContent = 'Изменение даты';
+
+    const title = document.createElement('h3');
+    title.className = 'date-modal-title';
+    title.textContent = 'Выбери дату';
+
+    const selectedValue = document.createElement('div');
+    selectedValue.className = 'date-modal-selected-value';
+    header.append(eyebrow, title, selectedValue);
+
+    const monthNav = document.createElement('div');
+    monthNav.className = 'date-modal-month-nav';
+
+    const prevBtn = document.createElement('button');
+    prevBtn.type = 'button';
+    prevBtn.className = 'date-modal-nav-btn date-modal-nav-btn--prev';
+    prevBtn.setAttribute('aria-label', 'Предыдущий месяц');
+    prevBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M14.53 5.47a.75.75 0 0 1 0 1.06L9.06 12l5.47 5.47a.75.75 0 1 1-1.06 1.06l-6-6a.75.75 0 0 1 0-1.06l6-6a.75.75 0 0 1 1.06 0"/></svg>';
+
+    const monthTitle = document.createElement('div');
+    monthTitle.className = 'date-modal-month-title';
+
+    const nextBtn = document.createElement('button');
+    nextBtn.type = 'button';
+    nextBtn.className = 'date-modal-nav-btn date-modal-nav-btn--next';
+    nextBtn.setAttribute('aria-label', 'Следующий месяц');
+    nextBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><path fill="currentColor" d="M9.47 18.53a.75.75 0 0 1 0-1.06L14.94 12L9.47 6.53a.75.75 0 1 1 1.06-1.06l6 6a.75.75 0 0 1 0 1.06l-6 6a.75.75 0 0 1-1.06 0"/></svg>';
+
+    monthNav.append(prevBtn, monthTitle, nextBtn);
+
+    const weekdayRow = document.createElement('div');
+    weekdayRow.className = 'date-modal-weekdays';
+    DATE_MODAL_WEEKDAY_SHORT_NAMES.forEach((weekdayName) => {
+        const weekday = document.createElement('span');
+        weekday.className = 'date-modal-weekday';
+        weekday.textContent = weekdayName;
+        weekdayRow.append(weekday);
+    });
+
+    const calendarBody = document.createElement('div');
+    calendarBody.className = 'date-modal-calendar-body';
+
+    const grid = document.createElement('div');
+    grid.className = 'date-modal-grid';
+    calendarBody.append(weekdayRow, grid);
+
+    const quickActions = document.createElement('div');
+    quickActions.className = 'date-modal-quick-actions';
+
+    const todayBtn = document.createElement('button');
+    todayBtn.type = 'button';
+    todayBtn.className = 'date-modal-today-btn';
+    todayBtn.textContent = 'Сегодня';
+    quickActions.append(todayBtn);
+
+    const actions = document.createElement('div');
+    actions.className = 'date-modal-actions';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'btn date-modal-action-btn date-modal-action-btn--cancel';
+    cancelBtn.textContent = 'Отмена';
+
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.className = 'btn date-modal-action-btn date-modal-action-btn--save';
+    saveBtn.textContent = 'Сохранить';
+
+    actions.append(cancelBtn, saveBtn);
+    modal.append(header, monthNav, calendarBody, quickActions);
+    overlay.append(modal);
+    document.body.append(overlay);
+
+    const swipeState = {
+        startX: 0,
+        startY: 0,
+        deltaX: 0,
+        deltaY: 0,
+        active: false,
+        panAxis: null,
+        suppressClickUntil: 0
+    };
+
+    function shiftMonth(delta) {
+        visibleMonth = addDateModalMonths(visibleMonth, delta);
+        renderCalendar();
+        try {
+            navigator.vibrate?.(8);
+        } catch (_) {}
+    }
+
+    function renderCalendar() {
+        selectedValue.textContent = formatDateModalHuman(selectedDate);
+        monthTitle.textContent = getDateModalMonthTitle(visibleMonth);
+        grid.innerHTML = '';
+
+        getDateModalMonthMatrix(visibleMonth).forEach((cellDate) => {
+            const dayBtn = document.createElement('button');
+            dayBtn.type = 'button';
+            dayBtn.className = 'date-modal-day';
+            dayBtn.textContent = String(cellDate.getDate());
+
+            if (!isSameDateModalMonth(cellDate, visibleMonth)) {
+                dayBtn.classList.add('is-outside');
+            }
+            if (isSameDateModalDay(cellDate, today)) {
+                dayBtn.classList.add('is-today');
+            }
+            if (isSameDateModalDay(cellDate, selectedDate)) {
+                dayBtn.classList.add('is-selected');
+            }
+
+            dayBtn.addEventListener('click', () => {
+                if (Date.now() < swipeState.suppressClickUntil) {
+                    return;
+                }
+                selectedDate = new Date(cellDate.getFullYear(), cellDate.getMonth(), cellDate.getDate());
+                closeModal(formatDateModalIso(selectedDate));
+            });
+
+            grid.append(dayBtn);
+        });
+    }
+
+    function handleKeydown(event) {
+        if (event.key === 'Escape') {
+            closeModal(null);
+        }
+    }
+
+    function cleanup() {
+        document.removeEventListener('keydown', handleKeydown);
+    }
+
+    function closeModal(result = null) {
+        cleanup();
+        overlay.classList.remove('visible');
+        setTimeout(() => {
+            overlay.remove();
+            onSave(result);
+        }, 200);
+    }
+
+    prevBtn.addEventListener('click', () => {
+        shiftMonth(-1);
+    });
+
+    nextBtn.addEventListener('click', () => {
+        shiftMonth(1);
+    });
+
+    todayBtn.addEventListener('click', () => {
+        selectedDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        closeModal(formatDateModalIso(selectedDate));
+    });
+
+    calendarBody.addEventListener('touchstart', (event) => {
+        if (event.touches.length !== 1) return;
+        const touch = event.touches[0];
+        swipeState.startX = touch.clientX;
+        swipeState.startY = touch.clientY;
+        swipeState.deltaX = 0;
+        swipeState.deltaY = 0;
+        swipeState.active = true;
+        swipeState.panAxis = null;
+    }, { passive: true });
+
+    calendarBody.addEventListener('touchmove', (event) => {
+        if (!swipeState.active || event.touches.length !== 1) return;
+        const touch = event.touches[0];
+        swipeState.deltaX = touch.clientX - swipeState.startX;
+        swipeState.deltaY = touch.clientY - swipeState.startY;
+
+        if (!swipeState.panAxis) {
+            swipeState.panAxis = resolveSwipePanAxis(swipeState.deltaX, swipeState.deltaY);
+        }
+
+        if (swipeState.panAxis === 'x') {
+            event.preventDefault();
+        }
+    }, { passive: false });
+
+    function finishSwipe() {
+        if (!swipeState.active) return;
+        const deltaX = swipeState.deltaX;
+        const deltaY = swipeState.deltaY;
+        const isHorizontal = swipeState.panAxis === 'x' && Math.abs(deltaX) > Math.abs(deltaY);
+
+        swipeState.active = false;
+        swipeState.panAxis = null;
+        swipeState.deltaX = 0;
+        swipeState.deltaY = 0;
+
+        if (!isHorizontal || Math.abs(deltaX) < 36) {
+            return;
+        }
+
+        swipeState.suppressClickUntil = Date.now() + 280;
+        shiftMonth(deltaX < 0 ? 1 : -1);
+    }
+
+    calendarBody.addEventListener('touchend', finishSwipe);
+    calendarBody.addEventListener('touchcancel', finishSwipe);
+    overlay.addEventListener('click', (event) => {
+        if (event.target === overlay) {
+            closeModal(null);
+        }
+    });
+
+    document.addEventListener('keydown', handleKeydown);
+    renderCalendar();
+    requestAnimationFrame(() => overlay.classList.add('visible'));
+}
+
+function renderJournalRecordDetails(container) {
     const record = state.journal.find(r => r.id === state.selectedJournalRecord);
     if (!record) {
         state.selectedJournalRecord = null;
@@ -7194,6 +7842,9 @@ editBtn.addEventListener('click', () => {
       console.error(e);
       showToast('Ошибка обновления даты');
     }
+  }, {
+    requireConfirm: true,
+    confirmLabel: 'Изменить дату'
   });
 });
 
@@ -7334,6 +7985,7 @@ editBtn.addEventListener('click', () => {
     });
 
     root.append(container);
+    setupJournalRecordDetailsTopBarTitleSync();
 }
 
 
@@ -7832,6 +8484,7 @@ export function renderTopBar() {
     const oldBar = document.querySelector('.top-bar');
     const root = document.getElementById('root');
     teardownProgramDetailsTopBarTitleSync();
+    teardownJournalRecordDetailsTopBarTitleSync();
     if (oldBar) oldBar.remove();
 
 
@@ -7848,6 +8501,9 @@ export function renderTopBar() {
     topBar.className = 'top-bar';
     if (state.currentPage === 'programDetails') {
         topBar.classList.add('top-bar--program-details');
+    }
+    if (state.currentPage === 'journal' && state.selectedJournalRecord) {
+        topBar.classList.add('top-bar--journal-record-details');
     }
 
 
@@ -7977,17 +8633,43 @@ export function renderTopBar() {
     }
 
 
+    if (state.currentPage === 'journal' && state.selectedJournalRecord) {
+        backBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><title>Ios-arrow-ltr-24-filled SVG Icon</title><path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"></path></svg>';
+        backBtn.onclick = closeSelectedJournalRecordDetails;
+        showBack = true;
+    }
+
     if (showBack) topBar.appendChild(backBtn);
 
     // ------- ГАМБУРГЕР (ВСЕГДА СПРАВА) -------
-    const burger = document.createElement('button');
-    if (state.currentPage === 'programDetails') {
-        const selectedProgram = state.programs.find(p => p.id === state.selectedProgramIdForDetails);
+    if (state.currentPage === 'programDetails' || (state.currentPage === 'journal' && state.selectedJournalRecord)) {
+        let titleText = '';
+        if (state.currentPage === 'programDetails') {
+            const selectedProgram = state.programs.find(p => p.id === state.selectedProgramIdForDetails);
+            titleText = selectedProgram?.name || '';
+        } else {
+            const selectedRecord = state.journal.find(r => r.id === state.selectedJournalRecord);
+            titleText = selectedRecord?.programName || '';
+        }
+
         const barTitle = document.createElement('div');
         barTitle.className = 'top-bar-program-title';
-        barTitle.textContent = selectedProgram?.name || '';
+        barTitle.textContent = titleText;
         topBar.appendChild(barTitle);
     }
+
+    if (state.currentPage === 'journal' && state.selectedJournalRecord) {
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'top-menu-btn top-delete-btn';
+        deleteBtn.innerHTML = ' <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Trash-24 SVG Icon</title><path fill="currentColor" d="M16 1.75V3h5.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H8V1.75C8 .784 8.784 0 9.75 0h4.5C15.216 0 16 .784 16 1.75m-6.5 0V3h5V1.75a.25.25 0 0 0-.25-.25h-4.5a.25.25 0 0 0-.25.25M4.997 6.178a.75.75 0 1 0-1.493.144L4.916 20.92a1.75 1.75 0 0 0 1.742 1.58h10.684a1.75 1.75 0 0 0 1.742-1.581l1.413-14.597a.75.75 0 0 0-1.494-.144l-1.412 14.596a.25.25 0 0 1-.249.226H6.658a.25.25 0 0 1-.249-.226z"></path><path fill="currentColor" d="M9.206 7.501a.75.75 0 0 1 .793.705l.5 8.5A.75.75 0 1 1 9 16.794l-.5-8.5a.75.75 0 0 1 .705-.793Zm6.293.793A.75.75 0 1 0 14 8.206l-.5 8.5a.75.75 0 0 0 1.498.088l.5-8.5Z"></path></svg> ';
+        deleteBtn.onclick = deleteSelectedJournalRecordFromDetails;
+        topBar.appendChild(deleteBtn);
+        root.prepend(topBar);
+        setupFloatingTimer(topBar);
+        return;
+    }
+
+    const burger = document.createElement('button');
     burger.className = 'top-menu-btn';
     burger.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 15 15"><title>Hamburger-menu SVG Icon</title><path fill="currentColor" fill-rule="evenodd" d="M1.5 3a.5.5 0 0 0 0 1h12a.5.5 0 0 0 0-1zM1 7.5a.5.5 0 0 1 .5-.5h12a.5.5 0 0 1 0 1h-12a.5.5 0 0 1-.5-.5m0 4a.5.5 0 0 1 .5-.5h12a.5.5 0 0 1 0 1h-12a.5.5 0 0 1-.5-.5" clip-rule="evenodd"></path></svg>';
     burger.onclick = openMenuModal;

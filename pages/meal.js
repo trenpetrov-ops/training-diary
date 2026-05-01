@@ -36,6 +36,7 @@ import {
     launchAppleHealthShortcut,
     openCycleSelectModal,
     openConfirmModal,
+    openDateModal,
     openMediaFullScreen,
     renderTopBar,
     ensureCycleSelected,
@@ -46,6 +47,7 @@ import {
 } from '../script.js';
 import { debounce } from './supplement.js';
 import { resolveSwipePanAxis } from '../gestures.js';
+import { attachMonthCarouselSwipe } from '../calendar-month-carousel.js';
 import { bindSwipeBlock, closeSwipeRowVisual } from '../swipe-engine.js';
 import {
     syncMealSearchBottomNavFromOverlay,
@@ -2773,6 +2775,16 @@ function bindMealCalendarButton() {
     });
 }
 
+let mealCalendarSuppressTapUntil = 0;
+
+function suppressMealCalendarDayTap() {
+    mealCalendarSuppressTapUntil = Date.now() + 340;
+}
+
+function shouldSuppressMealCalendarDayTap() {
+    return Date.now() < mealCalendarSuppressTapUntil;
+}
+
 function getFilledMealIdsFromData(mealsData = {}) {
     return getMealKeysFromData(mealsData).filter(mealId => {
         return Array.isArray(mealsData[mealId]) && mealsData[mealId].length > 0;
@@ -3408,6 +3420,48 @@ function setupCreateFoodStickyTitleBorder({ titleEl, watchEl }) {
     };
 }
 
+function setupMealMonthlySummaryStickyBorder(stickyEl, watchEl) {
+    const scrollRoot = stickyEl?.closest('.meal-monthly-summary-screen')
+        || stickyEl?.closest('.meal-overlay-layer')
+        || stickyEl?.closest('.meal-overlay-subpage')
+        || document.getElementById('root');
+    if (!scrollRoot || !stickyEl || !watchEl) return;
+
+    if (typeof stickyEl._cleanupMonthlySummaryStickyBorder === 'function') {
+        stickyEl._cleanupMonthlySummaryStickyBorder();
+    }
+
+    let ticking = false;
+    const EPS = 0.5;
+
+    const update = () => {
+        ticking = false;
+        const stickyRect = stickyEl.getBoundingClientRect();
+        const watchRect = watchEl.getBoundingClientRect();
+        const overlapPx = stickyRect.bottom - watchRect.top;
+        stickyEl.classList.toggle('meal-monthly-summary-sticky--stuck', overlapPx > EPS);
+    };
+
+    const onScroll = () => {
+        if (ticking) return;
+        ticking = true;
+        requestAnimationFrame(update);
+    };
+
+    const onResize = () => update();
+
+    update();
+
+    scrollRoot.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onResize);
+
+    stickyEl._cleanupMonthlySummaryStickyBorder = () => {
+        scrollRoot.removeEventListener('scroll', onScroll);
+        window.removeEventListener('resize', onResize);
+        stickyEl.classList.remove('meal-monthly-summary-sticky--stuck');
+    };
+}
+
 
 function renderMealMainScreen() {
     if (!mealMainEl) return;
@@ -3651,6 +3705,7 @@ function renderMealMonthlySummaryPage() {
 
     sticky.append(title, selector, head);
     screen.append(sticky, body, monthPickerBackdrop, monthPicker);
+    setupMealMonthlySummaryStickyBorder(sticky, body);
 
     const handleBackToMeal = () => {
         closeMealOverlayAndShowMealMain();
@@ -3769,7 +3824,10 @@ function renderMealMonthlySummaryPage() {
         const isSelected = dateStr === state.selectedDate;
         const isToday = dateStr === todayStr;
 
-        const row = createElement('div', 'meal-monthly-summary-row');
+        const row = createElement(
+            'div',
+            `meal-monthly-summary-row${isToday ? ' meal-monthly-summary-row--today' : ''}`
+        );
 
         const dateBtn = createElement(
             'button',
@@ -3848,19 +3906,34 @@ function renderMealMonthlySummaryPage() {
         `;
     }
 
+    function isSummaryMonthShowingToday() {
+        const t = parseLocalDate(todayStr);
+        return t.getFullYear() === visibleMonth.getFullYear() && t.getMonth() === visibleMonth.getMonth();
+    }
+
+    /** Без анимации: после отрисовки выставляет scroll так, чтобы строка «сегодня» была по центру видимой области. */
+    function scrollSummaryViewportToTodayCentered() {
+        if (!isSummaryMonthShowingToday()) return;
+        const row = body.querySelector('.meal-monthly-summary-row--today');
+        if (!row || !screen.isConnected) return;
+        void screen.offsetHeight;
+        const scrRect = screen.getBoundingClientRect();
+        const rowRect = row.getBoundingClientRect();
+        const delta = rowRect.top + rowRect.height / 2 - (scrRect.top + scrRect.height / 2);
+        screen.scrollTop += delta;
+    }
+
     function renderMonthContent(dailySummary) {
         body.innerHTML = '';
 
         const list = createElement('div', 'meal-monthly-summary-list');
-        getMealSummaryMonthDays(visibleMonth)
-            .slice()
-            .reverse()
-            .forEach(dateStr => {
-                list.append(buildMonthRow(dateStr, dailySummary));
-            });
+        getMealSummaryMonthDays(visibleMonth).forEach(dateStr => {
+            list.append(buildMonthRow(dateStr, dailySummary));
+        });
 
         const monthStats = getMonthMealsDailySummaryStats(visibleMonth, dailySummary);
         body.append(list, buildMonthFooter(monthStats));
+        scrollSummaryViewportToTodayCentered();
     }
 
     async function loadAndRenderMonth() {
@@ -9139,16 +9212,93 @@ function makeFancyDateButton(initialValue = '') {
     };
 }
 
+function makeFancyDateButtonModal(initialValue = '', onChange = null) {
+    const wrap = document.createElement('div');
+    let currentValue = initialValue || '';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.style.display = 'inline-flex';
+    btn.style.alignItems = 'center';
+    btn.style.gap = '8px';
+    btn.style.padding = '10px 12px';
+    btn.style.border = '1px solid #d6d6d6';
+    btn.style.borderRadius = '12px';
+    btn.style.background = '#fff';
+    btn.style.cursor = 'pointer';
+    btn.style.fontSize = '14px';
+    btn.style.fontWeight = '600';
+    btn.style.color = initialValue ? '#222' : '#777';
+    btn.style.minWidth = '128px';
+    btn.style.justifyContent = 'space-between';
+
+    const text = document.createElement('span');
+    const icon = document.createElement('span');
+    icon.textContent = '📅';
+
+    function formatDisplayDateValue(dateStr) {
+        if (!dateStr) return 'Выбрать';
+        const [y, m, d] = dateStr.split('-');
+        return `${d}.${m}.${y}`;
+    }
+
+    function setValue(value) {
+        currentValue = value || '';
+        text.textContent = formatDisplayDateValue(currentValue);
+        btn.style.color = currentValue ? '#222' : '#777';
+    }
+
+    function openPickerDirectly() {
+        const now = new Date();
+        const fallbackValue = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        openDateModal(currentValue || fallbackValue, (nextValue) => {
+            if (!nextValue) return;
+            setValue(nextValue);
+            if (typeof onChange === 'function') {
+                onChange(nextValue);
+            }
+        });
+    }
+
+    btn.onclick = (e) => {
+        e.stopPropagation();
+        openPickerDirectly();
+    };
+
+    setValue(initialValue);
+    btn.append(text, icon);
+    wrap.append(btn);
+
+    return {
+        wrap,
+        button: btn,
+        setValue,
+        getValue: () => currentValue,
+        openPickerDirectly
+    };
+}
+
     // ===== row: day =====
     const dayRowObj = makePickerRow('За день');
-    const dayPicker = makeFancyDateButton(state.selectedDate || '');
+    const dayPicker = makeFancyDateButtonModal(state.selectedDate || '', () => {
+        selectedMode = 'day';
+        startPicker.setValue('');
+        endPicker.setValue('');
+        activateRow(dayRowObj.row, rangeRowObj.row);
+    });
 
     dayRowObj.right.append(dayPicker.wrap);
 
     // ===== row: range =====
     const rangeRowObj = makePickerRow('Период');
-    const startPicker = makeFancyDateButton('');
-    const endPicker = makeFancyDateButton('');
+    function handleRangeChange() {
+        selectedMode = 'range';
+        dayPicker.setValue('');
+        activateRow(rangeRowObj.row, dayRowObj.row);
+    }
+
+    const startPicker = makeFancyDateButtonModal('', handleRangeChange);
+    const endPicker = makeFancyDateButtonModal('', handleRangeChange);
 
     const dash = document.createElement('span');
     dash.textContent = '—';
@@ -9158,21 +9308,6 @@ function makeFancyDateButton(initialValue = '') {
     rangeRowObj.right.append(startPicker.wrap, dash, endPicker.wrap);
 
     // ===== interactions =====
-        dayPicker.input.onchange = () => {
-            selectedMode = 'day';
-            startPicker.setValue('');
-            endPicker.setValue('');
-            activateRow(dayRowObj.row, rangeRowObj.row);
-        };
-
-        function handleRangeChange() {
-            selectedMode = 'range';
-            dayPicker.setValue('');
-            activateRow(rangeRowObj.row, dayRowObj.row);
-        }
-
-        startPicker.input.onchange = handleRangeChange;
-        endPicker.input.onchange = handleRangeChange;
 
         dayRowObj.row.onclick = (e) => {
             if (e.target.closest('button')) return;
@@ -9181,7 +9316,11 @@ function makeFancyDateButton(initialValue = '') {
 
         rangeRowObj.row.onclick = (e) => {
             if (e.target.closest('button')) return;
-            startPicker.openPickerDirectly();
+            if (!startPicker.getValue()) {
+                startPicker.openPickerDirectly();
+                return;
+            }
+            endPicker.openPickerDirectly();
         };
 
     // ===== buttons =====
@@ -15615,6 +15754,8 @@ function openMealCalendarSheet() {
     const todayStr = formatLocalDate(today);
     const selectedDate = state.selectedDate ? parseLocalDate(state.selectedDate) : today;
     let visibleMonth = getMonthStart(selectedDate);
+    const rootScrollHost = document.getElementById('root');
+    const hadRootScrollLock = rootScrollHost?.classList.contains('meal-calendar-root-locked');
 
     const overlay = document.createElement('div');
     overlay.className = 'meal-calendar-overlay';
@@ -15641,7 +15782,7 @@ function openMealCalendarSheet() {
 
     const weekdays = document.createElement('div');
     weekdays.className = 'meal-calendar-weekdays';
-    ['П', 'В', 'С', 'Ч', 'П', 'С', 'В'].forEach(day => {
+    ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].forEach(day => {
         const el = document.createElement('div');
         el.className = 'meal-calendar-weekday';
         el.textContent = day;
@@ -15669,14 +15810,13 @@ function openMealCalendarSheet() {
     overlay.append(panel);
     document.body.append(overlay);
 
+    if (!hadRootScrollLock) {
+        rootScrollHost?.classList.add('meal-calendar-root-locked');
+    }
+
     let isClosing = false;
-    let touchStartX = 0;
-    let touchStartY = 0;
-    let touchCurrentX = 0;
-    let touchCurrentY = 0;
-    let isDragging = false;
-    let monthPanAxis = null;
-    let isAnimating = false;
+    const animationDuration = 220;
+    const swipeThreshold = 40;
 
     function closeCalendar() {
         if (isClosing) return;
@@ -15686,6 +15826,9 @@ function openMealCalendarSheet() {
         panel.classList.remove('open');
 
         setTimeout(() => {
+            if (!hadRootScrollLock) {
+                rootScrollHost?.classList.remove('meal-calendar-root-locked');
+            }
             overlay.remove();
         }, 260);
     }
@@ -15705,9 +15848,15 @@ function openMealCalendarSheet() {
         return !!monthData?.[dateStr];
     }
 
+    function syncTodayButtonVisibility() {
+        const currentSelected = state.selectedDate ? parseLocalDate(state.selectedDate) : today;
+        todayBtn.style.display = isSameDay(currentSelected, today) ? 'none' : 'inline-flex';
+    }
+
     function buildMonthPage(monthDate) {
         const page = document.createElement('div');
         page.className = 'meal-calendar-month-page';
+        page.dataset.monthKey = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}`;
 
         const grid = document.createElement('div');
         grid.className = 'meal-calendar-grid';
@@ -15721,6 +15870,7 @@ function openMealCalendarSheet() {
             btn.className = 'meal-calendar-day';
 
             const dateStr = formatLocalDate(cellDate);
+            btn.dataset.date = dateStr;
             const inCurrentMonth = isSameMonth(cellDate, monthDate);
             const isTodayCell = isSameDay(cellDate, today);
             const isSelectedCell = isSameDay(cellDate, currentSelected);
@@ -15733,7 +15883,11 @@ function openMealCalendarSheet() {
 
             btn.innerHTML = `<span class="meal-calendar-day-num">${cellDate.getDate()}</span>`;
 
-            btn.onclick = () => {
+            btn.onclick = (event) => {
+                if (shouldSuppressMealCalendarDayTap()) {
+                    event?.preventDefault?.();
+                    return;
+                }
                 selectDate(cellDate);
             };
 
@@ -15748,148 +15902,73 @@ function openMealCalendarSheet() {
         await getMonthMealsPresence(monthDate);
     }
 
-    function renderMonthTriplet() {
-        title.textContent = getCalendarMonthTitle(visibleMonth);
+    function syncMonthPagePresence(page) {
+        if (!page) return;
+        const monthKey = page.dataset.monthKey || '';
+        const monthData = monthMealsPresenceCache[monthKey] || {};
 
-        monthsTrack.innerHTML = '';
+        page.querySelectorAll('.meal-calendar-day').forEach((btn) => {
+            if (btn.classList.contains('is-outside')) {
+                btn.classList.remove('has-entry');
+                return;
+            }
 
-        const prevMonth = addMonths(visibleMonth, -1);
-        const nextMonth = addMonths(visibleMonth, 1);
+            const dateStr = btn.dataset.date || '';
+            btn.classList.toggle('has-entry', !!monthData[dateStr]);
+        });
+    }
 
-        const prevPage = buildMonthPage(prevMonth);
-        const currentPage = buildMonthPage(visibleMonth);
-        const nextPage = buildMonthPage(nextMonth);
+    function syncRenderedMonthTripletPresence() {
+        [...monthsTrack.children].forEach((page) => syncMonthPagePresence(page));
+    }
 
-        monthsTrack.append(prevPage, currentPage, nextPage);
+    function resetMonthTripletPages(baseMonth) {
+        const prevMonth = addMonths(baseMonth, -1);
+        const nextMonth = addMonths(baseMonth, 1);
 
+        monthsTrack.replaceChildren(
+            buildMonthPage(prevMonth),
+            buildMonthPage(baseMonth),
+            buildMonthPage(nextMonth)
+        );
         monthsTrack.style.transition = 'none';
         monthsTrack.style.transform = 'translate3d(-100%, 0, 0)';
 
         requestAnimationFrame(() => {
-            monthsTrack.style.transition = 'transform 0.22s ease';
+            monthsTrack.style.transition = `transform ${animationDuration}ms ease`;
         });
+    }
+
+    function renderMonthTriplet() {
+        title.textContent = getCalendarMonthTitle(visibleMonth);
+        syncTodayButtonVisibility();
+        resetMonthTripletPages(visibleMonth);
+
+        const renderedMonthKey = `${visibleMonth.getFullYear()}-${visibleMonth.getMonth()}`;
 
         Promise.all([
-            preloadMonthPresence(prevMonth),
+            preloadMonthPresence(addMonths(visibleMonth, -1)),
             preloadMonthPresence(visibleMonth),
-            preloadMonthPresence(nextMonth)
+            preloadMonthPresence(addMonths(visibleMonth, 1))
         ]).then(() => {
             if (!document.body.contains(overlay) || isClosing) return;
-            title.textContent = getCalendarMonthTitle(visibleMonth);
-
-            monthsTrack.innerHTML = '';
-            monthsTrack.append(
-                buildMonthPage(prevMonth),
-                buildMonthPage(visibleMonth),
-                buildMonthPage(nextMonth)
-            );
-            monthsTrack.style.transition = 'none';
-            monthsTrack.style.transform = 'translate3d(-100%, 0, 0)';
-
-            requestAnimationFrame(() => {
-                monthsTrack.style.transition = 'transform 0.22s ease';
-            });
+            const activeMonthKey = `${visibleMonth.getFullYear()}-${visibleMonth.getMonth()}`;
+            if (activeMonthKey !== renderedMonthKey) return;
+            syncRenderedMonthTripletPresence();
         });
     }
 
-    function animateTo(direction) {
-        if (isAnimating) return;
-        isAnimating = true;
-
-        monthsTrack.style.transition = 'transform 0.22s ease';
-
-        if (direction === 'next') {
-            monthsTrack.style.transform = 'translate3d(-200%, 0, 0)';
-            setTimeout(() => {
-                visibleMonth = addMonths(visibleMonth, 1);
-                renderMonthTriplet();
-                isAnimating = false;
-            }, 220);
-            return;
-        }
-
-        if (direction === 'prev') {
-            monthsTrack.style.transform = 'translate3d(0%, 0, 0)';
-            setTimeout(() => {
-                visibleMonth = addMonths(visibleMonth, -1);
-                renderMonthTriplet();
-                isAnimating = false;
-            }, 220);
-            return;
-        }
-
-        monthsTrack.style.transform = 'translate3d(-100%, 0, 0)';
-        setTimeout(() => {
-            isAnimating = false;
-        }, 220);
+    function changeMealCalendarMonth(direction) {
+        visibleMonth = addMonths(visibleMonth, direction);
+        renderMonthTriplet();
     }
 
-    monthsViewport.addEventListener('touchstart', (e) => {
-        if (isAnimating) return;
-        if (!e.touches || !e.touches.length) return;
-
-        touchStartX = e.touches[0].clientX;
-        touchStartY = e.touches[0].clientY;
-        touchCurrentX = touchStartX;
-        touchCurrentY = touchStartY;
-        monthPanAxis = null;
-        isDragging = true;
-        monthsTrack.style.transition = 'none';
-    }, { passive: true });
-
-    monthsViewport.addEventListener('touchmove', (e) => {
-        if (!isDragging || isAnimating) return;
-        if (!e.touches || !e.touches.length) return;
-
-        touchCurrentX = e.touches[0].clientX;
-        touchCurrentY = e.touches[0].clientY;
-        const deltaX = touchCurrentX - touchStartX;
-        const deltaY = touchCurrentY - touchStartY;
-
-        if (!monthPanAxis) {
-            monthPanAxis = resolveSwipePanAxis(deltaX, deltaY);
-            if (monthPanAxis == null) return;
-            if (monthPanAxis === 'y') {
-                isDragging = false;
-                monthsTrack.style.transition = 'transform 0.22s ease';
-                monthsTrack.style.transform = 'translate3d(-100%, 0, 0)';
-                return;
-            }
-        }
-
-        if (monthPanAxis !== 'x') return;
-
-        if (e.cancelable) e.preventDefault();
-
-        const width = monthsViewport.offsetWidth || 1;
-        const percent = (deltaX / width) * 100;
-
-        monthsTrack.style.transform = `translate3d(calc(-100% + ${percent}%), 0, 0)`;
-    }, { passive: false });
-
-    monthsViewport.addEventListener('touchend', () => {
-        monthPanAxis = null;
-        if (!isDragging || isAnimating) return;
-        isDragging = false;
-
-        const deltaX = touchCurrentX - touchStartX;
-
-        if (deltaX <= -40) {
-            animateTo('next');
-        } else if (deltaX >= 40) {
-            animateTo('prev');
-        } else {
-            animateTo('current');
-        }
-    });
-
-    monthsViewport.addEventListener('touchcancel', () => {
-        monthPanAxis = null;
-        isDragging = false;
-        if (!isAnimating) {
-            monthsTrack.style.transition = 'transform 0.22s ease';
-            monthsTrack.style.transform = 'translate3d(-100%, 0, 0)';
-        }
+    attachMonthCarouselSwipe(monthsViewport, monthsTrack, {
+        animationDuration,
+        swipeThreshold,
+        onCommitNext: () => changeMealCalendarMonth(1),
+        onCommitPrev: () => changeMealCalendarMonth(-1),
+        onHorizontalSwipeEnd: suppressMealCalendarDayTap
     });
 
     closeBtn.onclick = closeCalendar;
@@ -15901,19 +15980,7 @@ function openMealCalendarSheet() {
     });
 
     todayBtn.onclick = () => {
-        const todayMonth = getMonthStart(today);
-
-        if (!isSameMonth(visibleMonth, todayMonth)) {
-            visibleMonth = todayMonth;
-            renderMonthTriplet();
-            return;
-        }
-
-        closeCalendar();
-
-        setTimeout(() => {
-            switchMealDate(todayStr);
-        }, 160);
+        selectDate(today);
     };
 
     renderMonthTriplet();

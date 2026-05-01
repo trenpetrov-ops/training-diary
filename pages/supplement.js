@@ -12,6 +12,7 @@ import {
     where
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { openCycleSelectModal } from '../script.js';
+import { openDateModal } from '../script.js';
 import { getTodayDateString } from '../script.js';
 import { formatDayAndMonth } from '../script.js';
 import { dateToInputFormat } from '../script.js';
@@ -22,7 +23,7 @@ import { openConfirmModal } from '../script.js';
 import { ensureCycleSelected } from '../script.js';
 import { renderTopBar } from '../script.js';
 import { render } from '../script.js';
-import { resolveSwipePanAxis } from '../gestures.js';
+import { attachMonthCarouselSwipe } from '../calendar-month-carousel.js';
 import {
     clearMealBottomNavOverlayMode,
     setMealBottomNavOverlayMode,
@@ -1694,109 +1695,9 @@ function changeSupplementCalendarMonth(planData, direction) {
 }
 
 function attachSupplementCalendarSwipe(viewport, track, planData) {
-    let startX = 0;
-    let startY = 0;
-    let currentX = 0;
-    let currentY = 0;
-    let panAxis = null;
-    let isDragging = false;
-    let isAnimating = false;
-    const animationDuration = 220;
-    const swipeThreshold = 40;
-
-    const animateTo = (direction) => {
-        if (isAnimating) return;
-        isAnimating = true;
-
-        track.style.transition = `transform ${animationDuration}ms ease`;
-
-        if (direction === 'next') {
-            track.style.transform = 'translate3d(-200%, 0, 0)';
-            navigator.vibrate?.(8);
-            setTimeout(() => changeSupplementCalendarMonth(planData, 1), animationDuration);
-            return;
-        }
-
-        if (direction === 'prev') {
-            track.style.transform = 'translate3d(0%, 0, 0)';
-            navigator.vibrate?.(8);
-            setTimeout(() => changeSupplementCalendarMonth(planData, -1), animationDuration);
-            return;
-        }
-
-        track.style.transform = 'translate3d(-100%, 0, 0)';
-        setTimeout(() => {
-            isAnimating = false;
-        }, animationDuration);
-    };
-
-    viewport.addEventListener('touchstart', event => {
-        if (isAnimating || !event.touches?.length) return;
-        const touch = event.touches[0];
-        startX = touch.clientX;
-        startY = touch.clientY;
-        currentX = startX;
-        currentY = startY;
-        panAxis = null;
-        isDragging = true;
-        track.style.transition = 'none';
-    }, { passive: true });
-
-    viewport.addEventListener('touchmove', event => {
-        if (!isDragging || isAnimating || !event.touches?.length) return;
-
-        const touch = event.touches[0];
-        const diffX = touch.clientX - startX;
-        const diffY = touch.clientY - startY;
-        currentX = touch.clientX;
-        currentY = touch.clientY;
-
-        if (!panAxis) {
-            panAxis = resolveSwipePanAxis(diffX, diffY);
-            if (panAxis == null) return;
-            if (panAxis === 'y') {
-                isDragging = false;
-                track.style.transition = `transform ${animationDuration}ms ease`;
-                track.style.transform = 'translate3d(-100%, 0, 0)';
-                return;
-            }
-        }
-
-        if (panAxis !== 'x') return;
-        if (event.cancelable) event.preventDefault();
-
-        const width = viewport.offsetWidth || 1;
-        const percent = (diffX / width) * 100;
-        track.style.transform = `translate3d(calc(-100% + ${percent}%), 0, 0)`;
-    }, { passive: false });
-
-    viewport.addEventListener('touchend', () => {
-        panAxis = null;
-        if (!isDragging || isAnimating) return;
-        isDragging = false;
-
-        const diffX = currentX - startX;
-
-        if (diffX <= -swipeThreshold) {
-            animateTo('next');
-            return;
-        }
-
-        if (diffX >= swipeThreshold) {
-            animateTo('prev');
-            return;
-        }
-
-        animateTo('current');
-    });
-
-    viewport.addEventListener('touchcancel', () => {
-        panAxis = null;
-        isDragging = false;
-        if (!isAnimating) {
-            track.style.transition = `transform ${animationDuration}ms ease`;
-            track.style.transform = 'translate3d(-100%, 0, 0)';
-        }
+    attachMonthCarouselSwipe(viewport, track, {
+        onCommitNext: () => changeSupplementCalendarMonth(planData, 1),
+        onCommitPrev: () => changeSupplementCalendarMonth(planData, -1)
     });
 }
 
@@ -4017,6 +3918,7 @@ function openSupplementDeleteOptionsModal({ planIndex, entry }) {
 // 📅 МОДАЛЬНОЕ ОКНО ВЫБОРА ДАТ ДЛЯ PDF
 // =====================================================================
 export function openPdfDateModal(currentCycle) {
+    return openPdfDateModalStyled(currentCycle);
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay active';
 
@@ -4078,6 +3980,177 @@ export function openPdfDateModal(currentCycle) {
     modal.append(controls);
     overlay.append(modal);
     document.body.append(overlay);
+}
+
+function openPdfDateModalStyled(currentCycle) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    overlay.style.backdropFilter = 'blur(4px)';
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-content';
+    modal.style.maxWidth = '520px';
+    modal.style.width = '92%';
+    modal.style.borderRadius = '20px';
+    modal.style.padding = '20px';
+
+    const defaultStart = currentCycle.startDateString || getTodayDateString();
+    const defaultEnd = getTodayDateString();
+
+    function formatDisplayDateValue(dateStr) {
+        if (!dateStr) return 'Выбрать';
+        const [y, m, d] = dateStr.split('-');
+        return `${d}.${m}.${y}`;
+    }
+
+    function makePickerRow(labelText) {
+        const row = document.createElement('div');
+        row.style.display = 'flex';
+        row.style.alignItems = 'center';
+        row.style.justifyContent = 'space-between';
+        row.style.gap = '12px';
+        row.style.padding = '14px 16px';
+        row.style.border = '1px solid #d9d9d9';
+        row.style.borderRadius = '16px';
+        row.style.background = '#fff';
+        row.style.marginBottom = '14px';
+        row.style.transition = '0.18s ease';
+
+        const label = document.createElement('div');
+        label.textContent = labelText;
+        label.style.fontSize = '15px';
+        label.style.fontWeight = '600';
+        label.style.color = '#222';
+
+        const right = document.createElement('div');
+        right.style.display = 'flex';
+        right.style.alignItems = 'center';
+        right.style.gap = '8px';
+
+        row.append(label, right);
+        return { row, right };
+    }
+
+    function makeFancyDateButton(initialValue = '') {
+        const wrap = document.createElement('div');
+        let currentValue = initialValue || '';
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.style.display = 'inline-flex';
+        btn.style.alignItems = 'center';
+        btn.style.gap = '8px';
+        btn.style.padding = '10px 12px';
+        btn.style.border = '1px solid #d6d6d6';
+        btn.style.borderRadius = '12px';
+        btn.style.background = '#fff';
+        btn.style.cursor = 'pointer';
+        btn.style.fontSize = '14px';
+        btn.style.fontWeight = '600';
+        btn.style.color = initialValue ? '#222' : '#777';
+        btn.style.minWidth = '128px';
+        btn.style.justifyContent = 'space-between';
+
+        const text = document.createElement('span');
+        const icon = document.createElement('span');
+        icon.textContent = '📅';
+
+        function setValue(value) {
+            currentValue = value || '';
+            text.textContent = formatDisplayDateValue(currentValue);
+            btn.style.color = currentValue ? '#222' : '#777';
+        }
+
+        function openPickerDirectly() {
+            const now = new Date();
+            const fallbackValue = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            openDateModal(currentValue || fallbackValue, (nextValue) => {
+                if (!nextValue) return;
+                setValue(nextValue);
+            });
+        }
+
+        btn.addEventListener('click', (event) => {
+            event.stopPropagation();
+            openPickerDirectly();
+        });
+
+        setValue(initialValue);
+        btn.append(text, icon);
+        wrap.append(btn);
+
+        return {
+            wrap,
+            getValue: () => currentValue,
+            openPickerDirectly
+        };
+    }
+
+    const title = createElement('h3', null, 'Выберите период отчета');
+    title.style.marginBottom = '18px';
+    title.style.textAlign = 'center';
+
+    const subtitle = createElement('div', 'muted', 'Выберите начальную и конечную дату');
+    subtitle.style.textAlign = 'center';
+    subtitle.style.marginBottom = '18px';
+    subtitle.style.fontSize = '14px';
+
+    const startRow = makePickerRow('С даты');
+    const endRow = makePickerRow('По дату');
+    const startPicker = makeFancyDateButton(dateToInputFormat(defaultStart));
+    const endPicker = makeFancyDateButton(dateToInputFormat(defaultEnd));
+    startRow.right.append(startPicker.wrap);
+    endRow.right.append(endPicker.wrap);
+
+    startRow.row.onclick = (event) => {
+        if (event.target.closest('button')) return;
+        startPicker.openPickerDirectly();
+    };
+
+    endRow.row.onclick = (event) => {
+        if (event.target.closest('button')) return;
+        endPicker.openPickerDirectly();
+    };
+
+    const controls = document.createElement('div');
+    controls.style.display = 'flex';
+    controls.style.justifyContent = 'flex-end';
+    controls.style.gap = '10px';
+    controls.style.marginTop = '18px';
+
+    const cancelBtn = createElement('button', 'btn btn-secondary', 'Отмена');
+    const okBtn = createElement('button', 'btn btn-primary', 'ОК');
+
+    cancelBtn.addEventListener('click', () => overlay.remove());
+    okBtn.addEventListener('click', () => {
+        const startValue = startPicker.getValue();
+        const endValue = endPicker.getValue();
+
+        if (!startValue || !endValue) {
+            showToast('Выберите обе даты.');
+            return;
+        }
+
+        const start = startValue.split('-').reverse().join('.');
+        const end = endValue.split('-').reverse().join('.');
+        const reportHtml = generateCycleReportHtml(currentCycle, start, end);
+        if (reportHtml) {
+            state.reportHtmlCache = reportHtml;
+            state.currentPage = 'cycleReport';
+            render();
+        }
+
+        overlay.remove();
+    });
+
+    controls.append(cancelBtn, okBtn);
+    modal.append(title, subtitle, startRow.row, endRow.row, controls);
+    overlay.append(modal);
+    document.body.append(overlay);
+
+    overlay.addEventListener('click', (event) => {
+        if (event.target === overlay) overlay.remove();
+    });
 }
 
 
