@@ -16,7 +16,8 @@ const files = [
   'sw.js',
   'manifest.json',
   'gestures.js',
-  'swipe-engine.js'
+  'swipe-engine.js',
+  'calendar-month-carousel.js'
 ];
 
 function rmrf(p) {
