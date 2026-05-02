@@ -34,6 +34,12 @@ const SUPPLEMENTS_VIEW_MODE_KEY = 'trainingDiary:supplementsViewMode';
 const SUPPLEMENTS_TABLE_RANGE_KEY = 'trainingDiary:supplementsTableRange';
 const MAX_SUPPLEMENTS_COUNT = 20;
 const SUPPLEMENT_SHORT_NAME_LIMIT = 7;
+const SUPPLEMENT_TABLE_VISIBLE_WEEKS = 4;
+const SUPPLEMENT_TABLE_RENDER_WEEKS = 8;
+const SUPPLEMENT_TABLE_SHIFT_WEEKS = 2;
+const SUPPLEMENT_TABLE_VISIBLE_DAYS = SUPPLEMENT_TABLE_VISIBLE_WEEKS * 7;
+const SUPPLEMENT_TABLE_RENDER_DAYS = SUPPLEMENT_TABLE_RENDER_WEEKS * 7;
+const SUPPLEMENT_TABLE_SHIFT_DAYS = SUPPLEMENT_TABLE_SHIFT_WEEKS * 7;
 let supplementCalendarMonthDate = null;
 let supplementCalendarSelectedDate = null;
 let supplementTableViewportSyncController = null;
@@ -41,6 +47,65 @@ let supplementTableScrollState = null;
 let supplementDoseClipboard = null;
 let supplementDoseClipboardMeta = null;
 let supplementDoseLongPressOverlayCleanup = null;
+let supplementTableVirtualState = null;
+
+export function sanitizeSupplementPlan(planData) {
+    const plan = planData && typeof planData === 'object'
+        ? planData
+        : { supplements: [], data: [] };
+
+    let changed = false;
+
+    if (!Array.isArray(plan.supplements)) {
+        plan.supplements = [];
+        changed = true;
+    }
+
+    if (!Array.isArray(plan.data)) {
+        plan.data = [];
+        changed = true;
+    }
+
+    const supplementsBefore = JSON.stringify(plan.supplements);
+    ensureSupplementEntrySlots(plan);
+    if (JSON.stringify(plan.supplements) !== supplementsBefore) {
+        changed = true;
+    }
+
+    const allowedNames = new Set(
+        getSupplementNames(plan, { includeArchived: true })
+            .map(name => String(name || '').trim())
+            .filter(Boolean)
+    );
+
+    plan.data = plan.data.map((dayRecord) => {
+        if (!dayRecord || typeof dayRecord !== 'object' || Array.isArray(dayRecord)) {
+            changed = true;
+            return {
+                date: '',
+                dayOfWeek: '',
+                doses: {}
+            };
+        }
+
+        if (!dayRecord.doses || typeof dayRecord.doses !== 'object' || Array.isArray(dayRecord.doses)) {
+            dayRecord.doses = {};
+            changed = true;
+            return dayRecord;
+        }
+
+        Object.keys(dayRecord.doses).forEach((name) => {
+            if (!allowedNames.has(String(name || '').trim())) {
+                delete dayRecord.doses[name];
+                changed = true;
+            }
+        });
+
+        return dayRecord;
+    });
+
+    return { plan, changed };
+}
 
 function resetSupplementsTableScrollMemory() {
     supplementTableScrollState = null;
@@ -56,6 +121,7 @@ export async function renderSupplementsPage() {
     const root = document.getElementById('root');
     supplementTableViewportSyncController?.abort?.();
     supplementTableViewportSyncController = null;
+    supplementTableVirtualState = null;
     clearSupplementDoseLongPressPopover();
     if (!ensureCycleSelected(render)) return;
     const isDayDetailsPage = Boolean(state.supplementCalendarDetailDate);
@@ -92,9 +158,12 @@ export async function renderSupplementsPage() {
 
 
     // --- Заголовок ---
+    const supplementViewMode = getSupplementsViewMode();
     const title = createElement('h3');
     title.innerHTML = `План добавок: <span>${currentCycle.name}</span>`;
-    contentContainer.append(title);
+    if (supplementViewMode !== 'table') {
+        contentContainer.append(title);
+    }
 
 
 
@@ -112,10 +181,15 @@ export async function renderSupplementsPage() {
     console.log('✅ План добавок загружен:', state.supplementPlan);
     root.append(contentContainer);
 
-    const supplementViewMode = getSupplementsViewMode();
     const activePlanData = state.supplementPlan || { supplements: [], data: [] };
+    if (!isDayDetailsPage) {
+        configureSupplementsTopBar(supplementViewMode, activePlanData);
+    }
 
     if (state.supplementCalendarDetailDate) {
+        if (!title.isConnected) {
+            contentContainer.prepend(title);
+        }
         title.innerHTML = `Добавки: <span>${formatDayAndMonth(state.supplementCalendarDetailDate)}</span>`;
         renderSupplementCalendarDayDetailsPage(contentContainer, activePlanData, state.supplementCalendarDetailDate);
         return;
@@ -124,10 +198,11 @@ export async function renderSupplementsPage() {
     clearMealBottomNavOverlayMode();
 
     if (supplementViewMode === 'calendar') {
-        renderSupplementsCalendarView(contentContainer, activePlanData, createSupplementsViewAction(supplementViewMode));
+        renderSupplementsCalendarView(contentContainer, activePlanData);
     } else {
-        renderSupplementsTableView(contentContainer, activePlanData, createSupplementsViewAction(supplementViewMode));
+        renderSupplementsTableView(contentContainer, activePlanData);
     }
+    return;
 
     // TODO: здесь у тебя дальше идёт рендер таблицы / карточек добавок
 
@@ -263,10 +338,14 @@ if (planData.supplements.length === 0 && planData.data.length === 0) {
     const tbody = createElement('tbody');
     planData.data.forEach((dayRecord, dayIndex) => {
         let rowClasses = '';
+        const parsedDate = parseSupplementDateString(dayRecord.date);
+        const dayNumber = parsedDate?.getDay?.();
         if (dayRecord.date === todayDateString) rowClasses += ' today-highlight';
         if (dayRecord.dayOfWeek === 'вс' || dayRecord.dayOfWeek === 'сб') rowClasses += ' weekend';
 
         const tr = createElement('tr', rowClasses.trim());
+        if (dayNumber === 6) tr.classList.add('saturday');
+        if (dayNumber === 0) tr.classList.add('sunday');
         tr.dataset.date = dayRecord.date;
 
         // Формат даты ДД.ММ
@@ -436,71 +515,105 @@ function createSupplementsViewAction(activeMode) {
     return btn;
 }
 
-function renderSupplementsTableView(contentContainer, planData, viewToggle = null) {
-    const todayDateString = getTodayDateString();
-    let todayRowElement = null;
-    let currentWeekStartRowElement = null;
-    let currentWeekFirstRowElement = null;
-    const activeEntries = getSupplementEntries(planData);
-    const tableColumns = getSupplementTableColumns(planData);
-    const records = Array.isArray(planData?.data) ? planData.data : [];
-    const tableRangeMode = getSupplementsTableRangeMode();
-    const showCellTimes = tableRangeMode === 'week';
-    const currentWeekStartDate = getSupplementWeekStartDate(parseSupplementDateString(todayDateString) || new Date());
-    const currentWeekEndDate = new Date(currentWeekStartDate);
-    currentWeekEndDate.setDate(currentWeekStartDate.getDate() + 6);
-    const currentWeekStartDateString = formatSupplementDateString(currentWeekStartDate);
-
-    // Диапазоны истории (для archived записей): подсветка всех ячеек между первой и последней дозировкой.
-    // Ключ: slot -> Map(supplementName -> { start: number, end: number })
-    const historyRangesBySlot = new Map();
-    tableColumns.forEach((column) => {
-        if (!column?.entriesWithHistory?.length) return;
-        const m = new Map();
-        column.entriesWithHistory.forEach((entry) => {
-            if (!entry?.archived) return;
-            m.set(entry.name, { start: Infinity, end: -Infinity });
-        });
-        if (m.size > 0) historyRangesBySlot.set(column.slot, m);
+function createSupplementsTopBarCalendarButton() {
+    const btn = createElement('button', 'supplements-topbar-action-btn supplements-topbar-calendar-btn', 'Календарь');
+    btn.type = 'button';
+    btn.setAttribute('aria-label', 'Календарь');
+    btn.addEventListener('click', () => {
+        if (getSupplementsViewMode() === 'calendar') return;
+        resetSupplementsTableScrollMemory();
+        setSupplementsViewMode('calendar');
+        renderSupplementsPage();
     });
-    if (historyRangesBySlot.size > 0 && Array.isArray(records) && records.length > 0) {
-        records.forEach((dayRecord, rowIdx) => {
-            tableColumns.forEach((column) => {
-                const m = historyRangesBySlot.get(column.slot);
-                if (!m || !dayRecord?.doses) return;
-                m.forEach((range, name) => {
-                    if (hasSupplementDoseValue(dayRecord.doses?.[name])) {
-                        range.start = Math.min(range.start, rowIdx);
-                        range.end = Math.max(range.end, rowIdx);
-                    }
-                });
-            });
-        });
-        // чистим пустые диапазоны (если вдруг нет реальных доз)
-        historyRangesBySlot.forEach((m, slot) => {
-            m.forEach((range, name) => {
-                if (!Number.isFinite(range.start) || !Number.isFinite(range.end) || range.end < range.start) {
-                    m.delete(name);
-                }
-            });
-            if (m.size === 0) historyRangesBySlot.delete(slot);
-        });
+    return btn;
+}
+
+function createSupplementsTopBarTableButton() {
+    const btn = createElement('button', 'supplements-topbar-action-btn supplements-topbar-table-btn', 'Таблица');
+    btn.type = 'button';
+    btn.addEventListener('click', () => {
+        if (getSupplementsViewMode() === 'table') return;
+        resetSupplementsTableScrollMemory();
+        setSupplementsViewMode('table');
+        renderSupplementsPage();
+    });
+    return btn;
+}
+
+function createSupplementsTopBarAddButton(planData) {
+    const currentSupplements = getSupplementNames(planData);
+    if (currentSupplements.length < 5 || currentSupplements.length >= MAX_SUPPLEMENTS_COUNT) {
+        return null;
     }
 
-    if (activeEntries.length === 0 && records.length === 0) {
-        contentContainer.append(createElement('div', 'muted', 'Начните с добавления первого препарата.'));
+    const btn = createElement('button', 'supplements-topbar-action-btn supplements-topbar-add-btn');
+    btn.type = 'button';
+    btn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><title>Add-plus SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 12h6m0 0h6m-6 0v6m0-6V6"></path></svg>
+        <span>препарат</span>
+    `;
+    btn.addEventListener('click', () => {
+        openSupplementEditModal(currentSupplements.length, '');
+    });
+    return btn;
+}
+
+function createSupplementsTopBarWeekControls() {
+    const group = createElement('div', 'week-controls-group supplements-topbar-week-controls');
+
+    const removeWeekBtn = createElement('button', 'btn btn-secondary');
+    removeWeekBtn.type = 'button';
+    removeWeekBtn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 20 20"><title>Minus-sm SVG Icon</title><path fill="currentColor" fill-rule="evenodd" d="M5 10a1 1 0 0 1 1-1h8a1 1 0 1 1 0 2H6a1 1 0 0 1-1-1" clip-rule="evenodd"/></svg>
+    `;
+    removeWeekBtn.addEventListener('click', removeLastWeek);
+
+    const weekLabel = createElement('span', 'week-label', 'неделя');
+
+    const addWeekBtn = createElement('button', 'btn btn-secondary');
+    addWeekBtn.type = 'button';
+    addWeekBtn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"><title>Add-plus SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 12h6m0 0h6m-6 0v6m0-6V6"></path></svg>
+    `;
+    addWeekBtn.addEventListener('click', addWeek);
+
+    group.append(removeWeekBtn, weekLabel, addWeekBtn);
+    return group;
+}
+
+function configureSupplementsTopBar(viewMode, planData) {
+    const topBar = document.querySelector('.top-bar');
+    const leftGroup = topBar?.querySelector('.topbar-cycle-btns');
+    if (!topBar || !leftGroup) return;
+
+    topBar.classList.remove('top-bar--supplements-table');
+    topBar.querySelector('.supplements-topbar-right')?.remove();
+    leftGroup.querySelector('.supplements-topbar-add-btn')?.remove();
+    leftGroup.querySelector('.supplements-topbar-calendar-btn')?.remove();
+    leftGroup.querySelector('.supplements-topbar-table-btn')?.remove();
+
+    if (viewMode === 'calendar') {
+        leftGroup.append(createSupplementsTopBarTableButton());
         return;
     }
 
-    contentContainer.classList.add('supplements-page--table-range');
+    topBar.classList.add('top-bar--supplements-table');
+    topBar.querySelector('.top-menu-btn')?.remove();
 
-    const tableTopBar = createElement('div', 'supplements-table-topbar');
-    const monthLabel = createElement('div', 'supplements-table-month-label');
-    tableTopBar.append(monthLabel);
-    if (viewToggle) {
-        tableTopBar.append(viewToggle);
+    const addBtn = createSupplementsTopBarAddButton(planData);
+    if (addBtn) {
+        leftGroup.append(addBtn);
     }
-    contentContainer.append(tableTopBar);
+    leftGroup.append(createSupplementsTopBarCalendarButton());
+}
+
+function renderSupplementsTableView(contentContainer, planData) {
+    const todayDateString = getTodayDateString();
+    const tableColumns = getSupplementTableColumns(planData);
+    const tableRangeMode = getSupplementsTableRangeMode();
+    const currentCycle = state.cycles?.find(cycle => cycle.id === state.selectedCycleId) || null;
+
+    contentContainer.classList.add('supplements-page--table-range');
 
     const tableWrapper = createElement('div', `supplement-table-wrapper supplement-table-wrapper--${tableRangeMode}`);
     tableWrapper.id = 'supplement-table-wrapper';
@@ -558,25 +671,122 @@ function renderSupplementsTableView(contentContainer, planData, viewToggle = nul
     setTimeout(() => enableHeaderDnd(thead, planData), 0);
 
     const tbody = createElement('tbody');
-    let previousRowDate = null;
+    table.append(tbody);
+    guard.append(table);
+    tableWrapper.append(guard);
 
-    records.forEach((dayRecord, rowIdx) => {
+    const jumpBtnWrap = createElement('div', 'supplement-jump-btn-wrap is-hidden');
+    const jumpBtn = createElement('button', 'btn btn-secondary supplement-jump-btn', '');
+    jumpBtn.type = 'button';
+    jumpBtnWrap.append(jumpBtn);
+    tableWrapper.append(jumpBtnWrap);
+    contentContainer.append(tableWrapper);
+    enableSupplementDoseCellLongPressActions(tableWrapper);
+    enableSupplementColumnLongPressDrag(tableWrapper, planData);
+    const baseStartDate = getSupplementCycleBaseWeekStartDate(currentCycle);
+    const savedScroll = getRememberedSupplementTableScroll(tableRangeMode);
+    const savedWindowStart = parseSupplementDateString(savedScroll?.windowStartDate || '');
+    const defaultTodayTargetState = getSupplementTodayWeekTargetState({
+        baseStartDate
+    });
+    const initialWindowStart = savedWindowStart && compareSupplementDates(savedWindowStart, baseStartDate) >= 0
+        ? savedWindowStart
+        : (defaultTodayTargetState?.windowStartDate || baseStartDate);
+
+    supplementTableVirtualState = {
+        planData,
+        tableColumns,
+        tableWrapper,
+        tbody,
+        jumpBtnWrap,
+        contentContainer,
+        tableRangeMode,
+        baseStartDate,
+        windowStartDate: cloneSupplementDate(initialWindowStart),
+        historyRangesBySlot: buildSupplementHistoryRangesBySlot(planData, tableColumns),
+        lastScrollTop: 0
+    };
+
+    renderSupplementTableWindow(supplementTableVirtualState);
+    bindSupplementJumpButton(jumpBtnWrap, supplementTableVirtualState);
+
+    supplementTableViewportSyncController?.abort?.();
+    supplementTableViewportSyncController = new AbortController();
+    const syncTableViewportLayout = () => {
+        if (!contentContainer.isConnected || !tableWrapper.isConnected) return;
+        syncSupplementsTableViewport(contentContainer, tableWrapper);
+        syncSupplementTableRangeLayout(tableWrapper, tableRangeMode, supplementTableVirtualState);
+    };
+    const scheduleTableViewportLayout = () => {
+        requestAnimationFrame(syncTableViewportLayout);
+    };
+
+    requestAnimationFrame(() => {
+        syncTableViewportLayout();
+        if (savedScroll) {
+            tableWrapper.scrollLeft = savedScroll.left;
+            tableWrapper.scrollTop = savedScroll.top;
+        } else {
+            tableWrapper.scrollTop = Math.max(
+                0,
+                getSupplementTableRowHeightPx(tableWrapper) * (defaultTodayTargetState?.offsetDays || 0)
+            );
+        }
+        supplementTableVirtualState.lastScrollTop = tableWrapper.scrollTop;
+        syncSupplementJumpButtonVisibility(jumpBtnWrap, supplementTableVirtualState);
+    });
+
+    attachSupplementTableBounceLock(tableWrapper, supplementTableViewportSyncController.signal);
+    window.addEventListener('resize', scheduleTableViewportLayout, { signal: supplementTableViewportSyncController.signal });
+    window.addEventListener('orientationchange', scheduleTableViewportLayout, { signal: supplementTableViewportSyncController.signal });
+    window.visualViewport?.addEventListener('resize', scheduleTableViewportLayout, { signal: supplementTableViewportSyncController.signal });
+    window.visualViewport?.addEventListener('scroll', scheduleTableViewportLayout, { signal: supplementTableViewportSyncController.signal });
+
+    let syncFrameId = 0;
+    const handleScroll = () => {
+        if (syncFrameId) return;
+        syncFrameId = requestAnimationFrame(() => {
+            syncFrameId = 0;
+            if (!supplementTableVirtualState || !tableWrapper.isConnected) return;
+            syncSupplementTableVirtualWindow(supplementTableVirtualState);
+            rememberSupplementTableScroll(tableWrapper);
+            syncSupplementJumpButtonVisibility(jumpBtnWrap, supplementTableVirtualState);
+        });
+    };
+
+    tableWrapper.addEventListener('scroll', handleScroll, { passive: true, signal: supplementTableViewportSyncController.signal });
+}
+
+function renderSupplementTableWindow(tableState) {
+    if (!tableState?.tbody || !tableState?.tableWrapper) return;
+
+    const {
+        tbody,
+        tableWrapper,
+        tableColumns,
+        planData,
+        tableRangeMode,
+        historyRangesBySlot,
+        windowStartDate
+    } = tableState;
+    const showCellTimes = tableRangeMode === 'week';
+    const todayDateString = getTodayDateString();
+    const virtualRecords = getSupplementTableWindowRecords(planData, windowStartDate, SUPPLEMENT_TABLE_RENDER_DAYS);
+    const fragment = document.createDocumentFragment();
+    let todayRowElement = null;
+
+    tableColumns.forEach((column) => {
+        column.labelShownEntries = new Set();
+    });
+
+    virtualRecords.forEach((dayRecord) => {
         const rowClasses = [];
         const parsedDate = parseSupplementDateString(dayRecord.date);
+        const dayNumber = parsedDate?.getDay?.();
 
         if (dayRecord.date === todayDateString) rowClasses.push('today-highlight');
-        if (parsedDate && [0, 6].includes(parsedDate.getDay())) rowClasses.push('weekend');
-        if (
-            parsedDate &&
-            previousRowDate &&
-            (
-                parsedDate.getMonth() !== previousRowDate.getMonth() ||
-                parsedDate.getFullYear() !== previousRowDate.getFullYear()
-            )
-        ) {
-            rowClasses.push('month-separator');
-        }
-
+        if (dayNumber === 6) rowClasses.push('weekend', 'saturday');
+        if (dayNumber === 0) rowClasses.push('weekend', 'sunday');
         const tr = createElement('tr', rowClasses.join(' '));
         tr.dataset.date = dayRecord.date;
 
@@ -592,12 +802,16 @@ function renderSupplementsTableView(contentContainer, planData, viewToggle = nul
                 return;
             }
 
-            // Если текущая строка попадает в диапазон истории archived препарата — подсвечиваем ячейку.
             let historyRangeNameForRow = null;
-            const rangesMap = historyRangesBySlot.get(column.slot);
-            if (rangesMap) {
-                for (const [name, range] of rangesMap.entries()) {
-                    if (rowIdx >= range.start && rowIdx <= range.end) {
+            const slotRanges = historyRangesBySlot.get(column.slot);
+            if (slotRanges && parsedDate) {
+                for (const [name, range] of slotRanges.entries()) {
+                    if (
+                        range.startDate &&
+                        range.endDate &&
+                        compareSupplementDates(parsedDate, range.startDate) >= 0 &&
+                        compareSupplementDates(parsedDate, range.endDate) <= 0
+                    ) {
                         historyRangeNameForRow = name;
                         break;
                     }
@@ -618,11 +832,10 @@ function renderSupplementsTableView(contentContainer, planData, viewToggle = nul
                 `supplement-dose-cell-btn ${hasValue ? 'has-dose' : ''} ${timeText ? 'supplement-dose-cell-btn--with-time' : ''} ${displayEntry?.archived ? 'supplement-dose-cell-btn--history' : ''}`.trim()
             );
 
-            // Подсветка диапазона истории: только для archived препарата (не активного).
             if (
                 historyRangeNameForRow &&
                 (!displayEntry || displayEntry.name === historyRangeNameForRow) &&
-                column.entriesWithHistory?.some((e) => e?.archived && e?.name === historyRangeNameForRow)
+                column.entriesWithHistory?.some((entry) => entry?.archived && entry?.name === historyRangeNameForRow)
             ) {
                 doseBtn.classList.add('supplement-dose-cell-btn--history-range');
             }
@@ -668,84 +881,70 @@ function renderSupplementsTableView(contentContainer, planData, viewToggle = nul
             tr.append(td);
         });
 
-        tbody.append(tr);
-        if (dayRecord.date === todayDateString) todayRowElement = tr;
-        if (dayRecord.date === currentWeekStartDateString) currentWeekStartRowElement = tr;
-        if (!currentWeekFirstRowElement && parsedDate && parsedDate >= currentWeekStartDate && parsedDate <= currentWeekEndDate) {
-            currentWeekFirstRowElement = tr;
+        fragment.append(tr);
+        if (dayRecord.date === todayDateString) {
+            todayRowElement = tr;
         }
-        if (parsedDate) previousRowDate = parsedDate;
     });
 
-    table.append(tbody);
-    guard.append(table);
-    tableWrapper.append(guard);
+    tbody.replaceChildren(fragment);
+    tableWrapper.dataset.windowStartDate = formatSupplementDateString(windowStartDate);
+    tableState.todayRowElement = todayRowElement;
+}
 
-    const jumpBtnWrap = createElement('div', 'supplement-jump-btn-wrap is-hidden');
-    const jumpBtn = createElement('button', 'btn btn-secondary supplement-jump-btn', '');
-    jumpBtn.type = 'button';
-    jumpBtnWrap.append(jumpBtn);
-    tableWrapper.append(jumpBtnWrap);
-    contentContainer.append(tableWrapper);
-    enableSupplementDoseCellLongPressActions(tableWrapper);
-    enableSupplementColumnLongPressDrag(tableWrapper, planData);
-    bindSupplementJumpButton(jumpBtnWrap, tableWrapper);
+function getSupplementTableRowHeightPx(tableWrapper) {
+    if (!tableWrapper) return 24;
+    const cssRowHeight = parseFloat(
+        getComputedStyle(tableWrapper).getPropertyValue('--supplement-table-row-height')
+    );
+    if (Number.isFinite(cssRowHeight) && cssRowHeight > 0) return cssRowHeight;
+    return tableWrapper.querySelector('tbody tr')?.getBoundingClientRect().height || 24;
+}
 
-    supplementTableViewportSyncController?.abort?.();
-    supplementTableViewportSyncController = new AbortController();
-    const syncTableViewportLayout = () => {
-        if (!contentContainer.isConnected || !tableWrapper.isConnected) return;
-        syncSupplementsTableViewport(contentContainer, tableWrapper);
-        syncSupplementTableRangeLayout(tableWrapper, tableRangeMode);
-        syncSupplementTableMonthLabel(tableWrapper, monthLabel);
-    };
-    const scheduleTableViewportLayout = () => {
-        requestAnimationFrame(syncTableViewportLayout);
-    };
+function canShiftSupplementTableWindowBackward(tableState) {
+    return compareSupplementDates(tableState.windowStartDate, tableState.baseStartDate) > 0;
+}
 
-    requestAnimationFrame(syncTableViewportLayout);
-    attachSupplementTableBounceLock(tableWrapper, supplementTableViewportSyncController.signal);
-    window.addEventListener('resize', scheduleTableViewportLayout, { signal: supplementTableViewportSyncController.signal });
-    window.addEventListener('orientationchange', scheduleTableViewportLayout, { signal: supplementTableViewportSyncController.signal });
-    window.visualViewport?.addEventListener('resize', scheduleTableViewportLayout, { signal: supplementTableViewportSyncController.signal });
-    window.visualViewport?.addEventListener('scroll', scheduleTableViewportLayout, { signal: supplementTableViewportSyncController.signal });
+function shiftSupplementTableWindow(tableState, offsetDays) {
+    if (!tableState || !offsetDays) return false;
 
-    let monthLabelFrame = 0;
-    const scheduleMonthLabelSync = () => {
-        if (monthLabelFrame) return;
-        monthLabelFrame = requestAnimationFrame(() => {
-            monthLabelFrame = 0;
-            syncSupplementTableMonthLabel(tableWrapper, monthLabel);
-        });
-    };
+    let nextStartDate = addSupplementDays(tableState.windowStartDate, offsetDays);
+    if (compareSupplementDates(nextStartDate, tableState.baseStartDate) < 0) {
+        nextStartDate = cloneSupplementDate(tableState.baseStartDate);
+    }
 
-    tableWrapper.addEventListener('scroll', scheduleMonthLabelSync, { passive: true });
+    if (compareSupplementDates(nextStartDate, tableState.windowStartDate) === 0) {
+        return false;
+    }
 
-    setTimeout(() => {
-        const wrapper = document.getElementById('supplement-table-wrapper');
-        if (!wrapper) return;
+    tableState.windowStartDate = nextStartDate;
+    renderSupplementTableWindow(tableState);
+    return true;
+}
 
-        syncSupplementsTableViewport(contentContainer, wrapper);
-        syncSupplementTableRangeLayout(wrapper, tableRangeMode);
+function syncSupplementTableVirtualWindow(tableState) {
+    const { tableWrapper } = tableState || {};
+    if (!tableWrapper) return;
 
-        const savedScroll = getRememberedSupplementTableScroll(tableRangeMode);
-        if (savedScroll) {
-            wrapper.scrollLeft = savedScroll.left;
-            wrapper.scrollTop = savedScroll.top;
-            syncSupplementTableMonthLabel(wrapper, monthLabel);
-            return;
+    const currentScrollTop = tableWrapper.scrollTop;
+    const previousScrollTop = Number.isFinite(tableState.lastScrollTop) ? tableState.lastScrollTop : currentScrollTop;
+    const rowHeight = getSupplementTableRowHeightPx(tableWrapper);
+    const shiftPixels = rowHeight * SUPPLEMENT_TABLE_SHIFT_DAYS;
+    const backwardThreshold = Math.max(rowHeight * 2, 1);
+    const scrollingDown = currentScrollTop > previousScrollTop + 0.5;
+    const scrollingUp = currentScrollTop < previousScrollTop - 0.5;
+
+    if (scrollingDown && currentScrollTop >= shiftPixels) {
+        if (shiftSupplementTableWindow(tableState, SUPPLEMENT_TABLE_SHIFT_DAYS)) {
+            tableWrapper.scrollTop = Math.max(0, currentScrollTop - shiftPixels);
         }
-
-        const targetRow = currentWeekStartRowElement || currentWeekFirstRowElement || todayRowElement;
-        if (targetRow) {
-            scrollSupplementTableRowToTop(wrapper, targetRow);
-            syncSupplementTableMonthLabel(wrapper, monthLabel);
-            return;
+    } else if (scrollingUp && currentScrollTop <= backwardThreshold && canShiftSupplementTableWindowBackward(tableState)) {
+        if (shiftSupplementTableWindow(tableState, -SUPPLEMENT_TABLE_SHIFT_DAYS)) {
+            tableWrapper.scrollTop = currentScrollTop + shiftPixels;
         }
+    }
 
-        wrapper.scrollTop = wrapper.scrollHeight;
-        syncSupplementTableMonthLabel(wrapper, monthLabel);
-    }, 0);
+    tableState.lastScrollTop = tableWrapper.scrollTop;
 }
 function scrollSupplementTableRowToTop(wrapper, rowElement) {
     const rowRect = rowElement.getBoundingClientRect();
@@ -788,6 +987,50 @@ function getSupplementDefaultWeekTargetRow(wrapper) {
         || null;
 }
 
+function getSupplementTodayWeekTargetState(tableState) {
+    if (!tableState) return null;
+
+    const todayDate = parseSupplementDateString(getTodayDateString()) || new Date();
+    const targetWeekStartDate = getSupplementWeekStartDate(todayDate);
+    const desiredWindowStartDate = addSupplementDays(
+        targetWeekStartDate,
+        -(SUPPLEMENT_TABLE_SHIFT_DAYS + 7)
+    );
+    const windowStartDate = compareSupplementDates(desiredWindowStartDate, tableState.baseStartDate) >= 0
+        ? desiredWindowStartDate
+        : cloneSupplementDate(tableState.baseStartDate);
+    const offsetDays = Math.max(
+        0,
+        Math.round(
+            (
+                addSupplementDays(targetWeekStartDate, -7).getTime() -
+                windowStartDate.getTime()
+            ) / 86400000
+        )
+    );
+
+    return {
+        windowStartDate,
+        offsetDays
+    };
+}
+
+function jumpSupplementTableToTodayWeek(tableState) {
+    if (!tableState?.tableWrapper) return;
+
+    const targetState = getSupplementTodayWeekTargetState(tableState);
+    if (!targetState) return;
+
+    tableState.windowStartDate = targetState.windowStartDate;
+    renderSupplementTableWindow(tableState);
+
+    const rowHeight = getSupplementTableRowHeightPx(tableState.tableWrapper);
+    tableState.tableWrapper.scrollTop = rowHeight * targetState.offsetDays;
+    tableState.lastScrollTop = tableState.tableWrapper.scrollTop;
+    rememberSupplementTableScroll(tableState.tableWrapper);
+    syncSupplementJumpButtonVisibility(tableState.jumpBtnWrap, tableState);
+}
+
 function getSupplementJumpArrowSvg(direction) {
     const isUp = direction === 'up';
     // Простая стрелка (chevron) без отдельной стилизации.
@@ -799,34 +1042,69 @@ function getSupplementJumpArrowSvg(direction) {
 function syncSupplementJumpButtonVisibility(buttonWrap, wrapper) {
     if (!buttonWrap) return;
 
-    const resolvedWrapper = wrapper || document.getElementById('supplement-table-wrapper');
+    const tableState = wrapper?.tableWrapper ? wrapper : supplementTableVirtualState;
+    const resolvedWrapper = tableState?.tableWrapper || wrapper || document.getElementById('supplement-table-wrapper');
     const button = buttonWrap.querySelector('button.supplement-jump-btn');
-    const todayRow = resolvedWrapper?.querySelector?.(`tbody tr[data-date="${getTodayDateString()}"]`);
+    const todayDateString = getTodayDateString();
+    const todayRow = resolvedWrapper?.querySelector?.(`tbody tr[data-date="${todayDateString}"]`);
 
-    if (!resolvedWrapper || !button || !todayRow) {
+    if (!resolvedWrapper || !button) {
         buttonWrap.classList.add('is-hidden');
         return;
     }
 
-    if (isSupplementTableRowVisible(resolvedWrapper, todayRow)) {
+    if (todayRow) {
+        if (isSupplementTableRowVisible(resolvedWrapper, todayRow)) {
+            buttonWrap.classList.add('is-hidden');
+            return;
+        }
+
+        const wrapperRect = resolvedWrapper.getBoundingClientRect();
+        const rowRect = todayRow.getBoundingClientRect();
+        const header = resolvedWrapper.querySelector('thead');
+        const headerHeight = header?.getBoundingClientRect().height || 0;
+        const visibleTop = wrapperRect.top + headerHeight;
+        const direction = rowRect.top < visibleTop ? 'up' : 'down';
+
+        button.dataset.direction = direction;
+        button.innerHTML = getSupplementJumpArrowSvg(direction);
+        buttonWrap.classList.remove('is-hidden');
+        return;
+    }
+
+    if (!tableState?.windowStartDate) {
         buttonWrap.classList.add('is-hidden');
         return;
     }
 
-    const wrapperRect = resolvedWrapper.getBoundingClientRect();
-    const rowRect = todayRow.getBoundingClientRect();
-    const header = resolvedWrapper.querySelector('thead');
-    const headerHeight = header?.getBoundingClientRect().height || 0;
-    const visibleTop = wrapperRect.top + headerHeight;
-    const direction = rowRect.top < visibleTop ? 'up' : 'down';
+    const renderedStartDate = tableState.windowStartDate;
+    const renderedEndDate = addSupplementDays(renderedStartDate, SUPPLEMENT_TABLE_RENDER_DAYS - 1);
+    const todayDate = parseSupplementDateString(todayDateString);
+    if (!todayDate) {
+        buttonWrap.classList.add('is-hidden');
+        return;
+    }
 
-    button.dataset.direction = direction;
-    button.innerHTML = getSupplementJumpArrowSvg(direction);
-    buttonWrap.classList.remove('is-hidden');
+    if (compareSupplementDates(todayDate, renderedStartDate) < 0) {
+        button.dataset.direction = 'up';
+        button.innerHTML = getSupplementJumpArrowSvg('up');
+        buttonWrap.classList.remove('is-hidden');
+        return;
+    }
+
+    if (compareSupplementDates(todayDate, renderedEndDate) > 0) {
+        button.dataset.direction = 'down';
+        button.innerHTML = getSupplementJumpArrowSvg('down');
+        buttonWrap.classList.remove('is-hidden');
+        return;
+    }
+
+    buttonWrap.classList.add('is-hidden');
 }
 
 function bindSupplementJumpButton(buttonWrap, wrapper) {
-    const resolvedWrapper = wrapper || document.getElementById('supplement-table-wrapper');
+    const tableState = wrapper?.tableWrapper ? wrapper : supplementTableVirtualState;
+    const resolvedWrapper = tableState?.tableWrapper || wrapper || document.getElementById('supplement-table-wrapper');
     const button = buttonWrap?.querySelector?.('button.supplement-jump-btn');
     if (!buttonWrap || !resolvedWrapper || !button) {
         buttonWrap?.classList.add('is-hidden');
@@ -834,11 +1112,13 @@ function bindSupplementJumpButton(buttonWrap, wrapper) {
     }
 
     button.addEventListener('click', () => {
+        if (tableState?.windowStartDate) {
+            jumpSupplementTableToTodayWeek(tableState);
+            return;
+        }
         const targetRow = getSupplementDefaultWeekTargetRow(resolvedWrapper);
-        const monthLabel = document.querySelector('.supplements-table-month-label');
         if (!targetRow) return;
         scrollSupplementTableRowToTop(resolvedWrapper, targetRow);
-        syncSupplementTableMonthLabel(resolvedWrapper, monthLabel);
         syncSupplementJumpButtonVisibility(buttonWrap, resolvedWrapper);
     });
 
@@ -847,7 +1127,7 @@ function bindSupplementJumpButton(buttonWrap, wrapper) {
         if (frameId) return;
         frameId = requestAnimationFrame(() => {
             frameId = 0;
-            syncSupplementJumpButtonVisibility(buttonWrap, resolvedWrapper);
+            syncSupplementJumpButtonVisibility(buttonWrap, tableState || resolvedWrapper);
         });
     };
 
@@ -857,8 +1137,12 @@ function bindSupplementJumpButton(buttonWrap, wrapper) {
     window.visualViewport?.addEventListener('resize', syncVisibility, { signal: supplementTableViewportSyncController?.signal });
 }
 
-function syncSupplementsTableViewport(contentContainer, tableWrapper) {
-    if (!contentContainer || !tableWrapper) return;
+function syncSupplementsTableViewport(contentContainer, activeViewport, options = {}) {
+    if (!contentContainer || !activeViewport) return;
+    const {
+        constrainToNav = false,
+        bottomOffset = 0
+    } = options;
 
     const viewportHeight = Math.round(
         window.visualViewport?.height ||
@@ -868,23 +1152,32 @@ function syncSupplementsTableViewport(contentContainer, tableWrapper) {
     );
     if (!viewportHeight) return;
 
-    const contentRect = contentContainer.getBoundingClientRect();
     let bottomLimit = viewportHeight;
-
-    const nav = document.querySelector('.navigation');
-    if (nav) {
-        const navRect = nav.getBoundingClientRect();
-        if (Number.isFinite(navRect.top) && navRect.top > 0) {
-            bottomLimit = Math.min(bottomLimit, navRect.top);
+    if (constrainToNav) {
+        const nav = document.querySelector('.navigation');
+        if (nav) {
+            const navRect = nav.getBoundingClientRect();
+            if (Number.isFinite(navRect.top) && navRect.top > 0) {
+                bottomLimit = Math.min(bottomLimit, navRect.top);
+            }
         }
     }
 
-    const availableHeight = Math.max(0, Math.floor(bottomLimit - contentRect.top - 12));
+    const contentRect = contentContainer.getBoundingClientRect();
+    const contentHeight = Math.max(0, Math.floor(bottomLimit - contentRect.top - bottomOffset));
+    if (!contentHeight) return;
+
+    contentContainer.style.height = `${contentHeight}px`;
+    contentContainer.style.minHeight = `${contentHeight}px`;
+    contentContainer.style.maxHeight = `${contentHeight}px`;
+
+    const activeRect = activeViewport.getBoundingClientRect();
+    const availableHeight = Math.max(0, Math.floor(bottomLimit - activeRect.top - bottomOffset));
     if (!availableHeight) return;
 
-    contentContainer.style.height = `${availableHeight}px`;
-    contentContainer.style.minHeight = `${availableHeight}px`;
-    contentContainer.style.maxHeight = `${availableHeight}px`;
+    activeViewport.style.height = `${availableHeight}px`;
+    activeViewport.style.minHeight = `${availableHeight}px`;
+    activeViewport.style.maxHeight = `${availableHeight}px`;
 }
 
 function attachSupplementTableBounceLock(tableWrapper, signal) {
@@ -948,20 +1241,23 @@ function attachSupplementTableBounceLock(tableWrapper, signal) {
     }, { passive: false, signal });
 }
 
-function syncSupplementTableRangeLayout(tableWrapper, tableRangeMode) {
+function syncSupplementTableRangeLayout(tableWrapper, tableRangeMode, tableState = null) {
     if (!tableWrapper) return;
 
-    const visibleDays = tableRangeMode === 'week' ? 7 : 14;
+    const visibleDays = SUPPLEMENT_TABLE_VISIBLE_DAYS;
     const header = tableWrapper.querySelector('thead');
     const table = tableWrapper.querySelector('.supplement-plan-table');
     const guard = tableWrapper.querySelector('.scroll-guard');
     const headerHeight = header?.getBoundingClientRect().height || 43;
-    const availableHeight = Math.max(tableWrapper.clientHeight - headerHeight, 0);
-    const overflowCompensation = tableRangeMode === 'week' ? 4 : 2;
-    const fittedHeight = Math.max(availableHeight - overflowCompensation, 0);
+    const wrapperRect = tableWrapper.getBoundingClientRect();
+    const navRect = document.querySelector('.navigation')?.getBoundingClientRect?.();
+    const visibleBottom = Number.isFinite(navRect?.top) && navRect.top > 0
+        ? navRect.top
+        : wrapperRect.bottom;
+    const availableHeight = Math.max(Math.floor(visibleBottom - wrapperRect.top - headerHeight), 0);
     const rowHeight = availableHeight > 0
-        ? Math.max(1, Math.floor(fittedHeight / visibleDays))
-        : (tableRangeMode === 'week' ? 52 : 28);
+        ? Math.max(1, availableHeight / visibleDays)
+        : 24;
 
     tableWrapper.style.setProperty('--supplement-table-row-height', `${rowHeight}px`);
 
@@ -1004,7 +1300,8 @@ function syncSupplementTableRangeLayout(tableWrapper, tableRangeMode) {
 }
 
 function formatSupplementDayCell(dateString) {
-    return String(dateString || '').split('.')[0] || '';
+    const parts = String(dateString || '').split('.');
+    return parts.length >= 2 ? `${parts[0]}.${parts[1]}` : (parts[0] || '');
 }
 
 function syncSupplementTableMonthLabel(tableWrapper, labelElement) {
@@ -1069,7 +1366,7 @@ function capitalizeFirstLetter(value) {
     return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-function renderSupplementsCalendarView(contentContainer, planData, viewToggle = null) {
+function renderSupplementsCalendarView(contentContainer, planData) {
     ensureSupplementCalendarState(planData);
     contentContainer.classList.add('supplements-page--calendar-range');
 
@@ -1093,9 +1390,6 @@ function renderSupplementsCalendarView(contentContainer, planData, viewToggle = 
 
     monthControls.append(prevBtn, title, nextBtn);
     header.append(monthControls);
-    if (viewToggle) {
-        header.append(viewToggle);
-    }
 
     const weekdays = createElement('div', 'supplement-calendar-weekdays');
     ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].forEach(day => {
@@ -1126,7 +1420,10 @@ function renderSupplementsCalendarView(contentContainer, planData, viewToggle = 
         if (!contentContainer.isConnected) return;
 
         // 1) Сначала фиксируем высоту всего контента под текущий viewport (как в таблице).
-        syncSupplementsTableViewport(contentContainer, viewport);
+        syncSupplementsTableViewport(contentContainer, viewport, {
+            constrainToNav: true,
+            bottomOffset: 12
+        });
 
         // 2) Затем задаём высоту именно области месяцев (внизу карточки),
         // чтобы на любом экране календарь занимал весь доступный диапазон и
@@ -1491,10 +1788,10 @@ function openSupplementDoseModal({ dateStr, supplementName = '', isNew = false }
 
     const plan = JSON.parse(JSON.stringify(state.supplementPlan || { supplements: [], data: [] }));
     ensureSupplementEntrySlots(plan);
-    const dayIndex = (plan.data || []).findIndex(day => day.date === dateStr);
+    const dayIndex = ensureSupplementDayRecord(plan, dateStr);
 
     if (dayIndex === -1) {
-        showToast('Этот день пока не добавлен в план.');
+        showToast('Не удалось подготовить выбранный день.');
         return;
     }
 
@@ -1707,6 +2004,29 @@ function getSupplementPlanDateMap(planData) {
         if (day?.date) dateMap.set(day.date, day);
     });
     return dateMap;
+}
+
+function ensureSupplementDayRecord(planData, dateStr) {
+    if (!planData || !dateStr) return -1;
+
+    planData.data = Array.isArray(planData.data) ? planData.data : [];
+    let dayIndex = planData.data.findIndex(day => day?.date === dateStr);
+    if (dayIndex !== -1) {
+        planData.data[dayIndex].doses = planData.data[dayIndex].doses || {};
+        return dayIndex;
+    }
+
+    const parsedDate = parseSupplementDateString(dateStr);
+    if (!parsedDate) return -1;
+
+    planData.data.push({
+        date: dateStr,
+        dayOfWeek: getSupplementWeekdayShortName(parsedDate),
+        doses: {}
+    });
+    planData.data.sort((left, right) => compareSupplementDateStrings(left?.date || '', right?.date || ''));
+    dayIndex = planData.data.findIndex(day => day?.date === dateStr);
+    return dayIndex;
 }
 
 function getSupplementDayRecord(planData, dateStr) {
@@ -2123,6 +2443,124 @@ function getSupplementWeekStartDate(date) {
     return weekStart;
 }
 
+function cloneSupplementDate(date) {
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function addSupplementDays(date, offset) {
+    const nextDate = cloneSupplementDate(date);
+    nextDate.setDate(nextDate.getDate() + offset);
+    return nextDate;
+}
+
+function compareSupplementDates(left, right) {
+    return cloneSupplementDate(left).getTime() - cloneSupplementDate(right).getTime();
+}
+
+function compareSupplementDateStrings(leftDateString, rightDateString) {
+    const left = parseSupplementDateString(leftDateString);
+    const right = parseSupplementDateString(rightDateString);
+    if (!left && !right) return 0;
+    if (!left) return -1;
+    if (!right) return 1;
+    return compareSupplementDates(left, right);
+}
+
+function getSupplementWeekdayShortName(date) {
+    const dayNames = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+    return dayNames[date.getDay()] || '';
+}
+
+function getSupplementCycleStartDate(cycle = null) {
+    const currentCycle = cycle || state.cycles?.find(item => item.id === state.selectedCycleId) || null;
+    const parsedStartDate = parseSupplementDateString(currentCycle?.startDateString);
+    if (parsedStartDate) return parsedStartDate;
+
+    if (Number.isFinite(currentCycle?.startDate)) {
+        const rawDate = new Date(currentCycle.startDate);
+        if (!Number.isNaN(rawDate.getTime())) {
+            return new Date(rawDate.getFullYear(), rawDate.getMonth(), rawDate.getDate());
+        }
+    }
+
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+function getSupplementCycleBaseWeekStartDate(cycle = null) {
+    return getSupplementWeekStartDate(getSupplementCycleStartDate(cycle));
+}
+
+function getSupplementVirtualDayRecord(date, dateMap) {
+    const dateString = formatSupplementDateString(date);
+    const existingRecord = dateMap.get(dateString);
+    if (existingRecord) return existingRecord;
+
+    return {
+        date: dateString,
+        dayOfWeek: getSupplementWeekdayShortName(date),
+        doses: {}
+    };
+}
+
+function getSupplementTableWindowRecords(planData, startDate, totalDays = SUPPLEMENT_TABLE_RENDER_DAYS) {
+    const dateMap = getSupplementPlanDateMap(planData);
+    return Array.from({ length: totalDays }, (_, index) => {
+        const nextDate = addSupplementDays(startDate, index);
+        return getSupplementVirtualDayRecord(nextDate, dateMap);
+    });
+}
+
+function buildSupplementHistoryRangesBySlot(planData, tableColumns) {
+    const rangesBySlot = new Map();
+    const dataset = Array.isArray(planData?.data) ? planData.data : [];
+
+    tableColumns.forEach((column) => {
+        if (!column?.entriesWithHistory?.length) return;
+        const slotRanges = new Map();
+        column.entriesWithHistory.forEach((entry) => {
+            if (!entry?.archived) return;
+            slotRanges.set(entry.name, {
+                startDate: null,
+                endDate: null
+            });
+        });
+        if (slotRanges.size > 0) {
+            rangesBySlot.set(column.slot, slotRanges);
+        }
+    });
+
+    dataset.forEach((dayRecord) => {
+        const parsedDate = parseSupplementDateString(dayRecord?.date);
+        if (!parsedDate) return;
+
+        rangesBySlot.forEach((slotRanges) => {
+            slotRanges.forEach((range, supplementName) => {
+                if (!hasSupplementDoseValue(dayRecord?.doses?.[supplementName])) return;
+                if (!range.startDate || compareSupplementDates(parsedDate, range.startDate) < 0) {
+                    range.startDate = cloneSupplementDate(parsedDate);
+                }
+                if (!range.endDate || compareSupplementDates(parsedDate, range.endDate) > 0) {
+                    range.endDate = cloneSupplementDate(parsedDate);
+                }
+            });
+        });
+    });
+
+    rangesBySlot.forEach((slotRanges, slot) => {
+        slotRanges.forEach((range, supplementName) => {
+            if (!range.startDate || !range.endDate) {
+                slotRanges.delete(supplementName);
+            }
+        });
+        if (slotRanges.size === 0) {
+            rangesBySlot.delete(slot);
+        }
+    });
+
+    return rangesBySlot;
+}
+
 function getSupplementMonthStart(date) {
     return new Date(date.getFullYear(), date.getMonth(), 1);
 }
@@ -2160,10 +2598,11 @@ async function updateSupplementPlanInFirestore(newPlan) {
     try {
         // Любое изменение плана вызывает перерендер страницы; фиксируем текущий скролл таблицы,
         // чтобы после добавления/удаления/редактирования не сбрасывало на текущую неделю.
+        const { plan: sanitizedPlan } = sanitizeSupplementPlan(newPlan);
         rememberCurrentSupplementTableScroll();
-        await updateDoc(cycleRef, { supplementPlan: newPlan });
-        state.supplementPlan = newPlan;
-        syncSupplementsBottomNavBadge(newPlan);
+        await updateDoc(cycleRef, { supplementPlan: sanitizedPlan });
+        state.supplementPlan = sanitizedPlan;
+        syncSupplementsBottomNavBadge(sanitizedPlan);
         // return true;
         // showToast('План добавок сохранен!');
         console.log("✅ supplementPlan обновлён в документе цикла:", newPlan);
@@ -3096,7 +3535,8 @@ function rememberSupplementTableScroll(tableWrapper) {
     cycleId: state.selectedCycleId || '',
     rangeMode: getSupplementsTableRangeMode(),
     left: tableWrapper.scrollLeft,
-    top: tableWrapper.scrollTop
+    top: tableWrapper.scrollTop,
+    windowStartDate: String(tableWrapper.dataset.windowStartDate || '').trim()
   };
 }
 
@@ -3145,23 +3585,32 @@ async function reorderSupplementColumns(dragFrom, dragTo) {
   if (dragFrom === dragTo) return false;
   if (dragFrom < 0 || dragTo < 0 || dragFrom >= activeEntries.length || dragTo >= activeEntries.length) return false;
 
-  const fromEntry = activeEntries[dragFrom];
-  const toEntry = activeEntries[dragTo];
-  if (!fromEntry || !toEntry || fromEntry.slot === toEntry.slot) return false;
+  const orderedActiveSlots = activeEntries.map(entry => entry.slot);
+  const reorderedSlots = [...orderedActiveSlots];
+  const [movedSlot] = reorderedSlots.splice(dragFrom, 1);
+  reorderedSlots.splice(dragTo, 0, movedSlot);
 
-  const fromSlot = fromEntry.slot;
-  const toSlot = toEntry.slot;
+  if (!Number.isInteger(movedSlot)) return false;
+
+  const slotRemap = new Map();
+  reorderedSlots.forEach((sourceSlot, index) => {
+    const targetSlot = orderedActiveSlots[index];
+    if (sourceSlot !== targetSlot) {
+      slotRemap.set(sourceSlot, targetSlot);
+    }
+  });
+
+  if (slotRemap.size === 0) return false;
 
   plan.supplements = (Array.isArray(plan.supplements) ? plan.supplements : []).map(item => {
     const meta = item && typeof item === 'object' && !Array.isArray(item)
       ? createSupplementMeta(item.name, item.shortName, item.archived, item.slot)
       : createSupplementMeta(item);
 
-    if (meta.slot === fromSlot) {
-      meta.slot = toSlot;
-    } else if (meta.slot === toSlot) {
-      meta.slot = fromSlot;
+    if (slotRemap.has(meta.slot)) {
+      meta.slot = slotRemap.get(meta.slot);
     }
+
     return meta;
   });
 
@@ -3172,6 +3621,8 @@ async function reorderSupplementColumns(dragFrom, dragTo) {
 function enableSupplementDoseCellLongPressActions(tableWrapper) {
   const table = tableWrapper?.querySelector('.supplement-plan-table');
   if (!tableWrapper || !table) return;
+  if (tableWrapper.dataset.supplementDoseLongPressBound === '1') return;
+  tableWrapper.dataset.supplementDoseLongPressBound = '1';
 
   const longPressDelay = 420;
   const moveCancelDistance = 20;
@@ -3300,27 +3751,30 @@ function enableSupplementDoseCellLongPressActions(tableWrapper) {
     cleanup();
   }
 
-  const bindLongPressHandle = (button) => {
-    button.addEventListener('contextmenu', event => event.preventDefault());
-    button.addEventListener('pointerdown', event => {
-      if (event.pointerType === 'mouse' && event.button !== 0) return;
+  tableWrapper.addEventListener('contextmenu', event => {
+    const button = event.target?.closest?.('button.supplement-dose-cell-btn');
+    if (!button || !tableWrapper.contains(button)) return;
+    event.preventDefault();
+  });
 
-      clearSupplementDoseLongPressPopover();
-      cleanup();
-      pointerId = event.pointerId;
-      sourceButton = button;
-      startX = event.clientX;
-      startY = event.clientY;
-      longPressTriggered = false;
+  tableWrapper.addEventListener('pointerdown', event => {
+    const button = event.target?.closest?.('button.supplement-dose-cell-btn');
+    if (!button || !tableWrapper.contains(button)) return;
+    if (event.pointerType === 'mouse' && event.button !== 0) return;
 
-      document.addEventListener('pointermove', handlePointerMove, { passive: false });
-      document.addEventListener('pointerup', handlePointerEnd);
-      document.addEventListener('pointercancel', handlePointerEnd);
-      pressTimer = setTimeout(() => triggerLongPressAction(sourceButton), longPressDelay);
-    });
-  };
+    clearSupplementDoseLongPressPopover();
+    cleanup();
+    pointerId = event.pointerId;
+    sourceButton = button;
+    startX = event.clientX;
+    startY = event.clientY;
+    longPressTriggered = false;
 
-  tableWrapper.querySelectorAll('button.supplement-dose-cell-btn').forEach(bindLongPressHandle);
+    document.addEventListener('pointermove', handlePointerMove, { passive: false });
+    document.addEventListener('pointerup', handlePointerEnd);
+    document.addEventListener('pointercancel', handlePointerEnd);
+    pressTimer = setTimeout(() => triggerLongPressAction(sourceButton), longPressDelay);
+  });
 }
 
 function enableSupplementColumnLongPressDrag(tableWrapper, planData) {
@@ -3329,13 +3783,14 @@ function enableSupplementColumnLongPressDrag(tableWrapper, planData) {
   if (!tableWrapper || !table || activeEntries.length < 2) return;
 
   const longPressDelay = 420;
-  const moveCancelDistance = 24;
+  const moveCancelDistance = 36;
   let pressTimer = null;
   let active = false;
   let dragFrom = null;
   let dragTo = null;
   let startX = 0;
   let startY = 0;
+  let startPointerType = 'mouse';
   let pointerId = null;
   let sourceButton = null;
   let lockedScrollTop = 0;
@@ -3344,8 +3799,8 @@ function enableSupplementColumnLongPressDrag(tableWrapper, planData) {
 
   const syncDragAffordances = () => {
     if (!active || dragFrom === null) return;
-    syncSupplementColumnDragChip(tableWrapper, table, dragTo ?? dragFrom);
-    syncSupplementColumnDragDoseOverlay(tableWrapper, table, dragFrom, activeEntries.length);
+    syncSupplementColumnDragChip(tableWrapper, table, dragFrom, dragTo ?? dragFrom);
+    syncSupplementColumnDragDoseOverlay(tableWrapper, table, dragTo ?? dragFrom, activeEntries.length);
   };
 
   tableWrapper.addEventListener('click', event => {
@@ -3361,6 +3816,16 @@ function enableSupplementColumnLongPressDrag(tableWrapper, planData) {
     pressTimer = null;
   };
 
+  const handleContextMenu = (event) => {
+    if (pointerId !== null || active) {
+      event.preventDefault();
+    }
+  };
+
+  const getPreDragCancelDistance = () => (
+    startPointerType === 'mouse' ? moveCancelDistance : moveCancelDistance + 18
+  );
+
   const cleanup = () => {
     const wasActive = active;
     clearPressTimer();
@@ -3368,6 +3833,7 @@ function enableSupplementColumnLongPressDrag(tableWrapper, planData) {
     document.removeEventListener('pointerup', handlePointerEnd);
     document.removeEventListener('pointercancel', handlePointerEnd);
     document.removeEventListener('touchmove', handleTouchMove);
+    document.removeEventListener('contextmenu', handleContextMenu, true);
     tableWrapper.classList.remove('supplement-table-wrapper--column-dragging');
     table.classList.remove('supplement-plan-table--column-dragging');
     if (wasActive) {
@@ -3440,7 +3906,7 @@ function enableSupplementColumnLongPressDrag(tableWrapper, planData) {
     const diffY = event.clientY - startY;
 
     if (!active) {
-      if (Math.hypot(diffX, diffY) > moveCancelDistance) {
+      if (Math.hypot(diffX, diffY) > getPreDragCancelDistance()) {
         clearPressTimer();
       }
       return;
@@ -3485,10 +3951,13 @@ function enableSupplementColumnLongPressDrag(tableWrapper, planData) {
   const bindColumnDragHandle = (element, columnIndex) => {
     if (!Number.isInteger(columnIndex) || columnIndex >= activeEntries.length) return;
 
+    element.addEventListener('contextmenu', event => event.preventDefault());
     element.addEventListener('pointerdown', event => {
       if (event.pointerType === 'mouse' && event.button !== 0) return;
+      event.preventDefault();
 
       cleanup();
+      startPointerType = event.pointerType || 'mouse';
       pointerId = event.pointerId;
       sourceButton = element;
       dragFrom = columnIndex;
@@ -3500,6 +3969,7 @@ function enableSupplementColumnLongPressDrag(tableWrapper, planData) {
       document.addEventListener('touchmove', handleTouchMove, { passive: false });
       document.addEventListener('pointerup', handlePointerEnd);
       document.addEventListener('pointercancel', handlePointerEnd);
+      document.addEventListener('contextmenu', handleContextMenu, true);
       pressTimer = setTimeout(startColumnDrag, longPressDelay);
     });
   };
@@ -3557,20 +4027,28 @@ function autoScrollSupplementTableHorizontally(tableWrapper, clientX) {
 }
 
 function clearSupplementColumnDragClasses(table) {
-  table.querySelectorAll('.supplement-column-selected, .supplement-column-drop-target').forEach(element => {
-    element.classList.remove('supplement-column-selected', 'supplement-column-drop-target');
+  table.querySelectorAll('.supplement-column-selected, .supplement-column-drop-target, .supplement-column-source-hidden, .supplement-column-shift-left, .supplement-column-shift-right').forEach(element => {
+    element.classList.remove(
+      'supplement-column-selected',
+      'supplement-column-drop-target',
+      'supplement-column-source-hidden',
+      'supplement-column-shift-left',
+      'supplement-column-shift-right'
+    );
   });
   table.classList.remove(
     'supplement-plan-table--can-move-left',
     'supplement-plan-table--can-move-right'
   );
+  table.style.removeProperty('--supplement-column-shift-distance');
 }
 
-function syncSupplementColumnDragChip(tableWrapper, table, columnIndex) {
-  if (!tableWrapper || !table || !Number.isInteger(columnIndex)) return;
+function syncSupplementColumnDragChip(tableWrapper, table, sourceColumnIndex, positionColumnIndex = sourceColumnIndex) {
+  if (!tableWrapper || !table || !Number.isInteger(sourceColumnIndex) || !Number.isInteger(positionColumnIndex)) return;
 
-  const headerCell = table.querySelector(`th.supplement-col[data-index="${columnIndex}"]`);
-  if (!headerCell) return;
+  const sourceHeaderCell = table.querySelector(`th.supplement-col[data-index="${sourceColumnIndex}"]`);
+  const positionHeaderCell = table.querySelector(`th.supplement-col[data-index="${positionColumnIndex}"]`);
+  if (!sourceHeaderCell || !positionHeaderCell) return;
   const stickyHeader = table.querySelector('thead');
 
   let chip = document.body.querySelector('.supplement-column-drag-chip');
@@ -3579,13 +4057,13 @@ function syncSupplementColumnDragChip(tableWrapper, table, columnIndex) {
     document.body.append(chip);
   }
 
-  chip.textContent = headerCell.querySelector('.sup-name')?.textContent?.trim() || '';
+  chip.textContent = sourceHeaderCell.querySelector('.sup-name')?.textContent?.trim() || '';
 
   const viewportHeight = Math.round(window.visualViewport?.height || window.innerHeight || document.documentElement?.clientHeight || 0);
   const viewportWidth = Math.round(window.visualViewport?.width || window.innerWidth || document.documentElement?.clientWidth || 0);
   const wrapperRect = tableWrapper.getBoundingClientRect();
   const stickyHeaderRect = stickyHeader?.getBoundingClientRect() || wrapperRect;
-  const columnRect = headerCell.getBoundingClientRect();
+  const columnRect = positionHeaderCell.getBoundingClientRect();
   const chipWidth = Math.min(Math.max(Math.round(columnRect.width + 18), 78), Math.max(78, viewportWidth - 12));
   const nextLeft = clampValue(
     Math.round(columnRect.left + (columnRect.width - chipWidth) / 2),
@@ -3623,11 +4101,15 @@ function syncSupplementColumnDragDoseOverlay(tableWrapper, table, columnIndex, r
   overlay.classList.toggle('can-move-right', columnIndex < realColumnsCount - 1);
 
   const wrapperRect = tableWrapper.getBoundingClientRect();
+  const navRect = document.querySelector('.navigation')?.getBoundingClientRect?.();
   const header = table.querySelector('thead');
   const headerRect = header?.getBoundingClientRect() || headerCell.getBoundingClientRect();
   const columnRect = headerCell.getBoundingClientRect();
-  const nextTop = Math.round(Math.max(wrapperRect.top, headerRect.bottom));
-  const nextHeight = Math.max(0, Math.round(wrapperRect.bottom - nextTop));
+  const nextTop = Math.round(Math.max(wrapperRect.top, headerRect.top));
+  const visibleBottom = Number.isFinite(navRect?.top) && navRect.top > 0
+    ? Math.min(wrapperRect.bottom, navRect.top)
+    : wrapperRect.bottom;
+  const nextHeight = Math.max(0, Math.round(visibleBottom - nextTop));
 
   overlay.style.left = `${Math.round(columnRect.left)}px`;
   overlay.style.top = `${nextTop}px`;
@@ -3651,14 +4133,42 @@ function clampValue(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
+function getSupplementColumnShiftDistance(table, dragFrom, dragTo) {
+  const sourceHeader = table?.querySelector(`th.supplement-col[data-index="${dragFrom}"]`);
+  const targetHeader = table?.querySelector(`th.supplement-col[data-index="${dragTo}"]`);
+  const distance = Math.round(
+    targetHeader?.getBoundingClientRect?.().width ||
+    sourceHeader?.getBoundingClientRect?.().width ||
+    0
+  );
+  return Math.max(distance, 0);
+}
+
+function markSupplementColumnShiftRange(table, dragFrom, dragTo) {
+  if (!table || dragFrom === dragTo) return;
+
+  if (dragTo > dragFrom) {
+    for (let index = dragFrom + 1; index <= dragTo; index += 1) {
+      markSupplementColumn(table, index, 'supplement-column-shift-left');
+    }
+    return;
+  }
+
+  for (let index = dragTo; index < dragFrom; index += 1) {
+    markSupplementColumn(table, index, 'supplement-column-shift-right');
+  }
+}
+
 function applySupplementColumnDragState(table, dragFrom, dragTo, realColumnsCount = 0) {
   clearSupplementColumnDragClasses(table);
   table.classList.toggle('supplement-plan-table--can-move-left', dragFrom > 0);
   table.classList.toggle('supplement-plan-table--can-move-right', dragFrom < realColumnsCount - 1);
-  markSupplementColumn(table, dragFrom, 'supplement-column-selected');
-  if (dragTo !== dragFrom) {
-    markSupplementColumn(table, dragTo, 'supplement-column-drop-target');
+  markSupplementColumn(table, dragFrom, 'supplement-column-source-hidden');
+  const shiftDistance = getSupplementColumnShiftDistance(table, dragFrom, dragTo);
+  if (shiftDistance > 0) {
+    table.style.setProperty('--supplement-column-shift-distance', `${shiftDistance}px`);
   }
+  markSupplementColumnShiftRange(table, dragFrom, dragTo);
 }
 
 function markSupplementColumn(table, columnIndex, className) {

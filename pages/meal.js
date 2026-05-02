@@ -408,7 +408,7 @@ function getMealSummaryVisibleMonth() {
     const parsed = parseMealSummaryMonthKey(state.mealSummaryMonth);
     if (parsed) return parsed;
 
-    const fallback = state.selectedDate ? parseLocalDate(state.selectedDate) : new Date();
+    const fallback = state.mealSummarySelectedDate ? parseLocalDate(state.mealSummarySelectedDate) : new Date();
     return getMonthStart(fallback);
 }
 
@@ -3639,6 +3639,9 @@ function renderMealMonthlySummaryPage() {
     let cleanupSticky = null;
 
     const todayStr = formatLocalDate(new Date());
+    if (!state.mealSummarySelectedDate) {
+        state.mealSummarySelectedDate = todayStr;
+    }
     const screen = createElement('div', 'meal-monthly-summary-screen');
     const sticky = createElement('div', 'meal-monthly-summary-sticky');
     const title = createElement('h3', 'create-food-sticky-h3 meal-monthly-summary-title', 'Сводка калорий');
@@ -3712,6 +3715,7 @@ function renderMealMonthlySummaryPage() {
     };
 
     const openBurnedStub = (dateStr) => {
+        state.mealSummarySelectedDate = dateStr;
         state.mealBurnedSummaryDate = dateStr;
         state.mealView = 'burnedSummary';
         renderMealPage();
@@ -3821,7 +3825,7 @@ function renderMealMonthlySummaryPage() {
         };
 
         const date = parseLocalDate(dateStr);
-        const isSelected = dateStr === state.selectedDate;
+        const isSelected = dateStr === state.mealSummarySelectedDate;
         const isToday = dateStr === todayStr;
 
         const row = createElement(
@@ -4047,7 +4051,7 @@ function renderMealBurnedSummaryStubPage() {
     ensureMealShell();
     setMealBaseTopBarVisible(false);
 
-    const dateStr = state.mealBurnedSummaryDate || state.selectedDate || formatLocalDate(new Date());
+    const dateStr = state.mealBurnedSummaryDate || state.mealSummarySelectedDate || formatLocalDate(new Date());
     const screen = createElement('div', 'meal-burned-summary-stub-screen meal-apple-health-screen');
     const title = createElement('h3', 'create-food-sticky-h3 meal-burned-summary-stub-title', 'Потраченные калории');
     const subtitle = createElement('div', 'meal-burned-summary-stub-date', formatMealSummaryStubDateLabel(dateStr));

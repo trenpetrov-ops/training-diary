@@ -16,6 +16,7 @@ import { attachSwipeRow, closeSwipeRowVisual } from './swipe-engine.js';
 import { renderCycleReportPage } from './pages/supplement.js';
 import { resetSupplementsListener } from './pages/supplement.js';
 import { getSupplementPlanSnapshotSignature } from './pages/supplement.js';
+import { sanitizeSupplementPlan } from './pages/supplement.js';
 import { attachMonthCarouselSwipe } from './calendar-month-carousel.js';
 import {
     initBottomNav,
@@ -403,6 +404,7 @@ function resetCycleScopedState() {
     state.mealsData = {};
     state.selectedDate = null;
     state.mealSummaryMonth = null;
+    state.mealSummarySelectedDate = null;
     state.mealBurnedSummaryDate = null;
 }
 
@@ -1125,6 +1127,7 @@ function resetCycleDerivedStateForSwitch() {
     state.mealsData = {};
     state.selectedDate = null;
     state.mealSummaryMonth = null;
+    state.mealSummarySelectedDate = null;
     state.mealBurnedSummaryDate = null;
 }
 
@@ -8337,12 +8340,18 @@ function attachCycleDataListeners() {
             supplementsUnsubscribe = onSnapshot(cycleRef, (docSnap) => {
                 const docData = docSnap.exists() ? docSnap.data() : {};
                 const supplementPlan = docData.supplementPlan || {};
-                const nextPlan = {
+                const rawPlan = {
                     supplements: Array.isArray(supplementPlan.supplements) ? supplementPlan.supplements : [],
                     data: Array.isArray(supplementPlan.data) ? supplementPlan.data : []
                 };
+                const { plan: nextPlan, changed } = sanitizeSupplementPlan(rawPlan);
                 state.supplementPlan = nextPlan;
                 syncSupplementsBottomNavBadge(nextPlan);
+                if (changed && cycleRef) {
+                    updateDoc(cycleRef, { supplementPlan: nextPlan }).catch((error) => {
+                        console.error('Supplement plan cleanup failed:', error);
+                    });
+                }
                 const nextSignature = getSupplementPlanSnapshotSignature(nextPlan);
                 if (state._supplementsSkipNextRenderSignature === nextSignature) {
                     delete state._supplementsSkipNextRenderSignature;
@@ -8552,8 +8561,9 @@ export function renderTopBar() {
                 `;
                 summaryBtn.onclick = () => {
                     const now = new Date();
-                    const fallback = state.selectedDate || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-                    state.mealSummaryMonth = String(fallback).slice(0, 7);
+                    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                    state.mealSummarySelectedDate = todayStr;
+                    state.mealSummaryMonth = String(todayStr).slice(0, 7);
                     state.mealBurnedSummaryDate = null;
                     state.mealView = 'monthSummary';
                     renderMealPage();
