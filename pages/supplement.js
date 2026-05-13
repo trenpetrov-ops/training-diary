@@ -35,19 +35,553 @@ const SUPPLEMENTS_TABLE_RANGE_KEY = 'trainingDiary:supplementsTableRange';
 const MAX_SUPPLEMENTS_COUNT = 20;
 const SUPPLEMENT_SHORT_NAME_LIMIT = 7;
 const SUPPLEMENT_TABLE_VISIBLE_WEEKS = 4;
-const SUPPLEMENT_TABLE_RENDER_WEEKS = 8;
-const SUPPLEMENT_TABLE_SHIFT_WEEKS = 2;
 const SUPPLEMENT_TABLE_VISIBLE_DAYS = SUPPLEMENT_TABLE_VISIBLE_WEEKS * 7;
-const SUPPLEMENT_TABLE_RENDER_DAYS = SUPPLEMENT_TABLE_RENDER_WEEKS * 7;
-const SUPPLEMENT_TABLE_SHIFT_DAYS = SUPPLEMENT_TABLE_SHIFT_WEEKS * 7;
+/** Сколько недель плана от даты начала цикла держим минимум (и показываем в таблице без виртуального окна). */
+const SUPPLEMENT_TABLE_INITIAL_WEEKS = 12;
+const SUPPLEMENT_TABLE_DEFAULT_ADD_WEEKS = 12;
+
 let supplementCalendarMonthDate = null;
 let supplementCalendarSelectedDate = null;
 let supplementTableViewportSyncController = null;
 let supplementTableScrollState = null;
 let supplementDoseClipboard = null;
 let supplementDoseClipboardMeta = null;
+let supplementDoseRangeClipboard = null;
+let supplementDoseRangeClipboardMeta = null;
 let supplementDoseLongPressOverlayCleanup = null;
 let supplementTableVirtualState = null;
+let supplementDoseMergeSession = null;
+let supplementTableSheetState = createSupplementTableSheetDefaultState();
+let supplementTableSheetElements = null;
+let supplementTableSheetViewportAbortController = null;
+let supplementPlanHistoryState = createSupplementPlanHistoryDefaultState();
+let supplementsCurrentViewMode = 'calendar';
+let supplementTableEditorDeferredScrollTimer = null;
+
+const SUPPLEMENT_SHEET_TEXT_COLORS = ['#111827', '#d93c3c', '#0f766e', '#2563eb', '#7c3aed', '#b45309'];
+const SUPPLEMENT_SHEET_FILL_COLORS = ['', '#fff7cc', '#dff5df', '#dbeafe', '#f3e8ff', '#fee2e2'];
+const SUPPLEMENT_PLAN_HISTORY_LIMIT = 120;
+
+function createSupplementTableSheetDefaultState() {
+    return {
+        menuOpen: false,
+        selectedCell: null,
+        draft: null,
+        initialDraft: null,
+        history: [],
+        historyIndex: -1,
+        formatPanelOpen: false,
+        formatColorPaletteOpen: false,
+        timePanelOpen: false,
+        textInputFocused: false,
+        numericPadMode: false
+    };
+}
+
+function createSupplementPlanHistoryDefaultState() {
+    return {
+        cycleId: '',
+        entries: [],
+        index: -1
+    };
+}
+
+function isSupplementPlanDayRangeConsecutiveInData(plan, i0, i1) {
+    if (i0 === i1) return true;
+    const lo = Math.min(i0, i1);
+    const hi = Math.max(i0, i1);
+    const data = plan?.data;
+    if (!Array.isArray(data)) return false;
+    for (let i = lo + 1; i <= hi; i++) {
+        const prev = parseSupplementDateString(data[i - 1]?.date);
+        const cur = parseSupplementDateString(data[i]?.date);
+        if (!prev || !cur) return false;
+        const next = addSupplementDays(prev, 1);
+        if (compareSupplementDates(cur, next) !== 0) return false;
+    }
+    return true;
+}
+
+function findSupplementDoseMergeCovering(planData, dateStr, slot, supplementName) {
+    const merges = planData?.doseMerges;
+    if (!Array.isArray(merges) || !dateStr || !supplementName) return null;
+    const d = parseSupplementDateString(dateStr);
+    if (!d) return null;
+    for (const m of merges) {
+        if (!m || typeof m !== 'object') continue;
+        if (Number(m.slot) !== Number(slot)) continue;
+        if (String(m.supplementName || '') !== String(supplementName)) continue;
+        const sd = parseSupplementDateString(m.startDate);
+        const ed = parseSupplementDateString(m.endDate);
+        if (!sd || !ed) continue;
+        if (compareSupplementDates(d, sd) >= 0 && compareSupplementDates(d, ed) <= 0) {
+            return m;
+        }
+    }
+    return null;
+}
+
+function findSupplementDoseMergeCoveringByName(planData, dateStr, supplementName) {
+    const merges = planData?.doseMerges;
+    if (!Array.isArray(merges) || !dateStr || !supplementName) return null;
+    const d = parseSupplementDateString(dateStr);
+    if (!d) return null;
+    for (const m of merges) {
+        if (!m || typeof m !== 'object') continue;
+        if (String(m.supplementName || '') !== String(supplementName)) continue;
+        const sd = parseSupplementDateString(m.startDate);
+        const ed = parseSupplementDateString(m.endDate);
+        if (!sd || !ed) continue;
+        if (compareSupplementDates(d, sd) >= 0 && compareSupplementDates(d, ed) <= 0) {
+            return m;
+        }
+    }
+    return null;
+}
+
+function getSupplementDoseMergeRowspan(planData, merge) {
+    if (!merge?.startDate || !merge?.endDate) return 1;
+    const data = planData?.data;
+    if (!Array.isArray(data)) return 1;
+    const i0 = data.findIndex((day) => day?.date === merge.startDate);
+    const i1 = data.findIndex((day) => day?.date === merge.endDate);
+    if (i0 < 0 || i1 < 0 || i1 < i0) return 1;
+    return i1 - i0 + 1;
+}
+
+function getSupplementDoseMergeDateStrings(planData, merge) {
+    if (!merge?.startDate || !merge?.endDate) return [];
+    const data = planData?.data;
+    if (!Array.isArray(data)) return [];
+    const i0 = data.findIndex((day) => day?.date === merge.startDate);
+    const i1 = data.findIndex((day) => day?.date === merge.endDate);
+    if (i0 < 0 || i1 < 0) return [];
+    const lo = Math.min(i0, i1);
+    const hi = Math.max(i0, i1);
+    return data.slice(lo, hi + 1).map((day) => day?.date).filter(Boolean);
+}
+
+function filterSupplementDoseMergesOverlappingRange(plan, slot, supplementName, startDate, endDate) {
+    const list = plan?.doseMerges;
+    if (!Array.isArray(list)) return;
+    plan.doseMerges = list.filter((m) => {
+        if (!m || typeof m !== 'object') return false;
+        if (Number(m.slot) !== Number(slot)) return true;
+        if (String(m.supplementName || '') !== String(supplementName)) return true;
+        if (compareSupplementDateStrings(m.endDate, startDate) < 0) return true;
+        if (compareSupplementDateStrings(m.startDate, endDate) > 0) return true;
+        return false;
+    });
+}
+
+/** @returns {{ scope: 'none' | 'single' | 'merge' }} */
+function clearSupplementDoseCellOrMergeInPlan(plan, dateStr, supplementName, slot) {
+    if (!plan || !dateStr || !supplementName) return { scope: 'none' };
+    const merge =
+        Number.isFinite(slot) && slot >= 0
+            ? findSupplementDoseMergeCovering(plan, dateStr, slot, supplementName)
+            : null;
+    if (merge) {
+        const dates = getSupplementDoseMergeDateStrings(plan, merge);
+        for (const ds of dates) {
+            const di = (plan.data || []).findIndex((d) => d.date === ds);
+            if (di >= 0) {
+                plan.data[di].doses = plan.data[di].doses || {};
+                plan.data[di].doses[supplementName] = '';
+            }
+        }
+        plan.doseMerges = (plan.doseMerges || []).filter(
+            (m) =>
+                !(
+                    Number(m.slot) === Number(merge.slot) &&
+                    String(m.supplementName || '') === String(merge.supplementName || '') &&
+                    m.startDate === merge.startDate &&
+                    m.endDate === merge.endDate
+                )
+        );
+        return { scope: 'merge' };
+    }
+    const dayIndex = (plan.data || []).findIndex((day) => day.date === dateStr);
+    if (dayIndex === -1) return { scope: 'none' };
+    plan.data[dayIndex].doses = plan.data[dayIndex].doses || {};
+    plan.data[dayIndex].doses[supplementName] = '';
+    return { scope: 'single' };
+}
+
+/** @returns {{ scope: 'none' | 'single' | 'merge' }} */
+function pasteSupplementDoseToCellOrMergeInPlan(plan, dateStr, supplementName, slot, clipboardRaw) {
+    if (!plan || !dateStr || !supplementName) return { scope: 'none' };
+    const merge =
+        Number.isFinite(slot) && slot >= 0
+            ? findSupplementDoseMergeCovering(plan, dateStr, slot, supplementName)
+            : null;
+    const val = cloneSupplementDoseValue(clipboardRaw);
+    if (merge) {
+        const dates = getSupplementDoseMergeDateStrings(plan, merge);
+        for (const ds of dates) {
+            const di = (plan.data || []).findIndex((d) => d.date === ds);
+            if (di >= 0) {
+                plan.data[di].doses = plan.data[di].doses || {};
+                plan.data[di].doses[supplementName] = cloneSupplementDoseValue(val);
+            }
+        }
+        return { scope: 'merge' };
+    }
+    const dayIndex = (plan.data || []).findIndex((day) => day.date === dateStr);
+    if (dayIndex === -1) return { scope: 'none' };
+    plan.data[dayIndex].doses = plan.data[dayIndex].doses || {};
+    plan.data[dayIndex].doses[supplementName] = val;
+    return { scope: 'single' };
+}
+
+function buildSupplementDoseRangeClipboardFromSession(session, planData) {
+    if (!session || !Array.isArray(planData?.data)) return null;
+    const i0 = Math.min(session.anchorIdx, session.extentIdx);
+    const i1 = Math.max(session.anchorIdx, session.extentIdx);
+    if (i0 < 0 || i1 < i0) return null;
+
+    const rows = planData.data.slice(i0, i1 + 1);
+    if (rows.length === 0) return null;
+
+    const values = rows.map((day) => cloneSupplementDoseValue(day?.doses?.[session.supplementName] || ''));
+    const merges = Array.isArray(planData.doseMerges)
+        ? planData.doseMerges
+            .filter((merge) => {
+                if (!merge || typeof merge !== 'object') return false;
+                if (Number(merge.slot) !== Number(session.slot)) return false;
+                if (String(merge.supplementName || '') !== String(session.supplementName || '')) return false;
+                const startIndex = planData.data.findIndex((day) => day?.date === merge.startDate);
+                const endIndex = planData.data.findIndex((day) => day?.date === merge.endDate);
+                if (startIndex < 0 || endIndex < startIndex) return false;
+                return startIndex >= i0 && endIndex <= i1;
+            })
+            .map((merge) => {
+                const startIndex = planData.data.findIndex((day) => day?.date === merge.startDate);
+                const endIndex = planData.data.findIndex((day) => day?.date === merge.endDate);
+                const anchorIndex = planData.data.findIndex((day) => day?.date === merge.anchorDate);
+                return {
+                    startOffset: startIndex - i0,
+                    endOffset: endIndex - i0,
+                    anchorOffset: anchorIndex >= i0 && anchorIndex <= i1 ? anchorIndex - i0 : startIndex - i0
+                };
+            })
+        : [];
+
+    return {
+        values,
+        merges
+    };
+}
+
+function setSupplementDoseRangeClipboardValue(clipboardData, meta = {}) {
+    supplementDoseRangeClipboard = clipboardData
+        ? {
+            values: Array.isArray(clipboardData.values)
+                ? clipboardData.values.map((item) => cloneSupplementDoseValue(item))
+                : [],
+            merges: Array.isArray(clipboardData.merges)
+                ? clipboardData.merges.map((item) => ({ ...item }))
+                : []
+        }
+        : null;
+    supplementDoseRangeClipboardMeta = {
+        dateStr: meta.dateStr || '',
+        supplementName: meta.supplementName || '',
+        length: Array.isArray(clipboardData?.values) ? clipboardData.values.length : 0
+    };
+    supplementDoseClipboard = null;
+    supplementDoseClipboardMeta = null;
+}
+
+function hasSupplementDoseRangeClipboardValue() {
+    return Boolean(
+        supplementDoseRangeClipboard &&
+        Array.isArray(supplementDoseRangeClipboard.values) &&
+        supplementDoseRangeClipboard.values.length > 0
+    );
+}
+
+function pasteSupplementDoseRangeToPlan(plan, dateStr, supplementName, slot, clipboardData) {
+    if (!plan || !dateStr || !supplementName) return { scope: 'none' };
+    const parsedStartDate = parseSupplementDateString(dateStr);
+    const values = Array.isArray(clipboardData?.values) ? clipboardData.values : [];
+    if (!parsedStartDate || values.length === 0) return { scope: 'none' };
+
+    const targetDates = values.map((_, index) =>
+        formatSupplementDateString(addSupplementDays(parsedStartDate, index))
+    );
+    const targetStartDate = targetDates[0];
+    const targetEndDate = targetDates[targetDates.length - 1];
+
+    filterSupplementDoseMergesOverlappingRange(plan, slot, supplementName, targetStartDate, targetEndDate);
+
+    targetDates.forEach((targetDate, index) => {
+        const dayIndex = ensureSupplementDayRecord(plan, targetDate);
+        if (dayIndex < 0) return;
+        plan.data[dayIndex].doses = plan.data[dayIndex].doses || {};
+        const nextValue = cloneSupplementDoseValue(values[index] || '');
+        plan.data[dayIndex].doses[supplementName] = nextValue;
+    });
+
+    if (!Array.isArray(plan.doseMerges)) plan.doseMerges = [];
+    (Array.isArray(clipboardData?.merges) ? clipboardData.merges : []).forEach((merge) => {
+        const startOffset = Number(merge?.startOffset);
+        const endOffset = Number(merge?.endOffset);
+        if (!Number.isInteger(startOffset) || !Number.isInteger(endOffset)) return;
+        if (startOffset < 0 || endOffset < startOffset || endOffset >= targetDates.length) return;
+        const anchorOffset = Number.isInteger(Number(merge?.anchorOffset))
+            ? Number(merge.anchorOffset)
+            : startOffset;
+        const safeAnchorOffset =
+            anchorOffset >= startOffset && anchorOffset <= endOffset ? anchorOffset : startOffset;
+        plan.doseMerges.push({
+            slot,
+            supplementName,
+            startDate: targetDates[startOffset],
+            endDate: targetDates[endOffset],
+            anchorDate: targetDates[safeAnchorOffset]
+        });
+    });
+
+    return { scope: values.length > 1 ? 'block' : 'single' };
+}
+
+function endSupplementDoseMergeMode() {
+    const sess = supplementDoseMergeSession;
+    if (sess?.tableWrapper && typeof sess.onTableClickCapture === 'function') {
+        sess.tableWrapper.removeEventListener('click', sess.onTableClickCapture, true);
+    }
+    const tw = sess?.tableWrapper || document.getElementById('supplement-table-wrapper');
+    tw?.querySelectorAll?.('button.supplement-dose-cell-btn--merge-pick')?.forEach((btn) =>
+        btn.classList.remove('supplement-dose-cell-btn--merge-pick')
+    );
+    if (sess?.tableWrapper) {
+        sess.tableWrapper.classList.remove('supplement-table-wrapper--merge-select');
+    } else {
+        document.getElementById('supplement-table-wrapper')?.classList.remove('supplement-table-wrapper--merge-select');
+    }
+    document.getElementById('supplement-dose-merge-toolbar')?.remove();
+    document.querySelector('.top-bar')?.classList?.remove('top-bar--supplement-dose-merge');
+    supplementDoseMergeSession = null;
+}
+
+function syncSupplementDoseMergeHighlights() {
+    const s = supplementDoseMergeSession;
+    if (!s?.tableWrapper) return;
+    const tw = s.tableWrapper;
+    tw.querySelectorAll('button.supplement-dose-cell-btn--merge-pick').forEach((btn) =>
+        btn.classList.remove('supplement-dose-cell-btn--merge-pick')
+    );
+    const plan = state.supplementPlan;
+    if (!plan?.data) return;
+    const i0 = Math.min(s.anchorIdx, s.extentIdx);
+    const i1 = Math.max(s.anchorIdx, s.extentIdx);
+    const slotStr = String(s.slot);
+    const name = String(s.supplementName || '');
+    const dateSet = new Set();
+    for (let i = i0; i <= i1; i++) {
+        const d = plan.data[i]?.date;
+        if (d) dateSet.add(d);
+    }
+    if (dateSet.size === 0) return;
+    for (const btn of tw.querySelectorAll('button.supplement-dose-cell-btn')) {
+        if (!dateSet.has(btn.dataset.date)) continue;
+        if (btn.dataset.supplementSlot !== slotStr) continue;
+        if (String(btn.dataset.supplementName || '') !== name) continue;
+        btn.classList.add('supplement-dose-cell-btn--merge-pick');
+    }
+}
+
+function startSupplementDoseMergeMode(tableWrapper, sourceButton) {
+    endSupplementDoseMergeMode();
+    const dateStr = sourceButton?.dataset?.date || '';
+    const supplementName = sourceButton?.dataset?.supplementName || '';
+    const slot = Number(sourceButton?.dataset?.supplementSlot);
+    const plan = state.supplementPlan;
+    const idx = plan?.data?.findIndex((d) => d.date === dateStr) ?? -1;
+    if (idx < 0 || !supplementName || !Number.isFinite(slot)) return;
+
+    const bar = createElement('div', 'supplement-dose-merge-toolbar');
+    bar.id = 'supplement-dose-merge-toolbar';
+    const cancelBtn = createElement('button', 'btn btn-secondary supplement-dose-merge-cancel', 'Отмена');
+    cancelBtn.type = 'button';
+    const mergeBtn = createElement('button', 'btn btn-primary supplement-dose-merge-confirm', 'Объединить');
+    mergeBtn.type = 'button';
+    mergeBtn.disabled = true;
+    mergeBtn.textContent = 'Объединить ячейки';
+    const copyBtn = createElement('button', 'btn btn-secondary supplement-dose-merge-copy', 'Копировать');
+    copyBtn.type = 'button';
+    copyBtn.disabled = true;
+    const hint = createElement('div', 'supplement-dose-merge-toolbar-hint', '');
+    const row = createElement('div', 'supplement-dose-merge-toolbar-row');
+    row.append(cancelBtn, mergeBtn, copyBtn);
+    bar.append(row, hint);
+
+    const topBar = document.querySelector('.top-bar');
+    if (!topBar) {
+        return;
+    }
+    topBar.classList.add('top-bar--supplement-dose-merge');
+    topBar.insertBefore(bar, topBar.firstChild);
+
+    const onTableClickCapture = (e) => {
+        const sess = supplementDoseMergeSession;
+        if (!sess) return;
+        const btn = e.target?.closest?.('button.supplement-dose-cell-btn');
+        if (!btn || !sess.tableWrapper.contains(btn)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (btn.dataset.supplementSlot !== String(sess.slot) || btn.dataset.supplementName !== sess.supplementName) {
+            hint.textContent = 'Только этот столбец и подряд идущие дни.';
+            return;
+        }
+        const j = state.supplementPlan?.data?.findIndex((d) => d.date === btn.dataset.date) ?? -1;
+        if (j < 0) return;
+        hint.textContent = '';
+        sess.extentIdx = j;
+        syncSupplementDoseMergeHighlights();
+        const lo = Math.min(sess.anchorIdx, sess.extentIdx);
+        const hi = Math.max(sess.anchorIdx, sess.extentIdx);
+        sess.mergeBtn.disabled = hi - lo < 1;
+        const selectedValues = state.supplementPlan?.data?.slice(lo, hi + 1) || [];
+        sess.copyBtn.disabled = !selectedValues.some((day) =>
+            hasSupplementDoseValue(day?.doses?.[sess.supplementName])
+        );
+    };
+
+    supplementDoseMergeSession = {
+        tableWrapper,
+        anchorIdx: idx,
+        extentIdx: idx,
+        supplementName,
+        slot,
+        mergeBtn,
+        copyBtn,
+        hintEl: hint,
+        onTableClickCapture
+    };
+
+    cancelBtn.addEventListener('click', () => endSupplementDoseMergeMode());
+    mergeBtn.addEventListener('click', () => void commitSupplementDoseMerge());
+    copyBtn.addEventListener('click', () => {
+        const clipboardData = buildSupplementDoseRangeClipboardFromSession(supplementDoseMergeSession, state.supplementPlan);
+        if (!clipboardData || !clipboardData.values.some((value) => hasSupplementDoseValue(value))) {
+            showToast('Нет данных для копирования');
+            return;
+        }
+        setSupplementDoseRangeClipboardValue(clipboardData, {
+            dateStr,
+            supplementName
+        });
+        navigator.vibrate?.(8);
+        endSupplementDoseMergeMode();
+        showToast('Диапазон скопирован');
+    });
+
+    tableWrapper.classList.add('supplement-table-wrapper--merge-select');
+    tableWrapper.addEventListener('click', onTableClickCapture, true);
+    syncSupplementDoseMergeHighlights();
+    copyBtn.disabled = true;
+}
+
+async function commitSupplementDoseMerge() {
+    const s = supplementDoseMergeSession;
+    if (!s) return;
+    const i0 = Math.min(s.anchorIdx, s.extentIdx);
+    const i1 = Math.max(s.anchorIdx, s.extentIdx);
+    if (i1 - i0 < 1) return;
+
+    const plan = JSON.parse(JSON.stringify(state.supplementPlan || { supplements: [], data: [] }));
+    ensureSupplementEntrySlots(plan);
+    if (!isSupplementPlanDayRangeConsecutiveInData(plan, i0, i1)) {
+        showToast('Не удалось объединить: в плане есть разрыв между датами.');
+        return;
+    }
+
+    const startDate = plan.data[i0].date;
+    const endDate = plan.data[i1].date;
+    const name = s.supplementName;
+    const slot = s.slot;
+
+    let mergedValue = '';
+    for (let i = i0; i <= i1; i++) {
+        const v = plan.data[i]?.doses?.[name];
+        if (hasSupplementDoseValue(v)) {
+            mergedValue = cloneSupplementDoseValue(v);
+            break;
+        }
+    }
+
+    if (!Array.isArray(plan.doseMerges)) plan.doseMerges = [];
+    filterSupplementDoseMergesOverlappingRange(plan, slot, name, startDate, endDate);
+    const anchorDate = plan.data[s.anchorIdx].date;
+    plan.doseMerges.push({ slot, supplementName: name, startDate, endDate, anchorDate });
+
+    for (let i = i0; i <= i1; i++) {
+        plan.data[i].doses = plan.data[i].doses || {};
+        plan.data[i].doses[name] = mergedValue ? cloneSupplementDoseValue(mergedValue) : '';
+    }
+
+    endSupplementDoseMergeMode();
+    const previousPlan = state.supplementPlan;
+    rememberCurrentSupplementTableScroll();
+    const saved = await updateSupplementPlanInFirestore(plan, { previousPlanOverride: previousPlan });
+    if (saved) {
+        showToast('Ячейки объединены');
+    }
+    renderSupplementsPage();
+}
+
+async function applySplitSupplementDoseMerge(button) {
+    const dateStr = button?.dataset.date || '';
+    const supplementName = button?.dataset.supplementName || '';
+    const slot = Number(button?.dataset.supplementSlot);
+    if (!dateStr || !supplementName || !Number.isFinite(slot)) return;
+
+    const plan = JSON.parse(JSON.stringify(state.supplementPlan || { supplements: [], data: [] }));
+    ensureSupplementEntrySlots(plan);
+    const merge = findSupplementDoseMergeCovering(plan, dateStr, slot, supplementName);
+    if (!merge || merge.startDate !== dateStr) return;
+
+    const name = supplementName;
+    const dates = getSupplementDoseMergeDateStrings(plan, merge);
+    if (!dates.length) return;
+
+    let anchor = String(merge.anchorDate || '').trim();
+    if (!anchor || !dates.includes(anchor)) {
+        anchor = merge.startDate;
+    }
+
+    const anchorDayIdx = plan.data.findIndex((d) => d.date === anchor);
+    const rawVal = anchorDayIdx >= 0 ? plan.data[anchorDayIdx]?.doses?.[name] : '';
+    const valueToKeep = hasSupplementDoseValue(rawVal) ? cloneSupplementDoseValue(rawVal) : '';
+
+    for (const ds of dates) {
+        const di = plan.data.findIndex((d) => d.date === ds);
+        if (di < 0) continue;
+        plan.data[di].doses = plan.data[di].doses || {};
+        plan.data[di].doses[name] =
+            ds === anchor ? (valueToKeep ? cloneSupplementDoseValue(valueToKeep) : '') : '';
+    }
+
+    plan.doseMerges = (plan.doseMerges || []).filter(
+        (m) =>
+            !(
+                Number(m.slot) === Number(merge.slot) &&
+                String(m.supplementName || '') === String(merge.supplementName || '') &&
+                m.startDate === merge.startDate &&
+                m.endDate === merge.endDate
+            )
+    );
+
+    const previousPlan = state.supplementPlan;
+    rememberCurrentSupplementTableScroll();
+    const saved = await updateSupplementPlanInFirestore(plan, { previousPlanOverride: previousPlan });
+    if (saved) {
+        showToast('Объединение снято');
+    }
+    renderSupplementsPage();
+}
 
 export function sanitizeSupplementPlan(planData) {
     const plan = planData && typeof planData === 'object'
@@ -104,6 +638,43 @@ export function sanitizeSupplementPlan(planData) {
         return dayRecord;
     });
 
+    const dateIndex = new Map(plan.data.map((d, i) => [d.date, i]));
+
+    if (!Array.isArray(plan.doseMerges)) {
+        plan.doseMerges = [];
+        changed = true;
+    } else {
+        const beforeLen = plan.doseMerges.length;
+        plan.doseMerges = plan.doseMerges
+            .filter((m) => {
+            if (!m || typeof m !== 'object') return false;
+            const slot = Number(m.slot);
+            const name = String(m.supplementName || '').trim();
+            const sd = String(m.startDate || '').trim();
+            const ed = String(m.endDate || '').trim();
+            if (!Number.isFinite(slot) || !name || !sd || !ed) return false;
+            if (!allowedNames.has(name)) return false;
+            const i0 = dateIndex.get(sd);
+            const i1 = dateIndex.get(ed);
+            if (i0 == null || i1 == null || i1 < i0) return false;
+            return isSupplementPlanDayRangeConsecutiveInData(plan, i0, i1);
+        })
+            .map((m) => {
+                const ad = String(m.anchorDate || '').trim();
+                if (!ad) return m;
+                const i0 = dateIndex.get(String(m.startDate || '').trim());
+                const i1 = dateIndex.get(String(m.endDate || '').trim());
+                const ia = dateIndex.get(ad);
+                if (i0 == null || i1 == null || ia == null || ia < i0 || ia > i1) {
+                    changed = true;
+                    const { anchorDate: _a, ...rest } = m;
+                    return rest;
+                }
+                return m;
+            });
+        if (plan.doseMerges.length !== beforeLen) changed = true;
+    }
+
     return { plan, changed };
 }
 
@@ -114,6 +685,80 @@ function resetSupplementsTableScrollMemory() {
 export function resetSupplementsListener() {
     // План БАДов синхронизируется через onSnapshot на документе цикла в script.js (setupDynamicListeners).
 }
+
+/**
+ * Гарантирует непрерывный диапазон дней plan.data от startDateString цикла
+ * до (cycleStart + weeks*7 - 1): при необходимости дописывает пустые дни в начало и в конец.
+ */
+function ensureSupplementPlanMinimumWeeksFromCycleStart(plan, cycle, weeks) {
+    if (!plan || !cycle?.startDateString || !Number.isFinite(weeks) || weeks <= 0) {
+        return { changed: false };
+    }
+    const cycleStart = parseSupplementDateString(cycle.startDateString);
+    if (!cycleStart) return { changed: false };
+
+    ensureSupplementEntrySlots(plan);
+    const names = getSupplementNames(plan);
+    const doseTemplate = () =>
+        names.length
+            ? Object.fromEntries(names.map((n) => [n, '']))
+            : {};
+
+    if (!Array.isArray(plan.data)) plan.data = [];
+
+    const targetEnd = addSupplementDays(cycleStart, weeks * 7 - 1);
+    let changed = false;
+
+    if (plan.data.length === 0) {
+        const chunk = generateDates(cycle.startDateString, weeks * 7);
+        plan.data = chunk.map((dateInfo) => ({
+            date: dateInfo.date,
+            dayOfWeek: dateInfo.dayOfWeek,
+            doses: { ...doseTemplate() }
+        }));
+        return { changed: true };
+    }
+
+    const firstParsed = parseSupplementDateString(plan.data[0].date);
+    const lastParsed = parseSupplementDateString(plan.data[plan.data.length - 1].date);
+    if (!firstParsed || !lastParsed) return { changed: false };
+
+    if (compareSupplementDates(firstParsed, cycleStart) > 0) {
+        let prependCount = Math.round((firstParsed.getTime() - cycleStart.getTime()) / 86400000);
+        if (prependCount > weeks * 7) {
+            prependCount = weeks * 7;
+        }
+        if (prependCount > 0) {
+            const chunk = generateDates(formatSupplementDateString(cycleStart), prependCount);
+            const newRows = chunk.map((dateInfo) => ({
+                date: dateInfo.date,
+                dayOfWeek: dateInfo.dayOfWeek,
+                doses: { ...doseTemplate() }
+            }));
+            plan.data = [...newRows, ...plan.data];
+            changed = true;
+        }
+    }
+
+    const lastAfter = parseSupplementDateString(plan.data[plan.data.length - 1].date);
+    if (lastAfter && compareSupplementDates(lastAfter, targetEnd) < 0) {
+        const appendCount = Math.round((targetEnd.getTime() - lastAfter.getTime()) / 86400000);
+        if (appendCount > 0) {
+            const nextStart = addSupplementDays(lastAfter, 1);
+            const chunk = generateDates(formatSupplementDateString(nextStart), appendCount);
+            const newRows = chunk.map((dateInfo) => ({
+                date: dateInfo.date,
+                dayOfWeek: dateInfo.dayOfWeek,
+                doses: { ...doseTemplate() }
+            }));
+            plan.data.push(...newRows);
+            changed = true;
+        }
+    }
+
+    return { changed };
+}
+
 // =================================================================
 // 🌟 НОВАЯ ФУНКЦИЯ: РЕНДЕР ПЛАНА БАДОВ/ДОБАВОК (Обновлена)
 // =================================================================
@@ -122,7 +767,9 @@ export async function renderSupplementsPage() {
     supplementTableViewportSyncController?.abort?.();
     supplementTableViewportSyncController = null;
     supplementTableVirtualState = null;
+    clearSupplementTableCellSelection({ preserveMenu: false, revertPreview: true });
     clearSupplementDoseLongPressPopover();
+    endSupplementDoseMergeMode();
     if (!ensureCycleSelected(render)) return;
     const isDayDetailsPage = Boolean(state.supplementCalendarDetailDate);
 
@@ -148,6 +795,7 @@ export async function renderSupplementsPage() {
     contentContainer.className = 'supplements-page';
 
     if (!currentCycle) {
+        resetSupplementPlanHistoryState();
         contentContainer.append(
             createElement('h3', null, 'План приема БАДов'),
             createElement('div', 'muted', 'Цикл не найден. Выберите другой.')
@@ -170,6 +818,7 @@ export async function renderSupplementsPage() {
 
     // --- Проверяем план добавок ---
     if (!state.supplementPlan || !state.supplementPlan.data) {
+        resetSupplementPlanHistoryState(state.selectedCycleId);
         contentContainer.append(
             createElement('div', 'muted', 'План добавок пока не загружен.')
         );
@@ -179,6 +828,7 @@ export async function renderSupplementsPage() {
 
     // --- Всё готово, можно рендерить план ---
     console.log('✅ План добавок загружен:', state.supplementPlan);
+    syncSupplementPlanHistoryWithState(state.supplementPlan, state.selectedCycleId);
     root.append(contentContainer);
 
     const activePlanData = state.supplementPlan || { supplements: [], data: [] };
@@ -200,7 +850,21 @@ export async function renderSupplementsPage() {
     if (supplementViewMode === 'calendar') {
         renderSupplementsCalendarView(contentContainer, activePlanData);
     } else {
-        renderSupplementsTableView(contentContainer, activePlanData);
+        const cycleForEnsure = state.cycles?.find((c) => c.id === state.selectedCycleId);
+        if (cycleForEnsure && state.supplementPlan) {
+            const { changed } = ensureSupplementPlanMinimumWeeksFromCycleStart(
+                state.supplementPlan,
+                cycleForEnsure,
+                SUPPLEMENT_TABLE_INITIAL_WEEKS
+            );
+            if (changed) {
+                ensureSupplementEntrySlots(state.supplementPlan);
+                await updateSupplementPlanInFirestore(state.supplementPlan);
+                resetSupplementPlanHistoryState(state.selectedCycleId);
+                syncSupplementPlanHistoryWithState(state.supplementPlan, state.selectedCycleId);
+            }
+        }
+        renderSupplementsTableView(contentContainer, state.supplementPlan || activePlanData);
     }
     return;
 
@@ -424,19 +1088,11 @@ if (planData.supplements.length === 0 && planData.data.length === 0) {
 // 🔥 НОВАЯ ФУНКЦИЯ FIREBASE: Обновление плана добавок
 // =================================================================
 function getSupplementsViewMode() {
-    try {
-        return localStorage.getItem(SUPPLEMENTS_VIEW_MODE_KEY) === 'calendar' ? 'calendar' : 'table';
-    } catch (error) {
-        return 'table';
-    }
+    return supplementsCurrentViewMode === 'table' ? 'table' : 'calendar';
 }
 
 function setSupplementsViewMode(mode) {
-    try {
-        localStorage.setItem(SUPPLEMENTS_VIEW_MODE_KEY, mode);
-    } catch (error) {
-        // localStorage can be unavailable in strict privacy modes.
-    }
+    supplementsCurrentViewMode = mode === 'table' ? 'table' : 'calendar';
 }
 
 function getSupplementsTableRangeMode() {
@@ -540,6 +1196,38 @@ function createSupplementsTopBarTableButton() {
     return btn;
 }
 
+function createSupplementsTopBarOverflowButton() {
+    const btn = createElement('button', 'supplements-topbar-action-btn supplements-topbar-overflow-btn');
+    btn.type = 'button';
+    btn.setAttribute('aria-label', 'Меню таблицы');
+    btn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><title>More SVG Icon</title><path fill="currentColor" d="M12 6a1.75 1.75 0 1 0 0-3.5A1.75 1.75 0 0 0 12 6m0 7.75A1.75 1.75 0 1 0 12 10a1.75 1.75 0 0 0 0 3.75M13.75 20a1.75 1.75 0 1 1-3.5 0a1.75 1.75 0 0 1 3.5 0"/></svg>
+    `;
+    btn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (supplementTableSheetState.selectedCell) {
+            supplementTableSheetState.menuOpen = true;
+        } else {
+            supplementTableSheetState.menuOpen = !supplementTableSheetState.menuOpen;
+        }
+        syncSupplementTableTopBarMenu();
+    });
+    return btn;
+}
+
+function createSupplementsTopBarImportButton() {
+    const btn = createElement('button', 'supplements-topbar-action-btn supplements-topbar-import-btn');
+    btn.type = 'button';
+    btn.setAttribute('aria-label', 'Перенос плана БАДов');
+    btn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><title>Import SVG Icon</title><path fill="currentColor" d="M12 3.25a.75.75 0 0 1 .75.75v8.19l2.22-2.22a.75.75 0 1 1 1.06 1.06l-3.5 3.5a.75.75 0 0 1-1.06 0l-3.5-3.5a.75.75 0 1 1 1.06-1.06l2.22 2.22V4a.75.75 0 0 1 .75-.75"/><path fill="currentColor" d="M4.75 15a.75.75 0 0 1 .75.75v1.5A1.75 1.75 0 0 0 7.25 19h9.5a1.75 1.75 0 0 0 1.75-1.75v-1.5a.75.75 0 0 1 1.5 0v1.5a3.25 3.25 0 0 1-3.25 3.25h-9.5A3.25 3.25 0 0 1 4 17.25v-1.5a.75.75 0 0 1 .75-.75"/></svg>
+    `;
+    btn.addEventListener('click', () => {
+        openSupplementPlanImportModal();
+    });
+    return btn;
+}
+
 function createSupplementsTopBarAddButton(planData) {
     const currentSupplements = getSupplementNames(planData);
     if (currentSupplements.length < 5 || currentSupplements.length >= MAX_SUPPLEMENTS_COUNT) {
@@ -570,14 +1258,7 @@ function createSupplementsTopBarWeekControls() {
 
     const weekLabel = createElement('span', 'week-label', 'неделя');
 
-    const addWeekBtn = createElement('button', 'btn btn-secondary');
-    addWeekBtn.type = 'button';
-    addWeekBtn.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"><title>Add-plus SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 12h6m0 0h6m-6 0v6m0-6V6"></path></svg>
-    `;
-    addWeekBtn.addEventListener('click', addWeek);
-
-    group.append(removeWeekBtn, weekLabel, addWeekBtn);
+    group.append(removeWeekBtn, weekLabel);
     return group;
 }
 
@@ -589,10 +1270,12 @@ function configureSupplementsTopBar(viewMode, planData) {
     topBar.classList.remove('top-bar--supplements-table');
     topBar.querySelector('.supplements-topbar-right')?.remove();
     leftGroup.querySelector('.supplements-topbar-add-btn')?.remove();
+    leftGroup.querySelector('.supplements-topbar-import-btn')?.remove();
     leftGroup.querySelector('.supplements-topbar-calendar-btn')?.remove();
     leftGroup.querySelector('.supplements-topbar-table-btn')?.remove();
-
+    leftGroup.querySelector('.supplements-topbar-inline-menu')?.remove();
     if (viewMode === 'calendar') {
+        leftGroup.append(createSupplementsTopBarImportButton());
         leftGroup.append(createSupplementsTopBarTableButton());
         return;
     }
@@ -604,14 +1287,1291 @@ function configureSupplementsTopBar(viewMode, planData) {
     if (addBtn) {
         leftGroup.append(addBtn);
     }
+    leftGroup.append(createElement('div', 'supplements-topbar-inline-menu'));
     leftGroup.append(createSupplementsTopBarCalendarButton());
+    syncSupplementTableTopBarMenu();
+}
+
+function isSupplementTableSheetSelectionActive() {
+    return Boolean(supplementTableSheetState.selectedCell);
+}
+
+function isSupplementTableSheetDraftDirty() {
+    if (!supplementTableSheetState.selectedCell) return false;
+    return !areSupplementTableCellDraftsEqual(
+        supplementTableSheetState.draft,
+        supplementTableSheetState.initialDraft
+    );
+}
+
+function clearSupplementTableCellSelectionVisual() {
+    const prevButton = supplementTableSheetState.selectedCell?.buttonEl;
+    prevButton?.classList.remove('supplement-dose-cell-btn--selected');
+}
+
+function applySupplementTableCellSelectionVisual(button) {
+    button?.classList.add('supplement-dose-cell-btn--selected');
+}
+
+function removeSupplementTableSheetEditorShell() {
+    window.clearTimeout(supplementTableEditorDeferredScrollTimer);
+    supplementTableEditorDeferredScrollTimer = null;
+    supplementTableSheetViewportAbortController?.abort?.();
+    supplementTableSheetViewportAbortController = null;
+    supplementTableSheetElements?.shell?.remove();
+    supplementTableSheetElements = null;
+    document.querySelectorAll('.supplement-table-wrapper--editor-locked').forEach((wrapper) => {
+        wrapper.classList.remove('supplement-table-wrapper--editor-locked');
+    });
+    document.documentElement.classList.remove('supplement-table-sheet-editing');
+    document.body.classList.remove('supplement-table-sheet-editing');
+}
+
+function clearSupplementTableCellSelection({ preserveMenu = false, revertPreview = true } = {}) {
+    const selectedCell = supplementTableSheetState.selectedCell;
+    if (selectedCell?.buttonEl && revertPreview) {
+        updateSupplementDoseCellButton(selectedCell.buttonEl, selectedCell.originalRawDose);
+    }
+    clearSupplementTableCellSelectionVisual();
+    supplementTableSheetState.selectedCell = null;
+    supplementTableSheetState.draft = null;
+    supplementTableSheetState.initialDraft = null;
+    supplementTableSheetState.history = [];
+    supplementTableSheetState.historyIndex = -1;
+    supplementTableSheetState.formatPanelOpen = false;
+    supplementTableSheetState.formatColorPaletteOpen = false;
+    supplementTableSheetState.timePanelOpen = false;
+    supplementTableSheetState.textInputFocused = false;
+    supplementTableSheetState.numericPadMode = false;
+    if (!preserveMenu) {
+        supplementTableSheetState.menuOpen = false;
+    }
+    removeSupplementTableSheetEditorShell();
+    syncSupplementTableTopBarMenu();
+}
+
+function pushSupplementTableSheetHistorySnapshot(snapshot) {
+    const normalizedSnapshot = cloneSupplementTableCellDraft(snapshot);
+    const history = supplementTableSheetState.history || [];
+    const currentSnapshot = history[supplementTableSheetState.historyIndex] || null;
+    if (currentSnapshot && areSupplementTableCellDraftsEqual(currentSnapshot, normalizedSnapshot)) {
+        supplementTableSheetState.draft = normalizedSnapshot;
+        return;
+    }
+
+    const nextHistory = history.slice(0, supplementTableSheetState.historyIndex + 1);
+    nextHistory.push(normalizedSnapshot);
+    if (nextHistory.length > 40) {
+        nextHistory.shift();
+    }
+
+    supplementTableSheetState.history = nextHistory;
+    supplementTableSheetState.historyIndex = nextHistory.length - 1;
+    supplementTableSheetState.draft = cloneSupplementTableCellDraft(normalizedSnapshot);
+}
+
+function restoreSupplementTableSheetHistorySnapshot(nextIndex) {
+    const history = supplementTableSheetState.history || [];
+    if (nextIndex < 0 || nextIndex >= history.length) return;
+    supplementTableSheetState.historyIndex = nextIndex;
+    supplementTableSheetState.draft = cloneSupplementTableCellDraft(history[nextIndex]);
+    syncSupplementTableEditorShell();
+    syncSupplementTableTopBarMenu();
+}
+
+function updateSupplementTableSelectedButtonPreview() {
+    const selectedCell = supplementTableSheetState.selectedCell;
+    if (!selectedCell?.buttonEl) return;
+    const previewRawDose = buildSupplementDoseValueFromDraft(
+        supplementTableSheetState.draft,
+        selectedCell.originalRawDose
+    );
+    updateSupplementDoseCellButton(selectedCell.buttonEl, previewRawDose);
+    applySupplementTableCellSelectionVisual(selectedCell.buttonEl);
+}
+
+function commitSupplementTableSheetDraftPatch(patch, options = {}) {
+    if (!supplementTableSheetState.selectedCell || !supplementTableSheetState.draft) return;
+    const nextDraft = cloneSupplementTableCellDraft({
+        ...supplementTableSheetState.draft,
+        ...patch,
+        style: {
+            ...supplementTableSheetState.draft.style,
+            ...(patch?.style || {})
+        }
+    });
+    pushSupplementTableSheetHistorySnapshot(nextDraft);
+    updateSupplementTableSelectedButtonPreview();
+    if (!options?.skipShellSync) {
+        syncSupplementTableEditorShell();
+    }
+    syncSupplementTableTopBarMenu();
+}
+
+function normalizeSupplementTableDraftTimes(value) {
+    const values = Array.isArray(value) ? value : [value];
+    if (values.length === 0) return [];
+    return values.map((item) => normalizeSupplementTimeValue(item));
+}
+
+function collectSupplementTableEditorTimes(container) {
+    if (!container) return [];
+    return Array.from(container.querySelectorAll('.supplement-sheet-editor__time-input')).map((node) => node.value);
+}
+
+function appendSupplementTableEditorTimeRow(container, value = '') {
+    if (!container) return;
+    const row = createElement('div', 'supplement-sheet-editor__time-row');
+    const input = createElement('input', 'supplement-sheet-editor__time-input');
+    input.type = 'time';
+    input.step = '60';
+    input.autocomplete = 'off';
+    input.value = normalizeSupplementTimeValue(value);
+    input.addEventListener('input', () => {
+        commitSupplementTableSheetDraftPatch(
+            { times: collectSupplementTableEditorTimes(container) },
+            { skipShellSync: true }
+        );
+    });
+
+    const removeBtn = createElement('button', 'supplement-sheet-editor__time-remove', '×');
+    removeBtn.type = 'button';
+    removeBtn.addEventListener('click', () => {
+        const rows = container.querySelectorAll('.supplement-sheet-editor__time-row');
+        if (rows.length <= 1) {
+            input.value = '';
+            commitSupplementTableSheetDraftPatch({ times: [] });
+            requestAnimationFrame(() => input.focus());
+            return;
+        }
+
+        row.remove();
+        commitSupplementTableSheetDraftPatch({ times: collectSupplementTableEditorTimes(container) });
+        syncSupplementTableEditorShell();
+    });
+
+    row.append(input, removeBtn);
+    container.append(row);
+}
+
+function toggleSupplementTableFormatPanel(forceValue = null) {
+    const nextValue =
+        typeof forceValue === 'boolean'
+            ? forceValue
+            : !supplementTableSheetState.formatPanelOpen;
+    supplementTableSheetState.formatPanelOpen = nextValue;
+    if (!nextValue) {
+        supplementTableSheetState.formatColorPaletteOpen = false;
+    }
+    if (nextValue) {
+        supplementTableSheetState.timePanelOpen = false;
+        supplementTableSheetState.textInputFocused = false;
+        supplementTableSheetElements?.textInput?.blur?.();
+    }
+    syncSupplementTableEditorShell();
+}
+
+function toggleSupplementTableTimePanel(forceValue = null) {
+    const nextValue =
+        typeof forceValue === 'boolean'
+            ? forceValue
+            : !supplementTableSheetState.timePanelOpen;
+    supplementTableSheetState.timePanelOpen = nextValue;
+    if (nextValue) {
+        supplementTableSheetState.formatPanelOpen = false;
+        supplementTableSheetState.formatColorPaletteOpen = false;
+        supplementTableSheetState.textInputFocused = false;
+        supplementTableSheetElements?.textInput?.blur?.();
+    }
+    syncSupplementTableEditorShell();
+}
+
+function insertSupplementTableEditorSymbol(symbol) {
+    const input = supplementTableSheetElements?.textInput;
+    if (!input) return;
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? input.value.length;
+    const nextValue = `${input.value.slice(0, start)}${symbol}${input.value.slice(end)}`;
+    input.value = nextValue;
+    const cursor = start + symbol.length;
+    input.setSelectionRange(cursor, cursor);
+    input.focus();
+    commitSupplementTableSheetDraftPatch({ text: nextValue });
+}
+
+function addSupplementTableEditorTimeRow(container, value = '') {
+    if (!container) return;
+    const row = createElement('div', 'supplement-sheet-editor__time-row');
+    const input = createElement('input', 'supplement-sheet-editor__time-input');
+    input.type = 'time';
+    input.value = normalizeSupplementTimeValue(value);
+    input.addEventListener('input', () => {
+        const values = Array.from(container.querySelectorAll('.supplement-sheet-editor__time-input')).map((node) => node.value);
+        commitSupplementTableSheetDraftPatch({ times: values });
+    });
+
+    const removeBtn = createElement('button', 'supplement-sheet-editor__time-remove', '×');
+    removeBtn.type = 'button';
+    removeBtn.addEventListener('click', () => {
+        row.remove();
+        const values = Array.from(container.querySelectorAll('.supplement-sheet-editor__time-input')).map((node) => node.value);
+        commitSupplementTableSheetDraftPatch({ times: values });
+        syncSupplementTableEditorShell();
+    });
+
+    row.append(input, removeBtn);
+    container.append(row);
+}
+
+function syncSupplementTableEditorViewportOffset() {
+    if (!supplementTableSheetElements?.shell) return;
+    const visualViewport = window.visualViewport;
+    const layoutHeight = Math.round(window.innerHeight || document.documentElement.clientHeight || 0);
+    const keyboardOffset = visualViewport
+        ? Math.max(0, Math.round(layoutHeight - visualViewport.height - visualViewport.offsetTop))
+        : 0;
+    supplementTableSheetElements.shell.style.setProperty('--supplement-sheet-keyboard-offset', `${keyboardOffset}px`);
+}
+
+function scrollSupplementTableSelectedCellIntoView() {
+    const selectedCell = supplementTableSheetState.selectedCell;
+    const shell = supplementTableSheetElements?.shell;
+    if (!selectedCell?.buttonEl || !shell) return;
+
+    const wrapper = selectedCell.tableWrapper;
+    if (!wrapper?.isConnected) return;
+
+    const buttonRect = selectedCell.buttonEl.getBoundingClientRect();
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const shellRect = shell.getBoundingClientRect();
+    const headerHeight = wrapper.querySelector('thead')?.getBoundingClientRect().height || 0;
+    const topLimit = wrapperRect.top + headerHeight + 8;
+    const bottomLimit = Math.min(wrapperRect.bottom, shellRect.top) - 12;
+
+    if (buttonRect.bottom > bottomLimit) {
+        wrapper.scrollTop += buttonRect.bottom - bottomLimit;
+    } else if (buttonRect.top < topLimit) {
+        wrapper.scrollTop -= topLimit - buttonRect.top;
+    }
+}
+
+function syncSupplementTableInteractionLock() {
+    const activeWrapper = supplementTableSheetState.selectedCell?.tableWrapper || null;
+    const shouldLock = Boolean(
+        activeWrapper &&
+        (supplementTableSheetState.formatPanelOpen ||
+            supplementTableSheetState.timePanelOpen ||
+            supplementTableSheetState.textInputFocused)
+    );
+
+    document.querySelectorAll('.supplement-table-wrapper--editor-locked').forEach((wrapper) => {
+        if (wrapper !== activeWrapper || !shouldLock) {
+            wrapper.classList.remove('supplement-table-wrapper--editor-locked');
+        }
+    });
+
+    if (activeWrapper) {
+        activeWrapper.classList.toggle('supplement-table-wrapper--editor-locked', shouldLock);
+    }
+}
+
+function ensureSupplementTableSheetEditorShell() {
+    if (supplementTableSheetElements?.shell?.isConnected) {
+        return supplementTableSheetElements;
+    }
+
+    const shell = createElement('div', 'supplement-sheet-editor');
+    const formulaRow = createElement('div', 'supplement-sheet-editor__formula');
+    const formulaIcon = createElement('button', 'supplement-sheet-editor__formula-icon');
+    formulaIcon.type = 'button';
+    formulaIcon.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><title>Edit SVG Icon</title><path fill="currentColor" d="M4 21.4V17l10.6-10.6q.275-.275.638-.425t.737-.15t.75.15t.625.425l1.4 1.4q.275.275.425.638T20.325 9t-.15.75t-.425.625L9.15 21H4zm2-2h2.325l8.6-8.6l-2.325-2.325L6 17.075zm9.75-9.775l-1.175-1.15l2.325 2.325z"/></svg>`;
+
+    const textInput = createElement('textarea', 'supplement-sheet-editor__input');
+    textInput.rows = 1;
+    textInput.placeholder = 'Введите текст или дозировку';
+    textInput.addEventListener('input', () => {
+        commitSupplementTableSheetDraftPatch({ text: textInput.value });
+    });
+    textInput.addEventListener('focus', () => {
+        supplementTableSheetState.textInputFocused = true;
+        syncSupplementTableEditorViewportOffset();
+        syncSupplementTableEditorShell();
+        requestAnimationFrame(scrollSupplementTableSelectedCellIntoView);
+    });
+    textInput.addEventListener('blur', () => {
+        supplementTableSheetState.textInputFocused = false;
+        window.setTimeout(() => {
+            syncSupplementTableEditorViewportOffset();
+            syncSupplementTableEditorShell();
+        }, 32);
+    });
+
+    const blurBtn = createElement('button', 'supplement-sheet-editor__formula-commit');
+    blurBtn.type = 'button';
+    blurBtn.innerHTML = '✓';
+    blurBtn.addEventListener('click', () => {
+        textInput.blur();
+    });
+
+    formulaRow.append(formulaIcon, textInput, blurBtn);
+
+    const symbols = createElement('div', 'supplement-sheet-editor__symbols');
+    ['=', '+', '-', '/', '*', '.', ',', ';', '(', ')'].forEach((symbol) => {
+        const btn = createElement('button', 'supplement-sheet-editor__symbol-btn', symbol);
+        btn.type = 'button';
+        btn.addEventListener('pointerdown', (event) => event.preventDefault());
+        btn.addEventListener('click', () => insertSupplementTableEditorSymbol(symbol));
+        symbols.append(btn);
+    });
+    const numericToggleBtn = createElement('button', 'supplement-sheet-editor__symbol-btn supplement-sheet-editor__symbol-btn--mode', '123');
+    numericToggleBtn.type = 'button';
+    numericToggleBtn.addEventListener('pointerdown', (event) => event.preventDefault());
+    numericToggleBtn.addEventListener('click', () => {
+        supplementTableSheetState.numericPadMode = !supplementTableSheetState.numericPadMode;
+        textInput.inputMode = supplementTableSheetState.numericPadMode ? 'decimal' : 'text';
+        textInput.blur();
+        requestAnimationFrame(() => textInput.focus());
+        syncSupplementTableEditorShell();
+    });
+    symbols.prepend(numericToggleBtn);
+
+    const toolbar = createElement('div', 'supplement-sheet-editor__toolbar');
+    const colorBtn = createElement('button', 'supplement-sheet-editor__tool-btn supplement-sheet-editor__tool-btn--color', 'A');
+    colorBtn.type = 'button';
+    colorBtn.addEventListener('click', () => toggleSupplementTableFormatPanel());
+
+    const alignLeftBtn = createElement('button', 'supplement-sheet-editor__tool-btn', '≡');
+    alignLeftBtn.type = 'button';
+    alignLeftBtn.addEventListener('click', () => {
+        commitSupplementTableSheetDraftPatch({ style: { align: 'left' } });
+    });
+
+    const alignCenterBtn = createElement('button', 'supplement-sheet-editor__tool-btn', '≣');
+    alignCenterBtn.type = 'button';
+    alignCenterBtn.addEventListener('click', () => {
+        commitSupplementTableSheetDraftPatch({ style: { align: 'center' } });
+    });
+
+    const fillBtn = createElement('button', 'supplement-sheet-editor__tool-btn supplement-sheet-editor__tool-btn--fill');
+    fillBtn.type = 'button';
+    fillBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><title>Fill SVG Icon</title><path fill="currentColor" d="M19 11H5v9h14zm0-7v5H5V4zm2-2H3v20h18z"/></svg>`;
+    fillBtn.addEventListener('click', () => toggleSupplementTableFormatPanel(true));
+
+    const timeBtn = createElement('button', 'supplement-sheet-editor__tool-btn supplement-sheet-editor__tool-btn--time');
+    timeBtn.type = 'button';
+    timeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><title>Clock-plus SVG Icon</title><path fill="currentColor" d="M9 6h2v6H9zm6.92 5A8 8 0 1 0 18 16.29V15h2v1.29A8 8 0 0 0 15.92 11M19 8h-2V6h-2v2h-2v2h2v2h2v-2h2z"/></svg>`;
+    timeBtn.addEventListener('click', () => toggleSupplementTableTimePanel());
+
+    toolbar.append(colorBtn, timeBtn);
+
+    const formatPanel = createElement('div', 'supplement-sheet-editor__format-panel');
+    const formatTabs = createElement('div', 'supplement-sheet-editor__format-tabs');
+    const formatTab = createElement('button', 'supplement-sheet-editor__format-tab is-active', 'Текст');
+    formatTab.type = 'button';
+    const formatTabCell = createElement('button', 'supplement-sheet-editor__format-tab supplement-sheet-editor__format-tab--ghost', 'РЇС‡РµР№РєР°');
+    formatTabCell.type = 'button';
+    formatTabCell.disabled = true;
+    formatTabs.append(formatTab, formatTabCell);
+    formatTab.textContent = 'Текст';
+    formatTabCell.textContent = 'Ячейка';
+
+    const textStyleRow = createElement('div', 'supplement-sheet-editor__text-style-row');
+    const formatContent = createElement('div', 'supplement-sheet-editor__format-content');
+    const formatQuickRow = createElement('div', 'supplement-sheet-editor__format-quick-row');
+    const formatBoldBtn = createElement('button', 'supplement-sheet-editor__format-quick-btn', 'B');
+    formatBoldBtn.type = 'button';
+    formatBoldBtn.addEventListener('click', () => {
+        const nextBold = !Boolean(supplementTableSheetState.draft?.style?.bold);
+        commitSupplementTableSheetDraftPatch({ style: { bold: nextBold } });
+    });
+    formatBoldBtn.className = 'supplement-sheet-editor__text-style-btn';
+    const formatItalicBtn = createElement('button', 'supplement-sheet-editor__text-style-btn', 'I');
+    formatItalicBtn.type = 'button';
+    formatItalicBtn.addEventListener('click', () => {
+        const nextItalic = !Boolean(supplementTableSheetState.draft?.style?.italic);
+        commitSupplementTableSheetDraftPatch({ style: { italic: nextItalic } });
+    });
+    const formatUnderlineBtn = createElement('button', 'supplement-sheet-editor__text-style-btn', 'U');
+    formatUnderlineBtn.type = 'button';
+    formatUnderlineBtn.addEventListener('click', () => {
+        const nextUnderline = !Boolean(supplementTableSheetState.draft?.style?.underline);
+        commitSupplementTableSheetDraftPatch({ style: { underline: nextUnderline } });
+    });
+    const formatStrikeBtn = createElement('button', 'supplement-sheet-editor__text-style-btn', 'S');
+    formatStrikeBtn.type = 'button';
+    formatStrikeBtn.addEventListener('click', () => {
+        const nextStrike = !Boolean(supplementTableSheetState.draft?.style?.strike);
+        commitSupplementTableSheetDraftPatch({ style: { strike: nextStrike } });
+    });
+    textStyleRow.append(formatBoldBtn, formatItalicBtn, formatUnderlineBtn, formatStrikeBtn);
+    const formatAlignLeftBtn = createElement('button', 'supplement-sheet-editor__format-quick-btn', 'в‰Ў');
+    formatAlignLeftBtn.type = 'button';
+    formatAlignLeftBtn.textContent = '≡';
+    formatAlignLeftBtn.addEventListener('click', () => {
+        commitSupplementTableSheetDraftPatch({ style: { align: 'left' } });
+    });
+    const formatAlignCenterBtn = createElement('button', 'supplement-sheet-editor__format-quick-btn', 'в‰Ј');
+    formatAlignCenterBtn.type = 'button';
+    formatAlignCenterBtn.textContent = '≣';
+    formatAlignCenterBtn.addEventListener('click', () => {
+        commitSupplementTableSheetDraftPatch({ style: { align: 'center' } });
+    });
+    const formatAlignRightBtn = createElement('button', 'supplement-sheet-editor__format-quick-btn', '☰');
+    formatAlignRightBtn.type = 'button';
+    formatAlignRightBtn.addEventListener('click', () => {
+        commitSupplementTableSheetDraftPatch({ style: { align: 'right' } });
+    });
+    const formatVerticalTopBtn = createElement('button', 'supplement-sheet-editor__format-quick-btn', '↥');
+    formatVerticalTopBtn.type = 'button';
+    formatVerticalTopBtn.addEventListener('click', () => {
+        commitSupplementTableSheetDraftPatch({ style: { verticalAlign: 'top' } });
+    });
+    const formatVerticalMiddleBtn = createElement('button', 'supplement-sheet-editor__format-quick-btn', '↕');
+    formatVerticalMiddleBtn.type = 'button';
+    formatVerticalMiddleBtn.addEventListener('click', () => {
+        commitSupplementTableSheetDraftPatch({ style: { verticalAlign: 'middle' } });
+    });
+    const formatVerticalBottomBtn = createElement('button', 'supplement-sheet-editor__format-quick-btn', '↧');
+    formatVerticalBottomBtn.type = 'button';
+    formatVerticalBottomBtn.addEventListener('click', () => {
+        commitSupplementTableSheetDraftPatch({ style: { verticalAlign: 'bottom' } });
+    });
+    const formatFillBtn = createElement('button', 'supplement-sheet-editor__format-quick-btn supplement-sheet-editor__format-quick-btn--fill');
+    formatFillBtn.type = 'button';
+    formatFillBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><title>Fill SVG Icon</title><path fill="currentColor" d="M19 11H5v9h14zm0-7v5H5V4zm2-2H3v20h18z"/></svg>`;
+    formatFillBtn.addEventListener('click', () => {
+        const currentIndex = Math.max(0, SUPPLEMENT_SHEET_FILL_COLORS.indexOf(supplementTableSheetState.draft?.style?.background || ''));
+        const nextColor = SUPPLEMENT_SHEET_FILL_COLORS[(currentIndex + 1) % SUPPLEMENT_SHEET_FILL_COLORS.length];
+        commitSupplementTableSheetDraftPatch({ style: { background: nextColor } });
+    });
+    formatFillBtn.style.display = 'none';
+    formatQuickRow.append(
+        formatAlignLeftBtn,
+        formatAlignCenterBtn,
+        formatAlignRightBtn,
+        formatVerticalTopBtn,
+        formatVerticalMiddleBtn,
+        formatVerticalBottomBtn
+    );
+    const textColorRow = createElement('div', 'supplement-sheet-editor__palette-row');
+    textColorRow.append(createElement('span', 'supplement-sheet-editor__palette-label', 'Цвет текста'));
+    const textColorPalette = createElement('div', 'supplement-sheet-editor__palette');
+    SUPPLEMENT_SHEET_TEXT_COLORS.forEach((color) => {
+        const swatch = createElement('button', 'supplement-sheet-editor__swatch');
+        swatch.type = 'button';
+        swatch.style.setProperty('--supplement-swatch-color', color);
+        swatch.addEventListener('click', () => {
+            commitSupplementTableSheetDraftPatch({ style: { color } });
+        });
+        textColorPalette.append(swatch);
+    });
+    textColorRow.append(textColorPalette);
+    textColorRow.querySelector('.supplement-sheet-editor__palette-label')?.remove();
+
+    const fillColorRow = createElement('div', 'supplement-sheet-editor__palette-row');
+    fillColorRow.append(createElement('span', 'supplement-sheet-editor__palette-label', 'Заливка'));
+    const fillColorPalette = createElement('div', 'supplement-sheet-editor__palette');
+    SUPPLEMENT_SHEET_FILL_COLORS.forEach((color) => {
+        const swatch = createElement('button', 'supplement-sheet-editor__swatch');
+        swatch.type = 'button';
+        swatch.style.setProperty('--supplement-swatch-color', color || '#ffffff');
+        if (!color) swatch.classList.add('supplement-sheet-editor__swatch--empty');
+        swatch.addEventListener('click', () => {
+            commitSupplementTableSheetDraftPatch({ style: { background: color } });
+        });
+        fillColorPalette.append(swatch);
+    });
+    fillColorRow.append(fillColorPalette);
+
+    textColorRow.classList.add('supplement-sheet-editor__palette-row--collapsible');
+    fillColorRow.style.display = 'none';
+
+    const sizeRow = createElement('button', 'supplement-sheet-editor__setting-row');
+    sizeRow.type = 'button';
+    const sizeLabel = createElement('span', 'supplement-sheet-editor__setting-label', 'Размер');
+    const sizeValueWrap = createElement('span', 'supplement-sheet-editor__setting-value-wrap');
+    const sizeDown = createElement('span', 'supplement-sheet-editor__step-btn', '⌄');
+    const sizeValue = createElement('span', 'supplement-sheet-editor__setting-value', '10 пт');
+    const sizeUp = createElement('span', 'supplement-sheet-editor__step-btn', '⌃');
+    sizeValueWrap.append(sizeDown, sizeValue, sizeUp);
+    sizeRow.append(sizeLabel, sizeValueWrap);
+    sizeRow.addEventListener('click', () => {
+        const current = Number(supplementTableSheetState.draft?.style?.fontSize || 10);
+        const next = current >= 24 ? 8 : current + 1;
+        commitSupplementTableSheetDraftPatch({ style: { fontSize: next } });
+    });
+
+    const textColorSettingRow = createElement('button', 'supplement-sheet-editor__setting-row');
+    textColorSettingRow.type = 'button';
+    const textColorLabel = createElement('span', 'supplement-sheet-editor__setting-label', 'Цвет текста');
+    const textColorValueWrap = createElement('span', 'supplement-sheet-editor__setting-value-wrap');
+    const textColorPreview = createElement('span', 'supplement-sheet-editor__color-preview');
+    const textColorChevron = createElement('span', 'supplement-sheet-editor__setting-chevron', '›');
+    textColorValueWrap.append(textColorPreview, textColorChevron);
+    textColorSettingRow.append(textColorLabel, textColorValueWrap);
+    textColorSettingRow.addEventListener('click', () => {
+        supplementTableSheetState.formatColorPaletteOpen = !supplementTableSheetState.formatColorPaletteOpen;
+        syncSupplementTableEditorShell();
+    });
+
+    const fontRow = createElement('button', 'supplement-sheet-editor__setting-row');
+    fontRow.type = 'button';
+    fontRow.disabled = true;
+    fontRow.innerHTML = `<span class="supplement-sheet-editor__setting-label">Шрифт</span><span class="supplement-sheet-editor__setting-value-wrap"><span class="supplement-sheet-editor__setting-value">Arial</span><span class="supplement-sheet-editor__setting-chevron">›</span></span>`;
+
+    const rotationRow = createElement('button', 'supplement-sheet-editor__setting-row');
+    rotationRow.type = 'button';
+    rotationRow.disabled = true;
+    rotationRow.innerHTML = `<span class="supplement-sheet-editor__setting-label">Поворот текста</span><span class="supplement-sheet-editor__setting-value-wrap"><span class="supplement-sheet-editor__setting-value">A↔</span><span class="supplement-sheet-editor__setting-chevron">›</span></span>`;
+
+    formatContent.append(formatTabs, textStyleRow, formatQuickRow, sizeRow, textColorSettingRow, textColorRow, fontRow, rotationRow);
+    formatPanel.append(formatContent);
+
+    const timesPanel = createElement('div', 'supplement-sheet-editor__times');
+    const timesHeader = createElement('div', 'supplement-sheet-editor__times-header');
+    timesHeader.append(
+        createElement('span', 'supplement-sheet-editor__times-title', 'Время приема'),
+        createElement('button', 'supplement-sheet-editor__times-add', '+ прием')
+    );
+    const timesList = createElement('div', 'supplement-sheet-editor__times-list');
+    timesHeader.querySelector('.supplement-sheet-editor__times-add')?.addEventListener('click', () => {
+        appendSupplementTableEditorTimeRow(timesList, '');
+        commitSupplementTableSheetDraftPatch({ times: collectSupplementTableEditorTimes(timesList) });
+        requestAnimationFrame(() => timesList.querySelector('.supplement-sheet-editor__time-input:last-child')?.focus());
+    });
+    timesPanel.append(timesHeader, timesList);
+
+    shell.append(formulaRow, symbols, toolbar, formatPanel, timesPanel);
+    document.body.append(shell);
+
+    supplementTableSheetViewportAbortController?.abort?.();
+    supplementTableSheetViewportAbortController = new AbortController();
+    const syncViewport = () => {
+        syncSupplementTableEditorViewportOffset();
+        scrollSupplementTableSelectedCellIntoView();
+    };
+    window.addEventListener('resize', syncViewport, { signal: supplementTableSheetViewportAbortController.signal });
+    window.addEventListener('orientationchange', syncViewport, { signal: supplementTableSheetViewportAbortController.signal });
+    window.visualViewport?.addEventListener('resize', syncViewport, { signal: supplementTableSheetViewportAbortController.signal });
+    window.visualViewport?.addEventListener('scroll', syncViewport, { signal: supplementTableSheetViewportAbortController.signal });
+
+    supplementTableSheetElements = {
+        shell,
+        textInput,
+        blurBtn,
+        symbols,
+        numericToggleBtn,
+        toolbar,
+        colorBtn,
+        timeBtn,
+        formatPanel,
+        textStyleRow,
+        formatQuickRow,
+        formatBoldBtn,
+        formatItalicBtn,
+        formatUnderlineBtn,
+        formatStrikeBtn,
+        formatAlignLeftBtn,
+        formatAlignCenterBtn,
+        formatAlignRightBtn,
+        formatVerticalTopBtn,
+        formatVerticalMiddleBtn,
+        formatVerticalBottomBtn,
+        formatFillBtn,
+        sizeRow,
+        sizeValue,
+        textColorSettingRow,
+        textColorRow,
+        textColorPreview,
+        timesPanel,
+        timesList,
+        textColorPalette,
+        fillColorPalette
+    };
+
+    return supplementTableSheetElements;
+}
+
+function syncSupplementTableEditorShell() {
+    if (!supplementTableSheetState.selectedCell) {
+        removeSupplementTableSheetEditorShell();
+        syncSupplementTableTopBarMenu();
+        return;
+    }
+
+    const refs = ensureSupplementTableSheetEditorShell();
+    syncSupplementTableTopBarMenu();
+    const draft = cloneSupplementTableCellDraft(supplementTableSheetState.draft);
+    const style = cloneSupplementDoseStyle(draft.style);
+
+    document.documentElement.classList.add('supplement-table-sheet-editing');
+    document.body.classList.add('supplement-table-sheet-editing');
+    refs.shell.classList.toggle('supplement-sheet-editor--format-open', supplementTableSheetState.formatPanelOpen);
+    refs.shell.classList.toggle('supplement-sheet-editor--times-open', supplementTableSheetState.timePanelOpen);
+    syncSupplementTableInteractionLock();
+
+    refs.textInput.value = draft.text;
+    refs.textInput.inputMode = supplementTableSheetState.numericPadMode ? 'decimal' : 'text';
+    refs.symbols.classList.toggle('is-visible', supplementTableSheetState.textInputFocused);
+    refs.numericToggleBtn.classList.toggle('is-active', supplementTableSheetState.numericPadMode);
+    refs.blurBtn.classList.toggle('is-visible', supplementTableSheetState.textInputFocused);
+
+    refs.colorBtn.style.setProperty('--supplement-editor-accent', style.color || '#111827');
+    refs.formatBoldBtn.classList.toggle('is-active', style.bold);
+    refs.formatItalicBtn.classList.toggle('is-active', style.italic);
+    refs.formatUnderlineBtn.classList.toggle('is-active', style.underline);
+    refs.formatStrikeBtn.classList.toggle('is-active', style.strike);
+    refs.formatAlignLeftBtn.classList.toggle('is-active', style.align === 'left');
+    refs.formatAlignCenterBtn.classList.toggle('is-active', style.align === 'center');
+    refs.formatAlignRightBtn.classList.toggle('is-active', style.align === 'right');
+    refs.formatVerticalTopBtn.classList.toggle('is-active', style.verticalAlign === 'top');
+    refs.formatVerticalMiddleBtn.classList.toggle('is-active', style.verticalAlign === 'middle');
+    refs.formatVerticalBottomBtn.classList.toggle('is-active', style.verticalAlign === 'bottom');
+    refs.formatFillBtn.style.setProperty('--supplement-editor-fill', style.background || 'transparent');
+    refs.sizeValue.textContent = `${style.fontSize || 10} пт`;
+    refs.textColorPreview.style.setProperty('--supplement-swatch-color', style.color || '#111827');
+    refs.formatPanel.classList.toggle('is-open', supplementTableSheetState.formatPanelOpen);
+    refs.timesPanel.classList.toggle('is-open', supplementTableSheetState.timePanelOpen);
+    refs.textColorRow.classList.toggle('is-open', supplementTableSheetState.formatColorPaletteOpen);
+
+    refs.textColorPalette.querySelectorAll('.supplement-sheet-editor__swatch').forEach((swatch, index) => {
+        swatch.classList.toggle('is-active', SUPPLEMENT_SHEET_TEXT_COLORS[index] === style.color);
+    });
+    refs.fillColorPalette.querySelectorAll('.supplement-sheet-editor__swatch').forEach((swatch, index) => {
+        swatch.classList.toggle('is-active', SUPPLEMENT_SHEET_FILL_COLORS[index] === style.background);
+    });
+
+    refs.timesList.replaceChildren();
+    const timeValues = draft.times.length > 0 ? draft.times : [''];
+    timeValues.forEach((timeValue) => appendSupplementTableEditorTimeRow(refs.timesList, timeValue));
+
+    syncSupplementTableEditorViewportOffset();
+    requestAnimationFrame(scrollSupplementTableSelectedCellIntoView);
+    window.clearTimeout(supplementTableEditorDeferredScrollTimer);
+    supplementTableEditorDeferredScrollTimer = window.setTimeout(scrollSupplementTableSelectedCellIntoView, 220);
+}
+
+function syncSupplementTableTopBarMenu() {
+    const topBar = document.querySelector('.top-bar.top-bar--supplements-table');
+    const leftGroup = topBar?.querySelector('.topbar-cycle-btns');
+    if (!topBar || !leftGroup) return;
+
+    const calendarBtn = leftGroup.querySelector('.supplements-topbar-calendar-btn');
+    const addBtn = leftGroup.querySelector('.supplements-topbar-add-btn');
+    let menu = leftGroup.querySelector('.supplements-topbar-inline-menu');
+    if (!menu) {
+        menu = createElement('div', 'supplements-topbar-inline-menu');
+        calendarBtn?.insertAdjacentElement('beforebegin', menu);
+    }
+
+    const selectionActive = isSupplementTableSheetSelectionActive();
+    const historyVisible = hasSupplementPlanHistoryChanges();
+    const menuVisible = selectionActive || historyVisible;
+
+    if (calendarBtn) {
+        calendarBtn.style.display = selectionActive ? 'none' : '';
+    }
+    if (addBtn) {
+        addBtn.style.display = selectionActive ? 'none' : '';
+    }
+
+    menu.replaceChildren();
+    menu.classList.toggle('is-open', menuVisible);
+    if (!menuVisible) return;
+
+    const createIconBtn = (className, label, html, onClick, disabled = false) => {
+        const btn = createElement('button', `supplements-topbar-inline-menu-btn ${className}`, '');
+        btn.type = 'button';
+        btn.disabled = disabled;
+        btn.setAttribute('aria-label', label);
+        btn.innerHTML = html;
+        btn.addEventListener('click', onClick);
+        return btn;
+    };
+
+    const draftDirty = isSupplementTableSheetDraftDirty();
+    const canUndo = canUndoSupplementPlanHistory() && !draftDirty;
+    const canRedo = canRedoSupplementPlanHistory() && !draftDirty;
+
+    if (historyVisible && !selectionActive) {
+        menu.append(
+        createIconBtn(
+            'supplements-topbar-inline-menu-btn--undo',
+            'Отменить',
+            `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><title>Undo SVG Icon</title><path fill="currentColor" d="M7.825 13H15q1.25 0 2.125.875T18 16t-.875 2.125T15 19H8q-.425 0-.712-.288T7 18t.288-.712T8 17h7q.425 0 .713-.288T16 16t-.288-.712T15 15H7.825l1.6 1.6q.275.275.275.7t-.275.7t-.7.275t-.7-.275l-3.3-3.3q-.15-.15-.213-.325T4.45 14t.063-.375t.212-.325l3.3-3.3q.275-.275.7-.275t.7.275t.275.7t-.275.7z"/></svg>`,
+            () => applySupplementPlanHistoryIndex(supplementPlanHistoryState.index - 1),
+            !canUndo
+        ),
+        createIconBtn(
+            'supplements-topbar-inline-menu-btn--redo',
+            'Повторить',
+            `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><title>Redo SVG Icon</title><path fill="currentColor" d="M16.175 13H9q-1.25 0-2.125.875T6 16t.875 2.125T9 19h7q.425 0 .713-.288T17 18t-.288-.712T16 17H9q-.425 0-.712-.288T8 16t.288-.712T9 15h7.175l-1.6 1.6q-.275.275-.275.7t.275.7t.7.275t.7-.275l3.3-3.3q.15-.15.213-.325T19.55 14t-.062-.375t-.213-.325l-3.3-3.3q-.275-.275-.7-.275t-.7.275t-.275.7t.275.7z"/></svg>`,
+            () => applySupplementPlanHistoryIndex(supplementPlanHistoryState.index + 1),
+            !canRedo
+        )
+    );
+    }
+
+    if (selectionActive) {
+        menu.append(
+            createIconBtn(
+                'supplements-topbar-inline-menu-btn--format',
+                'Формат текста',
+                `<span class="supplements-topbar-inline-menu-btn__letter">A</span>`,
+                () => toggleSupplementTableFormatPanel()
+            )
+        );
+
+        const cancelBtn = createElement('button', 'supplements-topbar-inline-menu-text-btn supplements-topbar-inline-menu-text-btn--cancel', 'Отмена');
+        menu.querySelector('.supplements-topbar-inline-menu-btn--format')?.remove();
+        cancelBtn.type = 'button';
+        cancelBtn.addEventListener('click', () => {
+            clearSupplementTableCellSelection({ preserveMenu: false, revertPreview: true });
+        });
+
+        const saveBtn = createElement('button', 'supplements-topbar-inline-menu-text-btn supplements-topbar-inline-menu-text-btn--save', 'Сохранить');
+        saveBtn.type = 'button';
+        saveBtn.disabled = !isSupplementTableSheetDraftDirty();
+        saveBtn.addEventListener('click', async () => {
+            await saveSupplementTableSheetSelection();
+        });
+
+        menu.append(cancelBtn, saveBtn);
+    }
+}
+
+function handleSupplementTableCellSelection(button, mergeRange = null) {
+    if (!button?.dataset?.date || !button?.dataset?.supplementName) return;
+    if (supplementDoseMergeSession) return;
+
+    const isSameCell =
+        supplementTableSheetState.selectedCell &&
+        supplementTableSheetState.selectedCell.dateStr === button.dataset.date &&
+        supplementTableSheetState.selectedCell.supplementName === button.dataset.supplementName;
+
+    if (isSameCell) {
+        supplementTableSheetState.menuOpen = true;
+        syncSupplementTableEditorShell();
+        return;
+    }
+
+    if (isSupplementTableSheetSelectionActive() && isSupplementTableSheetDraftDirty()) {
+        showToast('Сначала сохраните или отмените изменения в выбранной ячейке.');
+        return;
+    }
+
+    clearSupplementTableCellSelection({ preserveMenu: true, revertPreview: true });
+
+    const rawDose = getSupplementDoseFromState(button.dataset.date, button.dataset.supplementName);
+    const draft = createSupplementTableCellDraft(rawDose);
+
+    supplementTableSheetState.selectedCell = {
+        buttonEl: button,
+        tableWrapper: button.closest('.supplement-table-wrapper'),
+        dateStr: button.dataset.date,
+        supplementName: button.dataset.supplementName,
+        slot: Number(button.dataset.supplementSlot),
+        mergeRange: mergeRange || null,
+        originalRawDose: cloneSupplementDoseValue(rawDose)
+    };
+    supplementTableSheetState.menuOpen = true;
+    supplementTableSheetState.draft = cloneSupplementTableCellDraft(draft);
+    supplementTableSheetState.initialDraft = cloneSupplementTableCellDraft(draft);
+    supplementTableSheetState.history = [cloneSupplementTableCellDraft(draft)];
+    supplementTableSheetState.historyIndex = 0;
+    supplementTableSheetState.formatPanelOpen = false;
+    supplementTableSheetState.formatColorPaletteOpen = false;
+    supplementTableSheetState.timePanelOpen = Boolean(draft.times.length > 0);
+    supplementTableSheetState.textInputFocused = false;
+    supplementTableSheetState.numericPadMode = false;
+
+    applySupplementTableCellSelectionVisual(button);
+    syncSupplementTableEditorShell();
+}
+
+async function saveSupplementTableSheetSelection() {
+    const selectedCell = supplementTableSheetState.selectedCell;
+    if (!selectedCell) return;
+
+    const plan = JSON.parse(JSON.stringify(state.supplementPlan || { supplements: [], data: [] }));
+    const previousPlan = state.supplementPlan;
+    const previousRawDose = selectedCell.originalRawDose;
+    const nextRawDose = buildSupplementDoseValueFromDraft(supplementTableSheetState.draft, previousRawDose);
+
+    let scope = 'single';
+    if (!hasSupplementDoseValue(nextRawDose)) {
+        const result = clearSupplementDoseCellOrMergeInPlan(
+            plan,
+            selectedCell.dateStr,
+            selectedCell.supplementName,
+            selectedCell.slot
+        );
+        scope = result.scope;
+        if (scope === 'none') {
+            clearSupplementTableCellSelection({ preserveMenu: false, revertPreview: true });
+            return;
+        }
+    } else {
+        const datesToSave =
+            selectedCell.mergeRange?.startDate && selectedCell.mergeRange?.endDate
+                ? getSupplementDoseMergeDateStrings(plan, selectedCell.mergeRange)
+                : [selectedCell.dateStr];
+
+        datesToSave.forEach((dateStr) => {
+            const dayIndex = ensureSupplementDayRecord(plan, dateStr);
+            if (dayIndex < 0) return;
+            plan.data[dayIndex].doses = plan.data[dayIndex].doses || {};
+            plan.data[dayIndex].doses[selectedCell.supplementName] = cloneSupplementDoseValue(nextRawDose);
+        });
+        scope = datesToSave.length > 1 ? 'merge' : 'single';
+    }
+
+    state.supplementPlan = plan;
+    syncSupplementsBottomNavBadge(plan);
+    state._supplementsSkipNextRenderSignature = getSupplementPlanSnapshotSignature(plan);
+
+    rememberCurrentSupplementTableScroll();
+    if (scope === 'single' && selectedCell.buttonEl?.isConnected) {
+        updateSupplementDoseCellButton(selectedCell.buttonEl, nextRawDose);
+    }
+
+    const saved = await updateSupplementPlanInFirestore(plan, { previousPlanOverride: previousPlan });
+    if (!saved) {
+        state.supplementPlan = previousPlan;
+        syncSupplementsBottomNavBadge(previousPlan);
+        delete state._supplementsSkipNextRenderSignature;
+        if (selectedCell.buttonEl?.isConnected) {
+            updateSupplementDoseCellButton(selectedCell.buttonEl, previousRawDose);
+            applySupplementTableCellSelectionVisual(selectedCell.buttonEl);
+        }
+        return;
+    }
+
+    const previousSignature = getSupplementPlanSnapshotSignature(previousPlan);
+    const nextSignature = getSupplementPlanSnapshotSignature(plan);
+    if (previousSignature !== nextSignature && !hasSupplementPlanHistoryChanges()) {
+        commitSupplementPlanHistoryEntry(previousPlan, plan);
+    }
+
+    clearSupplementTableCellSelection({ preserveMenu: false, revertPreview: false });
+    if (scope === 'merge') {
+        renderSupplementsPage();
+    }
+}
+
+function buildSupplementImportedPlan(sourceCycle, targetCycle, options = {}) {
+    const sourceRawPlan = sourceCycle?.supplementPlan || { supplements: [], data: [] };
+    const { plan: sourcePlan } = sanitizeSupplementPlan(
+        JSON.parse(JSON.stringify(sourceRawPlan))
+    );
+    ensureSupplementEntrySlots(sourcePlan);
+
+    const sortedSourceDays = (Array.isArray(sourcePlan.data) ? sourcePlan.data : [])
+        .map((dayRecord) => ({
+            dayRecord,
+            parsedDate: parseSupplementDateString(dayRecord?.date)
+        }))
+        .filter((item) => item.parsedDate instanceof Date && !Number.isNaN(item.parsedDate.getTime()))
+        .sort((left, right) => compareSupplementDates(left.parsedDate, right.parsedDate));
+
+    if (sortedSourceDays.length === 0) return null;
+
+    const boundsStartDate = cloneSupplementDate(sortedSourceDays[0].parsedDate);
+    const boundsEndDate = cloneSupplementDate(sortedSourceDays[sortedSourceDays.length - 1].parsedDate);
+
+    let selectedStartDate = options.importAll
+        ? cloneSupplementDate(boundsStartDate)
+        : parseSupplementDateString(options.startDate);
+    let selectedEndDate = options.importAll
+        ? cloneSupplementDate(boundsEndDate)
+        : parseSupplementDateString(options.endDate);
+    if (!selectedStartDate || !selectedEndDate || !boundsStartDate || !boundsEndDate) {
+        return null;
+    }
+
+    if (compareSupplementDates(selectedStartDate, selectedEndDate) > 0) {
+        const nextStartDate = selectedEndDate;
+        selectedEndDate = selectedStartDate;
+        selectedStartDate = nextStartDate;
+    }
+
+    if (compareSupplementDates(selectedStartDate, boundsStartDate) < 0) {
+        selectedStartDate = cloneSupplementDate(boundsStartDate);
+    }
+    if (compareSupplementDates(selectedEndDate, boundsEndDate) > 0) {
+        selectedEndDate = cloneSupplementDate(boundsEndDate);
+    }
+    if (compareSupplementDates(selectedStartDate, selectedEndDate) > 0) {
+        return null;
+    }
+
+    const importedSupplements = (sourcePlan.supplements || []).map((entry) =>
+        createSupplementMeta(entry.name, entry.shortName, entry.archived, entry.slot)
+    );
+    const supplementNames = importedSupplements
+        .map((entry) => String(entry?.name || '').trim())
+        .filter(Boolean);
+
+    const importedDays = sortedSourceDays
+        .filter(({ parsedDate }) =>
+            compareSupplementDates(parsedDate, selectedStartDate) >= 0 &&
+            compareSupplementDates(parsedDate, selectedEndDate) <= 0
+        )
+        .map(({ dayRecord, parsedDate }) => {
+            const doses = {};
+            supplementNames.forEach((supplementName) => {
+                doses[supplementName] = cloneSupplementDoseValue(dayRecord?.doses?.[supplementName] ?? '');
+            });
+
+            return {
+                date: formatSupplementDateString(parsedDate),
+                dayOfWeek: getSupplementWeekdayShortName(parsedDate),
+                doses
+            };
+        });
+
+    if (importedDays.length === 0) return null;
+
+    const importedPlan = {
+        supplements: importedSupplements,
+        data: importedDays
+    };
+
+    const sourceMerges = Array.isArray(sourcePlan.doseMerges) ? sourcePlan.doseMerges : [];
+    const importedMerges = [];
+    sourceMerges.forEach((merge) => {
+        const mergeStartDate = parseSupplementDateString(merge?.startDate);
+        const mergeEndDate = parseSupplementDateString(merge?.endDate);
+        if (!mergeStartDate || !mergeEndDate) return;
+        if (compareSupplementDates(mergeEndDate, selectedStartDate) < 0) return;
+        if (compareSupplementDates(mergeStartDate, selectedEndDate) > 0) return;
+
+        const clippedStartDate = compareSupplementDates(mergeStartDate, selectedStartDate) < 0
+            ? cloneSupplementDate(selectedStartDate)
+            : cloneSupplementDate(mergeStartDate);
+        const clippedEndDate = compareSupplementDates(mergeEndDate, selectedEndDate) > 0
+            ? cloneSupplementDate(selectedEndDate)
+            : cloneSupplementDate(mergeEndDate);
+        if (compareSupplementDates(clippedStartDate, clippedEndDate) > 0) {
+            return;
+        }
+
+        const anchorSourceDate = parseSupplementDateString(merge?.anchorDate);
+        const clippedAnchorDate =
+            anchorSourceDate &&
+            compareSupplementDates(anchorSourceDate, clippedStartDate) >= 0 &&
+            compareSupplementDates(anchorSourceDate, clippedEndDate) <= 0
+                ? cloneSupplementDate(anchorSourceDate)
+                : cloneSupplementDate(clippedStartDate);
+
+        importedMerges.push({
+            slot: Number(merge.slot),
+            supplementName: String(merge.supplementName || '').trim(),
+            startDate: formatSupplementDateString(clippedStartDate),
+            endDate: formatSupplementDateString(clippedEndDate),
+            anchorDate: formatSupplementDateString(clippedAnchorDate)
+        });
+    });
+
+    if (importedMerges.length > 0) {
+        importedPlan.doseMerges = importedMerges;
+    }
+
+    const { plan: sanitizedImportedPlan } = sanitizeSupplementPlan(importedPlan);
+    ensureSupplementEntrySlots(sanitizedImportedPlan);
+    return sanitizedImportedPlan;
+}
+
+function createSupplementImportDateButton(initialValue = '', onChange = null) {
+    const btn = createElement('button', 'supplement-plan-import-date-btn');
+    btn.type = 'button';
+    let currentValue = initialValue || '';
+
+    const valueText = createElement(
+        'span',
+        `supplement-plan-import-date-btn__value${currentValue ? ' is-active' : ''}`,
+        formatSupplementImportDateDisplay(currentValue)
+    );
+    const icon = document.createElement('span');
+    icon.className = 'supplement-plan-import-date-btn__icon';
+    icon.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"><title>Calendar SVG Icon</title><path fill="currentColor" d="M19 4h-1V2.75a.75.75 0 0 0-1.5 0V4h-9V2.75a.75.75 0 0 0-1.5 0V4H5A2.75 2.75 0 0 0 2.25 6.75v11.5A2.75 2.75 0 0 0 5 21h14a2.75 2.75 0 0 0 2.75-2.75V6.75A2.75 2.75 0 0 0 19 4m1.25 14.25c0 .69-.56 1.25-1.25 1.25H5c-.69 0-1.25-.56-1.25-1.25V9h16.5zm0-10.75H3.75v-.75C3.75 6.06 4.31 5.5 5 5.5h14c.69 0 1.25.56 1.25 1.25z"/></svg>`;
+
+    function syncValue(nextValue) {
+        currentValue = nextValue || '';
+        valueText.textContent = formatSupplementImportDateDisplay(currentValue);
+        valueText.classList.toggle('is-active', Boolean(currentValue));
+    }
+
+    function openPicker() {
+        if (btn.disabled) return;
+        const fallback = currentValue || dateToInputFormat(getTodayDateString());
+        openDateModal(fallback, (nextValue) => {
+            if (!nextValue) return;
+            syncValue(nextValue);
+            if (typeof onChange === 'function') {
+                onChange(nextValue);
+            }
+        });
+    }
+
+    btn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        openPicker();
+    });
+
+    btn.append(valueText, icon);
+    syncValue(currentValue);
+
+    return {
+        button: btn,
+        setValue: syncValue,
+        getValue: () => currentValue,
+        setDisabled: (disabled) => {
+            btn.disabled = !!disabled;
+            btn.classList.toggle('is-disabled', !!disabled);
+        },
+        openPicker
+    };
+}
+
+function openSupplementPlanImportModal() {
+    const currentCycle = state.cycles?.find((cycle) => cycle.id === state.selectedCycleId);
+    if (!currentCycle) {
+        showToast('Сначала выберите цикл.');
+        return;
+    }
+
+    const sourceCycles = getSupplementImportSourceCycles();
+    if (sourceCycles.length === 0) {
+        showToast('Нет других циклов для переноса.');
+        return;
+    }
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay-cicle modal-overlay-cicle--sheet';
+
+    const modalContent = document.createElement('div');
+    modalContent.className = 'modal-cicle modal-cicle--add-program supplement-plan-import-modal';
+
+    const title = createElement('h3', 'modal-cicle__title', 'Перенос плана БАДов');
+    const divider = createElement('div', 'add-program-section-label', 'Перенос плана из другого цикла');
+
+    let selectedSourceCycle = null;
+    let selectedSourcePlan = null;
+    let importMode = 'all';
+
+    const cycleRow = createElement('div', 'add-program-dropdown-row');
+    const cycleText = createElement('span', 'add-program-dropdown-text', 'Выберите цикл');
+    const cycleArrow = createElement('span', 'cycle-label-arrow', '▾');
+    cycleRow.append(cycleText, cycleArrow);
+
+    const cycleDropdown = createElement('div', 'add-program-dropdown-list');
+    sourceCycles.forEach((cycle) => {
+        const item = createElement('div', 'add-program-dropdown-item', cycle.name || 'Без названия');
+        item.dataset.id = cycle.id;
+        cycleDropdown.append(item);
+    });
+
+    const cycleWrap = createElement('div', 'add-program-dropdown-wrap');
+    cycleWrap.append(cycleRow, cycleDropdown);
+
+    const sourceHint = createElement(
+        'div',
+        'supplement-plan-import-hint',
+        'Выберите цикл, чтобы загрузить доступный диапазон плана.'
+    );
+
+    const modeLabel = createElement('div', 'supplement-plan-import-mode-label', 'Что переносим');
+    const modeToggle = createElement('div', 'supplement-plan-import-mode');
+    const allBtn = createElement('button', 'supplement-plan-import-mode-btn is-active', 'Весь план');
+    const rangeBtn = createElement('button', 'supplement-plan-import-mode-btn', 'Диапазон');
+    allBtn.type = 'button';
+    rangeBtn.type = 'button';
+    modeToggle.append(allBtn, rangeBtn);
+
+    const dateRows = createElement('div', 'supplement-plan-import-dates is-disabled');
+    const startRow = createElement('div', 'supplement-plan-import-date-row');
+    const startLabel = createElement('span', 'supplement-plan-import-date-row__label', 'С даты');
+    const startPicker = createSupplementImportDateButton('', updateConfirmState);
+    startRow.append(startLabel, startPicker.button);
+
+    const endRow = createElement('div', 'supplement-plan-import-date-row');
+    const endLabel = createElement('span', 'supplement-plan-import-date-row__label', 'По дату');
+    const endPicker = createSupplementImportDateButton('', updateConfirmState);
+    endRow.append(endLabel, endPicker.button);
+
+    dateRows.append(startRow, endRow);
+
+    const helperText = createElement(
+        'div',
+        'supplement-plan-import-helper',
+        'План перенесется в текущий цикл с сохранением относительных позиций дней.'
+    );
+
+    const confirmBtn = createElement('button', 'btn btn-primary add-program-confirm-btn', 'Перенести');
+    confirmBtn.disabled = true;
+    const cancelBtn = createElement('button', 'btn add-program-cancel-btn', 'Отмена');
+    const btnGroup = createElement('div', 'add-program-actions');
+    btnGroup.append(cancelBtn, confirmBtn);
+
+    function closeAllDropdowns() {
+        cycleDropdown.classList.remove('open');
+        cycleArrow.classList.remove('open');
+    }
+
+    function updateConfirmState() {
+        const hasSource = !!selectedSourceCycle && !!selectedSourcePlan;
+        const hasPlanBounds = !!getSupplementImportPlanBounds(selectedSourcePlan);
+        const hasRange = importMode === 'all' || (startPicker.getValue() && endPicker.getValue());
+        confirmBtn.disabled = !(hasSource && hasPlanBounds && hasRange);
+        confirmBtn.classList.toggle('disabled', confirmBtn.disabled);
+    }
+
+    function updateModeUi() {
+        const isAll = importMode === 'all';
+        allBtn.classList.toggle('is-active', isAll);
+        rangeBtn.classList.toggle('is-active', !isAll);
+        dateRows.classList.toggle('is-disabled', isAll);
+        startPicker.setDisabled(isAll);
+        endPicker.setDisabled(isAll);
+        updateConfirmState();
+    }
+
+    function applySourceCycleSelection(cycleId) {
+        selectedSourceCycle = sourceCycles.find((cycle) => cycle.id === cycleId) || null;
+        selectedSourcePlan = selectedSourceCycle
+            ? sanitizeSupplementPlan(
+                JSON.parse(JSON.stringify(selectedSourceCycle.supplementPlan || { supplements: [], data: [] }))
+            ).plan
+            : null;
+
+        cycleDropdown.querySelectorAll('.add-program-dropdown-item').forEach((item) => {
+            item.classList.toggle('active', item.dataset.id === cycleId);
+        });
+
+        if (selectedSourceCycle) {
+            cycleText.textContent = selectedSourceCycle.name || 'Без названия';
+            cycleText.classList.add('add-program-dropdown-text--active');
+        } else {
+            cycleText.textContent = 'Выберите цикл';
+            cycleText.classList.remove('add-program-dropdown-text--active');
+        }
+
+        const bounds = getSupplementImportPlanBounds(selectedSourcePlan);
+        if (bounds) {
+            sourceHint.textContent = `Доступный диапазон: ${bounds.firstDate} — ${bounds.lastDate}`;
+            startPicker.setValue(bounds.firstIso);
+            endPicker.setValue(bounds.lastIso);
+        } else {
+            sourceHint.textContent = 'В выбранном цикле еще нет плана БАДов.';
+            startPicker.setValue('');
+            endPicker.setValue('');
+        }
+
+        updateConfirmState();
+    }
+
+    cycleRow.addEventListener('click', (event) => {
+        event.stopPropagation();
+        cycleDropdown.classList.toggle('open');
+        cycleArrow.classList.toggle('open');
+    });
+
+    cycleDropdown.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const item = event.target.closest('.add-program-dropdown-item');
+        if (!item) return;
+        applySourceCycleSelection(item.dataset.id);
+        closeAllDropdowns();
+    });
+
+    allBtn.addEventListener('click', () => {
+        importMode = 'all';
+        updateModeUi();
+    });
+    rangeBtn.addEventListener('click', () => {
+        importMode = 'range';
+        updateModeUi();
+    });
+
+    startRow.addEventListener('click', (event) => {
+        if (event.target.closest('button') && event.target !== startRow) return;
+        if (importMode !== 'range') return;
+        startPicker.openPicker();
+    });
+    endRow.addEventListener('click', (event) => {
+        if (event.target.closest('button') && event.target !== endRow) return;
+        if (importMode !== 'range') return;
+        endPicker.openPicker();
+    });
+
+    cancelBtn.addEventListener('click', () => {
+        modal.remove();
+    });
+
+    confirmBtn.addEventListener('click', async () => {
+        if (confirmBtn.disabled || !selectedSourceCycle) return;
+
+        const nextPlan = buildSupplementImportedPlan(selectedSourceCycle, currentCycle, {
+            importAll: importMode === 'all',
+            startDate: startPicker.getValue() ? startPicker.getValue().split('-').reverse().join('.') : '',
+            endDate: endPicker.getValue() ? endPicker.getValue().split('-').reverse().join('.') : ''
+        });
+
+        if (!nextPlan || !Array.isArray(nextPlan.data) || nextPlan.data.length === 0) {
+            showToast('В выбранном диапазоне нет плана БАДов для переноса.');
+            return;
+        }
+
+        const applyImport = async () => {
+            resetSupplementsTableScrollMemory();
+            const saved = await updateSupplementPlanInFirestore(nextPlan);
+            if (!saved) return;
+            modal.remove();
+            showToast('План БАДов перенесен');
+            renderSupplementsPage();
+        };
+
+        if (hasSupplementPlanContent(state.supplementPlan)) {
+            openConfirmModal('Текущий план БАДов будет заменен. Продолжить?', applyImport);
+            return;
+        }
+
+        await applyImport();
+    });
+
+    modalContent.addEventListener('click', closeAllDropdowns);
+
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) {
+            modal.remove();
+        }
+    });
+
+    modalContent.append(
+        title,
+        divider,
+        cycleWrap,
+        sourceHint,
+        modeLabel,
+        modeToggle,
+        dateRows,
+        helperText,
+        btnGroup
+    );
+    modal.append(modalContent);
+    document.body.appendChild(modal);
+
+    updateModeUi();
+    if (sourceCycles.length === 1) {
+        applySourceCycleSelection(sourceCycles[0].id);
+    }
 }
 
 function renderSupplementsTableView(contentContainer, planData) {
     const todayDateString = getTodayDateString();
     const tableColumns = getSupplementTableColumns(planData);
     const tableRangeMode = getSupplementsTableRangeMode();
-    const currentCycle = state.cycles?.find(cycle => cycle.id === state.selectedCycleId) || null;
 
     contentContainer.classList.add('supplements-page--table-range');
 
@@ -673,6 +2633,8 @@ function renderSupplementsTableView(contentContainer, planData) {
     const tbody = createElement('tbody');
     table.append(tbody);
     guard.append(table);
+    const addWeeksSection = createSupplementTableAddWeeksSection();
+    guard.append(addWeeksSection);
     tableWrapper.append(guard);
 
     const jumpBtnWrap = createElement('div', 'supplement-jump-btn-wrap is-hidden');
@@ -683,15 +2645,10 @@ function renderSupplementsTableView(contentContainer, planData) {
     contentContainer.append(tableWrapper);
     enableSupplementDoseCellLongPressActions(tableWrapper);
     enableSupplementColumnLongPressDrag(tableWrapper, planData);
-    const baseStartDate = getSupplementCycleBaseWeekStartDate(currentCycle);
     const savedScroll = getRememberedSupplementTableScroll(tableRangeMode);
-    const savedWindowStart = parseSupplementDateString(savedScroll?.windowStartDate || '');
-    const defaultTodayTargetState = getSupplementTodayWeekTargetState({
-        baseStartDate
-    });
-    const initialWindowStart = savedWindowStart && compareSupplementDates(savedWindowStart, baseStartDate) >= 0
-        ? savedWindowStart
-        : (defaultTodayTargetState?.windowStartDate || baseStartDate);
+
+    const firstRowDate = planData.data?.[0]?.date;
+    const firstPlanDate = parseSupplementDateString(firstRowDate);
 
     supplementTableVirtualState = {
         planData,
@@ -701,13 +2658,16 @@ function renderSupplementsTableView(contentContainer, planData) {
         jumpBtnWrap,
         contentContainer,
         tableRangeMode,
-        baseStartDate,
-        windowStartDate: cloneSupplementDate(initialWindowStart),
         historyRangesBySlot: buildSupplementHistoryRangesBySlot(planData, tableColumns),
         lastScrollTop: 0
     };
 
     renderSupplementTableWindow(supplementTableVirtualState);
+    if (firstPlanDate) {
+        tableWrapper.dataset.windowStartDate = formatSupplementDateString(firstPlanDate);
+    } else {
+        tableWrapper.dataset.windowStartDate = '';
+    }
     bindSupplementJumpButton(jumpBtnWrap, supplementTableVirtualState);
 
     supplementTableViewportSyncController?.abort?.();
@@ -727,10 +2687,8 @@ function renderSupplementsTableView(contentContainer, planData) {
             tableWrapper.scrollLeft = savedScroll.left;
             tableWrapper.scrollTop = savedScroll.top;
         } else {
-            tableWrapper.scrollTop = Math.max(
-                0,
-                getSupplementTableRowHeightPx(tableWrapper) * (defaultTodayTargetState?.offsetDays || 0)
-            );
+            const firstIdx = getSupplementTableAnchoredFirstRowIndex(planData, todayDateString);
+            scrollSupplementTableToPlanRowIndex(tableWrapper, planData, firstIdx);
         }
         supplementTableVirtualState.lastScrollTop = tableWrapper.scrollTop;
         syncSupplementJumpButtonVisibility(jumpBtnWrap, supplementTableVirtualState);
@@ -748,13 +2706,41 @@ function renderSupplementsTableView(contentContainer, planData) {
         syncFrameId = requestAnimationFrame(() => {
             syncFrameId = 0;
             if (!supplementTableVirtualState || !tableWrapper.isConnected) return;
-            syncSupplementTableVirtualWindow(supplementTableVirtualState);
             rememberSupplementTableScroll(tableWrapper);
             syncSupplementJumpButtonVisibility(jumpBtnWrap, supplementTableVirtualState);
         });
     };
 
     tableWrapper.addEventListener('scroll', handleScroll, { passive: true, signal: supplementTableViewportSyncController.signal });
+}
+
+function createSupplementTableAddWeeksSection() {
+    const wrap = createElement('div', 'supplement-table-add-weeks');
+    const row = createElement('div', 'supplement-table-add-weeks-row');
+    const addBtn = createElement('button', 'btn btn-secondary supplement-table-add-weeks-btn', 'Добавить');
+    addBtn.type = 'button';
+    const labelBefore = createElement('span', 'supplement-table-add-weeks-label', 'ниже (');
+    const input = createElement('input', 'supplement-table-add-weeks-input');
+    input.type = 'number';
+    input.min = '-52';
+    input.max = '52';
+    input.value = String(SUPPLEMENT_TABLE_DEFAULT_ADD_WEEKS);
+    input.setAttribute('inputmode', 'numeric');
+    const labelAfter = createElement('span', 'supplement-table-add-weeks-label', ') недель');
+    row.append(addBtn, labelBefore, input, labelAfter);
+    const note = createElement('p', 'supplement-table-add-weeks-note');
+    note.append(
+        createElement('span', 'supplement-table-add-weeks-note-asterisk', '*'),
+        document.createTextNode(
+            ' Чтобы удалить недели с конца диапазона, поставьте знак «−» перед числом (например, −1 или −5).'
+        )
+    );
+    wrap.append(row, note);
+    addBtn.addEventListener('click', async () => {
+        const w = Math.floor(Number(input.value));
+        await addSupplementExtraWeeks(w);
+    });
+    return wrap;
 }
 
 function renderSupplementTableWindow(tableState) {
@@ -766,20 +2752,20 @@ function renderSupplementTableWindow(tableState) {
         tableColumns,
         planData,
         tableRangeMode,
-        historyRangesBySlot,
-        windowStartDate
+        historyRangesBySlot
     } = tableState;
     const showCellTimes = tableRangeMode === 'week';
     const todayDateString = getTodayDateString();
-    const virtualRecords = getSupplementTableWindowRecords(planData, windowStartDate, SUPPLEMENT_TABLE_RENDER_DAYS);
+    const dayRecords = Array.isArray(planData?.data) ? planData.data : [];
     const fragment = document.createDocumentFragment();
     let todayRowElement = null;
+    const rowspanRemainingBySlot = new Map();
 
     tableColumns.forEach((column) => {
         column.labelShownEntries = new Set();
     });
 
-    virtualRecords.forEach((dayRecord) => {
+    dayRecords.forEach((dayRecord) => {
         const rowClasses = [];
         const parsedDate = parseSupplementDateString(dayRecord.date);
         const dayNumber = parsedDate?.getDay?.();
@@ -799,6 +2785,13 @@ function renderSupplementTableWindow(tableState) {
             if (column.type === 'empty') {
                 td.append(createElement('div', 'supplement-dose-cell-btn supplement-dose-cell-btn--empty', ''));
                 tr.append(td);
+                return;
+            }
+
+            const slot = column.slot;
+            const rowspanRem = rowspanRemainingBySlot.get(slot) || 0;
+            if (rowspanRem > 0) {
+                rowspanRemainingBySlot.set(slot, rowspanRem - 1);
                 return;
             }
 
@@ -872,12 +2865,32 @@ function renderSupplementTableWindow(tableState) {
             }
 
             if (isInteractive) {
+                const mergeForModal = findSupplementDoseMergeCovering(
+                    planData,
+                    dayRecord.date,
+                    slot,
+                    column.activeEntry.name
+                );
                 doseBtn.addEventListener('click', () => {
-                    openSupplementDoseModal({ dateStr: dayRecord.date, supplementName: column.activeEntry.name });
+                    if (supplementDoseMergeSession) return;
+                    handleSupplementTableCellSelection(doseBtn, mergeForModal || null);
                 });
             }
 
+            const mergeCover =
+                column.activeEntry &&
+                findSupplementDoseMergeCovering(planData, dayRecord.date, slot, column.activeEntry.name);
+            const isMergeStart = Boolean(mergeCover && mergeCover.startDate === dayRecord.date);
+            const mergeRowspan = isMergeStart ? getSupplementDoseMergeRowspan(planData, mergeCover) : 1;
+            if (mergeRowspan > 1) {
+                td.rowSpan = mergeRowspan;
+                td.classList.add('dose-col--merged');
+                rowspanRemainingBySlot.set(slot, mergeRowspan - 1);
+                doseBtn.classList.add('supplement-dose-cell-btn--merged-vertical');
+            }
+
             td.append(doseBtn);
+            applySupplementDoseCellVisualStyle(doseBtn, rawDose);
             tr.append(td);
         });
 
@@ -888,7 +2901,9 @@ function renderSupplementTableWindow(tableState) {
     });
 
     tbody.replaceChildren(fragment);
-    tableWrapper.dataset.windowStartDate = formatSupplementDateString(windowStartDate);
+    const firstDate = dayRecords[0]?.date;
+    const firstParsed = parseSupplementDateString(firstDate);
+    tableWrapper.dataset.windowStartDate = firstParsed ? formatSupplementDateString(firstParsed) : '';
     tableState.todayRowElement = todayRowElement;
 }
 
@@ -901,51 +2916,60 @@ function getSupplementTableRowHeightPx(tableWrapper) {
     return tableWrapper.querySelector('tbody tr')?.getBoundingClientRect().height || 24;
 }
 
-function canShiftSupplementTableWindowBackward(tableState) {
-    return compareSupplementDates(tableState.windowStartDate, tableState.baseStartDate) > 0;
-}
+function appendWeeksToSupplementPlan(plan, cycle, weeksToAdd) {
+    if (!plan || !cycle) return null;
+    const weeks = Math.min(52, Math.max(1, Math.floor(Number(weeksToAdd)) || 1));
+    const newPlan = JSON.parse(JSON.stringify(plan));
+    ensureSupplementEntrySlots(newPlan);
+    const currentLength = newPlan.data.length;
 
-function shiftSupplementTableWindow(tableState, offsetDays) {
-    if (!tableState || !offsetDays) return false;
+    let nextStartDateString;
+    if (currentLength > 0) {
+        const lastDateString = newPlan.data[currentLength - 1].date;
+        const [startDay, startMonth, startYear] = lastDateString.split('.');
+        const lastDate = new Date(`${startYear}-${startMonth}-${startDay}`);
+        const nextStartDate = new Date(lastDate);
+        nextStartDate.setDate(lastDate.getDate() + 1);
 
-    let nextStartDate = addSupplementDays(tableState.windowStartDate, offsetDays);
-    if (compareSupplementDates(nextStartDate, tableState.baseStartDate) < 0) {
-        nextStartDate = cloneSupplementDate(tableState.baseStartDate);
+        const day = String(nextStartDate.getDate()).padStart(2, '0');
+        const month = String(nextStartDate.getMonth() + 1).padStart(2, '0');
+        const year = nextStartDate.getFullYear();
+        nextStartDateString = `${day}.${month}.${year}`;
+    } else {
+        nextStartDateString = cycle.startDateString;
     }
 
-    if (compareSupplementDates(nextStartDate, tableState.windowStartDate) === 0) {
-        return false;
-    }
+    const newDates = generateDates(nextStartDateString, weeks * 7);
+    const newRecords = newDates.map((dateInfo) => {
+        const doseMap = {};
+        getSupplementNames(newPlan).forEach((supName) => {
+            doseMap[supName] = '';
+        });
 
-    tableState.windowStartDate = nextStartDate;
-    renderSupplementTableWindow(tableState);
-    return true;
+        return {
+            date: dateInfo.date,
+            dayOfWeek: dateInfo.dayOfWeek,
+            doses: doseMap
+        };
+    });
+
+    newPlan.data.push(...newRecords);
+    return newPlan;
 }
 
-function syncSupplementTableVirtualWindow(tableState) {
-    const { tableWrapper } = tableState || {};
-    if (!tableWrapper) return;
+function removeWeeksFromSupplementPlan(plan, weeksToRemove) {
+    if (!plan || !Array.isArray(plan.data) || plan.data.length === 0) return null;
+    const w = Math.min(52, Math.max(1, Math.floor(Number(weeksToRemove)) || 0));
+    if (w < 1) return null;
 
-    const currentScrollTop = tableWrapper.scrollTop;
-    const previousScrollTop = Number.isFinite(tableState.lastScrollTop) ? tableState.lastScrollTop : currentScrollTop;
-    const rowHeight = getSupplementTableRowHeightPx(tableWrapper);
-    const shiftPixels = rowHeight * SUPPLEMENT_TABLE_SHIFT_DAYS;
-    const backwardThreshold = Math.max(rowHeight * 2, 1);
-    const scrollingDown = currentScrollTop > previousScrollTop + 0.5;
-    const scrollingUp = currentScrollTop < previousScrollTop - 0.5;
+    const newPlan = JSON.parse(JSON.stringify(plan));
+    const removeCount = Math.min(w * 7, newPlan.data.length);
+    if (removeCount < 1) return null;
 
-    if (scrollingDown && currentScrollTop >= shiftPixels) {
-        if (shiftSupplementTableWindow(tableState, SUPPLEMENT_TABLE_SHIFT_DAYS)) {
-            tableWrapper.scrollTop = Math.max(0, currentScrollTop - shiftPixels);
-        }
-    } else if (scrollingUp && currentScrollTop <= backwardThreshold && canShiftSupplementTableWindowBackward(tableState)) {
-        if (shiftSupplementTableWindow(tableState, -SUPPLEMENT_TABLE_SHIFT_DAYS)) {
-            tableWrapper.scrollTop = currentScrollTop + shiftPixels;
-        }
-    }
-
-    tableState.lastScrollTop = tableWrapper.scrollTop;
+    newPlan.data.splice(newPlan.data.length - removeCount, removeCount);
+    return newPlan;
 }
+
 function scrollSupplementTableRowToTop(wrapper, rowElement) {
     const rowRect = rowElement.getBoundingClientRect();
     const wrapperRect = wrapper.getBoundingClientRect();
@@ -954,6 +2978,64 @@ function scrollSupplementTableRowToTop(wrapper, rowElement) {
     const nextScrollTop = wrapper.scrollTop + rowRect.top - wrapperRect.top - headerHeight;
 
     wrapper.scrollTop = Math.max(0, nextScrollTop);
+}
+
+/**
+ * Индекс первой строки plan.data под шапкой: на экране 4 календарные недели (пн–вс),
+ * неделя с «сегодня» — **вторая** сверху; у начала/конца диапазона плана — зажим (как раньше с виртуальным окном).
+ */
+function getSupplementTableAnchoredFirstRowIndex(planData, todayDateString) {
+    const data = planData?.data;
+    if (!Array.isArray(data) || data.length === 0) return 0;
+
+    const today = parseSupplementDateString(todayDateString);
+    const first = parseSupplementDateString(data[0]?.date);
+    const last = parseSupplementDateString(data[data.length - 1]?.date);
+    if (!today || !first || !last) return 0;
+
+    const visDays = SUPPLEMENT_TABLE_VISIBLE_DAYS;
+    const maxFirst = Math.max(0, data.length - visDays);
+
+    if (compareSupplementDates(today, last) > 0) {
+        return maxFirst;
+    }
+
+    const monday = getSupplementWeekStartDate(today);
+
+    let weekStartIndex = 0;
+    if (compareSupplementDates(monday, first) < 0) {
+        weekStartIndex = 0;
+    } else {
+        const mondayStr = formatSupplementDateString(monday);
+        let idx = data.findIndex((d) => d.date === mondayStr);
+        if (idx < 0) {
+            idx = data.findIndex((d) => {
+                const p = parseSupplementDateString(d.date);
+                return p && compareSupplementDates(p, monday) >= 0;
+            });
+        }
+        weekStartIndex = idx < 0 ? 0 : idx;
+    }
+
+    let idealFirst = weekStartIndex - 7;
+    if (idealFirst < 0) idealFirst = 0;
+    if (idealFirst > maxFirst) idealFirst = maxFirst;
+    return idealFirst;
+}
+
+function scrollSupplementTableToPlanRowIndex(tableWrapper, planData, rowIndex) {
+    const data = planData?.data;
+    if (!tableWrapper || !Array.isArray(data) || !data[rowIndex]) {
+        if (tableWrapper) tableWrapper.scrollTop = 0;
+        return;
+    }
+    const dateStr = data[rowIndex].date;
+    const row = tableWrapper.querySelector(`tbody tr[data-date="${dateStr}"]`);
+    if (!row) {
+        tableWrapper.scrollTop = 0;
+        return;
+    }
+    scrollSupplementTableRowToTop(tableWrapper, row);
 }
 
 function isSupplementTableRowVisible(wrapper, rowElement) {
@@ -987,47 +3069,23 @@ function getSupplementDefaultWeekTargetRow(wrapper) {
         || null;
 }
 
-function getSupplementTodayWeekTargetState(tableState) {
-    if (!tableState) return null;
-
-    const todayDate = parseSupplementDateString(getTodayDateString()) || new Date();
-    const targetWeekStartDate = getSupplementWeekStartDate(todayDate);
-    const desiredWindowStartDate = addSupplementDays(
-        targetWeekStartDate,
-        -(SUPPLEMENT_TABLE_SHIFT_DAYS + 7)
-    );
-    const windowStartDate = compareSupplementDates(desiredWindowStartDate, tableState.baseStartDate) >= 0
-        ? desiredWindowStartDate
-        : cloneSupplementDate(tableState.baseStartDate);
-    const offsetDays = Math.max(
-        0,
-        Math.round(
-            (
-                addSupplementDays(targetWeekStartDate, -7).getTime() -
-                windowStartDate.getTime()
-            ) / 86400000
-        )
-    );
-
-    return {
-        windowStartDate,
-        offsetDays
-    };
-}
-
 function jumpSupplementTableToTodayWeek(tableState) {
     if (!tableState?.tableWrapper) return;
 
-    const targetState = getSupplementTodayWeekTargetState(tableState);
-    if (!targetState) return;
-
-    tableState.windowStartDate = targetState.windowStartDate;
-    renderSupplementTableWindow(tableState);
-
-    const rowHeight = getSupplementTableRowHeightPx(tableState.tableWrapper);
-    tableState.tableWrapper.scrollTop = rowHeight * targetState.offsetDays;
-    tableState.lastScrollTop = tableState.tableWrapper.scrollTop;
-    rememberSupplementTableScroll(tableState.tableWrapper);
+    const wrapper = tableState.tableWrapper;
+    const todayDateString = getTodayDateString();
+    const todayRow = wrapper.querySelector(`tbody tr[data-date="${todayDateString}"]`);
+    if (todayRow) {
+        const firstIdx = getSupplementTableAnchoredFirstRowIndex(tableState.planData, todayDateString);
+        scrollSupplementTableToPlanRowIndex(wrapper, tableState.planData, firstIdx);
+    } else {
+        const fallbackRow = getSupplementDefaultWeekTargetRow(wrapper);
+        if (fallbackRow) {
+            scrollSupplementTableRowToTop(wrapper, fallbackRow);
+        }
+    }
+    tableState.lastScrollTop = wrapper.scrollTop;
+    rememberSupplementTableScroll(wrapper);
     syncSupplementJumpButtonVisibility(tableState.jumpBtnWrap, tableState);
 }
 
@@ -1072,30 +3130,38 @@ function syncSupplementJumpButtonVisibility(buttonWrap, wrapper) {
         return;
     }
 
-    if (!tableState?.windowStartDate) {
+    if (!todayRow) {
+        const rows = resolvedWrapper.querySelectorAll('tbody tr[data-date]');
+        const firstDs = rows[0]?.dataset?.date;
+        const lastDs = rows[rows.length - 1]?.dataset?.date;
+        const renderedStartDate = parseSupplementDateString(firstDs);
+        const renderedEndDate = parseSupplementDateString(lastDs);
+        if (!renderedStartDate || !renderedEndDate) {
+            buttonWrap.classList.add('is-hidden');
+            return;
+        }
+
+        const todayDate = parseSupplementDateString(todayDateString);
+        if (!todayDate) {
+            buttonWrap.classList.add('is-hidden');
+            return;
+        }
+
+        if (compareSupplementDates(todayDate, renderedStartDate) < 0) {
+            button.dataset.direction = 'up';
+            button.innerHTML = getSupplementJumpArrowSvg('up');
+            buttonWrap.classList.remove('is-hidden');
+            return;
+        }
+
+        if (compareSupplementDates(todayDate, renderedEndDate) > 0) {
+            button.dataset.direction = 'down';
+            button.innerHTML = getSupplementJumpArrowSvg('down');
+            buttonWrap.classList.remove('is-hidden');
+            return;
+        }
+
         buttonWrap.classList.add('is-hidden');
-        return;
-    }
-
-    const renderedStartDate = tableState.windowStartDate;
-    const renderedEndDate = addSupplementDays(renderedStartDate, SUPPLEMENT_TABLE_RENDER_DAYS - 1);
-    const todayDate = parseSupplementDateString(todayDateString);
-    if (!todayDate) {
-        buttonWrap.classList.add('is-hidden');
-        return;
-    }
-
-    if (compareSupplementDates(todayDate, renderedStartDate) < 0) {
-        button.dataset.direction = 'up';
-        button.innerHTML = getSupplementJumpArrowSvg('up');
-        buttonWrap.classList.remove('is-hidden');
-        return;
-    }
-
-    if (compareSupplementDates(todayDate, renderedEndDate) > 0) {
-        button.dataset.direction = 'down';
-        button.innerHTML = getSupplementJumpArrowSvg('down');
-        buttonWrap.classList.remove('is-hidden');
         return;
     }
 
@@ -1112,7 +3178,7 @@ function bindSupplementJumpButton(buttonWrap, wrapper) {
     }
 
     button.addEventListener('click', () => {
-        if (tableState?.windowStartDate) {
+        if (tableState?.tableWrapper) {
             jumpSupplementTableToTodayWeek(tableState);
             return;
         }
@@ -1726,7 +3792,12 @@ function renderSupplementCalendarDayPanel(panel, planData, dateStr, options = {}
             if (editable) {
                 row.addEventListener('click', () => {
                     options.onAction?.();
-                    openSupplementDoseModal({ dateStr, supplementName: entry.name });
+                    const mergeR = findSupplementDoseMergeCoveringByName(planData, dateStr, entry.name);
+                    openSupplementDoseModal({
+                        dateStr,
+                        supplementName: entry.name,
+                        mergeRange: mergeR || undefined
+                    });
                 });
             }
 
@@ -1780,7 +3851,7 @@ async function toggleSupplementDoseTaken({ dateStr, supplementName }) {
     renderSupplementsPage();
 }
 
-function openSupplementDoseModal({ dateStr, supplementName = '', isNew = false }) {
+function openSupplementDoseModal({ dateStr, supplementName = '', isNew = false, mergeRange = null }) {
     if (isNew && getSupplementsViewMode() !== 'table') {
         showToast('Добавить новый препарат можно только во вкладке «Таблица».');
         return;
@@ -1818,7 +3889,7 @@ function openSupplementDoseModal({ dateStr, supplementName = '', isNew = false }
     doseLabel.append(createElement('span', null, 'Дозировка препарата'));
     const doseInput = createElement('input', 'modal-input supplement-dose-value-input');
     doseInput.type = 'text';
-    doseInput.value = currentDose.dosage;
+    doseInput.value = currentDose.text || currentDose.dosage;
     doseInput.placeholder = 'Например: 500 мг';
     doseLabel.append(doseInput);
     modal.append(doseLabel);
@@ -1900,8 +3971,28 @@ function openSupplementDoseModal({ dateStr, supplementName = '', isNew = false }
         const deleteBtn = createElement('button', 'btn btn-danger', 'Удалить');
         deleteBtn.type = 'button';
         deleteBtn.addEventListener('click', async () => {
-            record.doses = record.doses || {};
-            record.doses[supplementName] = '';
+            if (mergeRange?.startDate && mergeRange?.endDate) {
+                const dates = getSupplementDoseMergeDateStrings(plan, mergeRange);
+                for (const ds of dates) {
+                    const di = plan.data.findIndex((d) => d.date === ds);
+                    if (di >= 0) {
+                        plan.data[di].doses = plan.data[di].doses || {};
+                        plan.data[di].doses[supplementName] = '';
+                    }
+                }
+                plan.doseMerges = (plan.doseMerges || []).filter(
+                    (m) =>
+                        !(
+                            Number(m.slot) === Number(mergeRange.slot) &&
+                            String(m.supplementName || '') === String(mergeRange.supplementName || '') &&
+                            m.startDate === mergeRange.startDate &&
+                            m.endDate === mergeRange.endDate
+                        )
+                );
+            } else {
+                record.doses = record.doses || {};
+                record.doses[supplementName] = '';
+            }
             await updateSupplementPlanInFirestore(plan);
             backdrop.remove();
             renderSupplementsPage();
@@ -1946,13 +4037,26 @@ function openSupplementDoseModal({ dateStr, supplementName = '', isNew = false }
             });
         }
 
-        plan.data[dayIndex].doses = plan.data[dayIndex].doses || {};
-        plan.data[dayIndex].doses[nextName] = buildSupplementDoseValue({
-            dosage: nextDose,
-            tablets: nextTablets,
-            times: nextTimes,
-            taken: currentDose.taken
-        });
+        const mergedDates =
+            !isNew && mergeRange?.startDate && mergeRange?.endDate
+                ? getSupplementDoseMergeDateStrings(plan, mergeRange)
+                : null;
+        const datesToSave =
+            mergedDates && mergedDates.length > 0 ? mergedDates : [plan.data[dayIndex].date];
+
+        for (const ds of datesToSave) {
+            const di = ensureSupplementDayRecord(plan, ds);
+            if (di < 0) continue;
+            const prevTaken = parseSupplementDoseValue(plan.data[di].doses?.[nextName]).taken;
+            plan.data[di].doses = plan.data[di].doses || {};
+            plan.data[di].doses[nextName] = buildSupplementDoseValue({
+                text: nextDose,
+                dosage: nextDose,
+                tablets: nextTablets,
+                times: nextTimes,
+                taken: prevTaken
+            });
+        }
 
         rememberCurrentSupplementTableScroll();
         await updateSupplementPlanInFirestore(plan);
@@ -2071,38 +4175,131 @@ function getSupplementDayDoseEntries(dayRecord, planData) {
         })
         .filter(Boolean);
 }
+
+function createDefaultSupplementDoseStyle() {
+    return {
+        bold: false,
+        italic: false,
+        underline: false,
+        strike: false,
+        color: '#111827',
+        align: 'center',
+        verticalAlign: 'middle',
+        background: '',
+        fontSize: 10,
+        fontFamily: 'Arial',
+        textRotation: 'horizontal'
+    };
+}
+
+function normalizeSupplementDoseStyle(style = {}) {
+    const base = createDefaultSupplementDoseStyle();
+    const align = ['left', 'center', 'right'].includes(String(style?.align || '').trim())
+        ? String(style.align).trim()
+        : base.align;
+    const verticalAlign = ['top', 'middle', 'bottom'].includes(String(style?.verticalAlign || '').trim())
+        ? String(style.verticalAlign).trim()
+        : base.verticalAlign;
+    const color = String(style?.color || '').trim() || base.color;
+    const background = String(style?.background || '').trim();
+    const fontSizeRaw = Number(style?.fontSize);
+    const fontSize = Number.isFinite(fontSizeRaw)
+        ? Math.min(32, Math.max(8, Math.round(fontSizeRaw)))
+        : base.fontSize;
+    const fontFamily = String(style?.fontFamily || '').trim() || base.fontFamily;
+    const textRotation = ['horizontal'].includes(String(style?.textRotation || '').trim())
+        ? String(style.textRotation).trim()
+        : base.textRotation;
+
+    return {
+        bold: Boolean(style?.bold),
+        italic: Boolean(style?.italic),
+        underline: Boolean(style?.underline),
+        strike: Boolean(style?.strike),
+        color,
+        align,
+        verticalAlign,
+        background,
+        fontSize,
+        fontFamily,
+        textRotation
+    };
+}
+
+function cloneSupplementDoseStyle(style = {}) {
+    return normalizeSupplementDoseStyle(style);
+}
+
+function hasSupplementDoseStyleOverrides(style = {}) {
+    const normalized = normalizeSupplementDoseStyle(style);
+    const defaults = createDefaultSupplementDoseStyle();
+    return (
+        normalized.bold !== defaults.bold ||
+        normalized.italic !== defaults.italic ||
+        normalized.underline !== defaults.underline ||
+        normalized.strike !== defaults.strike ||
+        normalized.color !== defaults.color ||
+        normalized.align !== defaults.align ||
+        normalized.verticalAlign !== defaults.verticalAlign ||
+        normalized.background !== defaults.background ||
+        normalized.fontSize !== defaults.fontSize ||
+        normalized.fontFamily !== defaults.fontFamily ||
+        normalized.textRotation !== defaults.textRotation
+    );
+}
 function parseSupplementDoseValue(rawDose) {
     if (rawDose && typeof rawDose === 'object' && !Array.isArray(rawDose)) {
         const times = normalizeSupplementTimes(rawDose.times || rawDose.time || rawDose.at);
 
         return {
+            text: String(rawDose.text || rawDose.label || '').trim(),
             dosage: String(rawDose.dosage || rawDose.dose || rawDose.value || '').trim(),
             tablets: String(rawDose.tablets || rawDose.pills || rawDose.count || '').trim(),
             time: times[0] || '',
             times,
-            taken: Boolean(rawDose.taken || rawDose.completed || rawDose.done || rawDose.isTaken)
+            taken: Boolean(rawDose.taken || rawDose.completed || rawDose.done || rawDose.isTaken),
+            style: normalizeSupplementDoseStyle(rawDose.style || {
+                bold: rawDose.bold,
+                italic: rawDose.italic,
+                underline: rawDose.underline,
+                strike: rawDose.strike,
+                color: rawDose.color,
+                align: rawDose.align,
+                verticalAlign: rawDose.verticalAlign,
+                background: rawDose.background,
+                fontSize: rawDose.fontSize,
+                fontFamily: rawDose.fontFamily,
+                textRotation: rawDose.textRotation
+            })
         };
     }
 
     return {
+        text: '',
         dosage: rawDose == null ? '' : String(rawDose).trim(),
         tablets: '',
         time: '',
         times: [],
-        taken: false
+        taken: false,
+        style: createDefaultSupplementDoseStyle()
     };
 }
 
-function buildSupplementDoseValue({ dosage = '', tablets = '', time = '', times = [], taken = false } = {}) {
+function buildSupplementDoseValue({ text = '', dosage = '', tablets = '', time = '', times = [], taken = false, style = null } = {}) {
+    const cleanText = String(text || '').trim();
     const cleanDose = String(dosage || '').trim();
     const cleanTablets = String(tablets || '').trim();
     const cleanTimes = normalizeSupplementTimes(times.length > 0 ? times : time);
     const isTaken = Boolean(taken);
+    const normalizedStyle = normalizeSupplementDoseStyle(style || {});
 
-    if (!cleanDose && !cleanTablets && cleanTimes.length === 0) return '';
-    if (cleanDose && !cleanTablets && cleanTimes.length === 0 && !isTaken) return cleanDose;
+    if (!cleanText && !cleanDose && !cleanTablets && cleanTimes.length === 0) return '';
+    if (!cleanText && cleanDose && !cleanTablets && cleanTimes.length === 0 && !isTaken && !hasSupplementDoseStyleOverrides(normalizedStyle)) {
+        return cleanDose;
+    }
 
     const value = {
+        text: cleanText,
         dosage: cleanDose,
         tablets: cleanTablets,
         times: cleanTimes
@@ -2112,22 +4309,67 @@ function buildSupplementDoseValue({ dosage = '', tablets = '', time = '', times 
         value.taken = true;
     }
 
+    if (hasSupplementDoseStyleOverrides(normalizedStyle)) {
+        value.style = normalizedStyle;
+    }
+
     return value;
 }
 
 function hasSupplementDoseValue(rawDose) {
     const dose = parseSupplementDoseValue(rawDose);
-    return Boolean(dose.dosage || dose.tablets || dose.times.length);
+    return Boolean(dose.text || dose.dosage || dose.tablets || dose.times.length);
 }
 
 function cloneSupplementDoseValue(rawDose) {
     const dose = parseSupplementDoseValue(rawDose);
     return buildSupplementDoseValue({
+        text: dose.text,
         dosage: dose.dosage,
         tablets: dose.tablets,
         times: dose.times,
-        taken: dose.taken
+        taken: dose.taken,
+        style: dose.style
     });
+}
+
+function createSupplementTableCellDraft(rawDose) {
+    const dose = parseSupplementDoseValue(rawDose);
+    const fallbackText = dose.text || formatSupplementDoseQuantity(rawDose);
+
+    return {
+        text: fallbackText,
+        times: normalizeSupplementTableDraftTimes(dose.times),
+        taken: dose.taken,
+        style: cloneSupplementDoseStyle(dose.style)
+    };
+}
+
+function cloneSupplementTableCellDraft(draft) {
+    return {
+        text: String(draft?.text || ''),
+        times: normalizeSupplementTableDraftTimes(draft?.times || []),
+        taken: Boolean(draft?.taken),
+        style: cloneSupplementDoseStyle(draft?.style)
+    };
+}
+
+function buildSupplementDoseValueFromDraft(draft, previousRawDose = '') {
+    const previousDose = parseSupplementDoseValue(previousRawDose);
+    return buildSupplementDoseValue({
+        text: String(draft?.text || '').trim(),
+        dosage: previousDose.dosage,
+        tablets: previousDose.tablets,
+        times: normalizeSupplementTimes(draft?.times || []),
+        taken: Boolean(draft?.taken ?? previousDose.taken),
+        style: cloneSupplementDoseStyle(draft?.style)
+    });
+}
+
+function areSupplementTableCellDraftsEqual(left, right) {
+    const a = cloneSupplementTableCellDraft(left);
+    const b = cloneSupplementTableCellDraft(right);
+    return JSON.stringify(a) === JSON.stringify(b);
 }
 
 function setSupplementDoseClipboardValue(rawDose, meta = {}) {
@@ -2137,6 +4379,8 @@ function setSupplementDoseClipboardValue(rawDose, meta = {}) {
         dateStr: meta.dateStr || '',
         supplementName: meta.supplementName || ''
     };
+    supplementDoseRangeClipboard = null;
+    supplementDoseRangeClipboardMeta = null;
 }
 
 function hasSupplementDoseClipboardValue() {
@@ -2167,10 +4411,236 @@ export function getSupplementPlanSnapshotSignature(planData) {
                         .map(([name, value]) => [name, cloneSupplementDoseValue(value)])
                 )
             }))
+            : [],
+        doseMerges: Array.isArray(planData?.doseMerges)
+            ? planData.doseMerges
+                .filter((m) => m && typeof m === 'object')
+                .map((m) => ({
+                    slot: Number(m.slot),
+                    supplementName: String(m.supplementName || '').trim(),
+                    startDate: String(m.startDate || '').trim(),
+                    endDate: String(m.endDate || '').trim(),
+                    anchorDate: String(m.anchorDate || '').trim()
+                }))
+                .sort(
+                    (a, b) =>
+                        a.slot - b.slot ||
+                        a.supplementName.localeCompare(b.supplementName) ||
+                        compareSupplementDateStrings(a.startDate, b.startDate) ||
+                        compareSupplementDateStrings(a.endDate, b.endDate) ||
+                        compareSupplementDateStrings(a.anchorDate, b.anchorDate)
+                )
             : []
     };
 
     return JSON.stringify(normalizedPlan);
+}
+
+function cloneSupplementPlanHistoryEntry(planData) {
+    const { plan } = sanitizeSupplementPlan(
+        JSON.parse(JSON.stringify(planData || { supplements: [], data: [], doseMerges: [] }))
+    );
+    return plan;
+}
+
+function resetSupplementPlanHistoryState(cycleId = '') {
+    supplementPlanHistoryState = createSupplementPlanHistoryDefaultState();
+    supplementPlanHistoryState.cycleId = String(cycleId || '');
+}
+
+function syncSupplementPlanHistoryWithState(planData = state.supplementPlan, cycleId = state.selectedCycleId) {
+    const normalizedCycleId = String(cycleId || '');
+    const nextPlan = cloneSupplementPlanHistoryEntry(planData);
+    const nextSignature = getSupplementPlanSnapshotSignature(nextPlan);
+
+    if (supplementPlanHistoryState.cycleId !== normalizedCycleId) {
+        resetSupplementPlanHistoryState(normalizedCycleId);
+    }
+
+    const currentEntry =
+        supplementPlanHistoryState.index >= 0
+            ? supplementPlanHistoryState.entries[supplementPlanHistoryState.index] || null
+            : null;
+    const currentSignature = currentEntry ? getSupplementPlanSnapshotSignature(currentEntry) : '';
+
+    if (supplementPlanHistoryState.entries.length === 0) {
+        supplementPlanHistoryState.entries = [nextPlan];
+        supplementPlanHistoryState.index = 0;
+        return;
+    }
+
+    if (currentSignature === nextSignature) {
+        return;
+    }
+
+    const existingIndex = supplementPlanHistoryState.entries.findIndex((entry) => {
+        return getSupplementPlanSnapshotSignature(entry) === nextSignature;
+    });
+
+    if (existingIndex >= 0) {
+        supplementPlanHistoryState.index = existingIndex;
+        return;
+    }
+
+    let nextEntries = supplementPlanHistoryState.entries
+        .slice(0, supplementPlanHistoryState.index + 1)
+        .concat([nextPlan]);
+
+    if (nextEntries.length > SUPPLEMENT_PLAN_HISTORY_LIMIT) {
+        nextEntries = nextEntries.slice(nextEntries.length - SUPPLEMENT_PLAN_HISTORY_LIMIT);
+    }
+
+    supplementPlanHistoryState.entries = nextEntries;
+    supplementPlanHistoryState.index = nextEntries.length - 1;
+}
+
+function hasSupplementPlanHistoryChanges() {
+    return canUndoSupplementPlanHistory() || canRedoSupplementPlanHistory();
+}
+
+function canUndoSupplementPlanHistory() {
+    return supplementPlanHistoryState.index > 0;
+}
+
+function canRedoSupplementPlanHistory() {
+    return supplementPlanHistoryState.index >= 0 && supplementPlanHistoryState.index < supplementPlanHistoryState.entries.length - 1;
+}
+
+function syncSupplementTableTopBarMenuLegacy_DoNotUse() {
+    const topBar = document.querySelector('.top-bar.top-bar--supplements-table');
+    const leftGroup = topBar?.querySelector('.topbar-cycle-btns');
+    if (!topBar || !leftGroup) return;
+
+    const calendarBtn = leftGroup.querySelector('.supplements-topbar-calendar-btn');
+    const addBtn = leftGroup.querySelector('.supplements-topbar-add-btn');
+    let menu = leftGroup.querySelector('.supplements-topbar-inline-menu');
+    if (!menu) {
+        menu = createElement('div', 'supplements-topbar-inline-menu');
+        calendarBtn?.insertAdjacentElement('beforebegin', menu);
+    }
+
+    const selectionActive = isSupplementTableSheetSelectionActive();
+    const historyVisible = hasSupplementPlanHistoryChanges();
+    const menuVisible = selectionActive || historyVisible;
+
+    if (calendarBtn) {
+        calendarBtn.style.display = selectionActive ? 'none' : '';
+    }
+    if (addBtn) {
+        addBtn.style.display = selectionActive ? 'none' : '';
+    }
+
+    menu.replaceChildren();
+    menu.classList.toggle('is-open', menuVisible);
+    if (!menuVisible) return;
+
+    const createIconBtn = (className, label, html, onClick, disabled = false) => {
+        const btn = createElement('button', `supplements-topbar-inline-menu-btn ${className}`, '');
+        btn.type = 'button';
+        btn.disabled = disabled;
+        btn.setAttribute('aria-label', label);
+        btn.innerHTML = html;
+        btn.addEventListener('click', onClick);
+        return btn;
+    };
+
+    const draftDirty = isSupplementTableSheetDraftDirty();
+    const canUndo = canUndoSupplementPlanHistory() && !draftDirty;
+    const canRedo = canRedoSupplementPlanHistory() && !draftDirty;
+
+    if (historyVisible && !selectionActive) {
+        menu.append(
+            createIconBtn(
+                'supplements-topbar-inline-menu-btn--undo',
+                'РћС‚РјРµРЅРёС‚СЊ',
+                `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><title>Undo SVG Icon</title><path fill="currentColor" d="M7.825 13H15q1.25 0 2.125.875T18 16t-.875 2.125T15 19H8q-.425 0-.712-.288T7 18t.288-.712T8 17h7q.425 0 .713-.288T16 16t-.288-.712T15 15H7.825l1.6 1.6q.275.275.275.7t-.275.7t-.7.275t-.7-.275l-3.3-3.3q-.15-.15-.213-.325T4.45 14t.063-.375t.212-.325l3.3-3.3q.275-.275.7-.275t.7.275t.275.7t-.275.7z"/></svg>`,
+                () => applySupplementPlanHistoryIndex(supplementPlanHistoryState.index - 1),
+                !canUndo
+            ),
+            createIconBtn(
+                'supplements-topbar-inline-menu-btn--redo',
+                'РџРѕРІС‚РѕСЂРёС‚СЊ',
+                `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><title>Redo SVG Icon</title><path fill="currentColor" d="M16.175 13H9q-1.25 0-2.125.875T6 16t.875 2.125T9 19h7q.425 0 .713-.288T17 18t-.288-.712T16 17H9q-.425 0-.712-.288T8 16t.288-.712T9 15h7.175l-1.6 1.6q-.275.275-.275.7t.275.7t.7.275t.7-.275l3.3-3.3q.15-.15.213-.325T19.55 14t-.062-.375t-.213-.325l-3.3-3.3q-.275-.275-.7-.275t-.7.275t-.275.7t.275.7z"/></svg>`,
+                () => applySupplementPlanHistoryIndex(supplementPlanHistoryState.index + 1),
+                !canRedo
+            )
+        );
+    }
+
+    if (selectionActive) {
+        const cancelBtn = createElement('button', 'supplements-topbar-inline-menu-text-btn supplements-topbar-inline-menu-text-btn--cancel', 'РћС‚РјРµРЅР°');
+        cancelBtn.type = 'button';
+        cancelBtn.addEventListener('click', () => {
+            clearSupplementTableCellSelection({ preserveMenu: false, revertPreview: true });
+        });
+
+        const saveBtn = createElement('button', 'supplements-topbar-inline-menu-text-btn supplements-topbar-inline-menu-text-btn--save', 'РЎРѕС…СЂР°РЅРёС‚СЊ');
+        saveBtn.type = 'button';
+        saveBtn.disabled = !isSupplementTableSheetDraftDirty();
+        saveBtn.addEventListener('click', async () => {
+            await saveSupplementTableSheetSelection();
+        });
+
+        menu.append(cancelBtn, saveBtn);
+    }
+}
+
+function commitSupplementPlanHistoryEntry(previousPlan, nextPlan) {
+    syncSupplementPlanHistoryWithState(previousPlan);
+
+    const prevEntry =
+        supplementPlanHistoryState.index >= 0
+            ? supplementPlanHistoryState.entries[supplementPlanHistoryState.index] || null
+            : null;
+    const prevSignature = prevEntry ? getSupplementPlanSnapshotSignature(prevEntry) : '';
+    const nextEntry = cloneSupplementPlanHistoryEntry(nextPlan);
+    const nextSignature = getSupplementPlanSnapshotSignature(nextEntry);
+
+    if (prevSignature === nextSignature) return;
+
+    let nextEntries = supplementPlanHistoryState.entries
+        .slice(0, supplementPlanHistoryState.index + 1)
+        .concat([nextEntry]);
+
+    if (nextEntries.length > SUPPLEMENT_PLAN_HISTORY_LIMIT) {
+        nextEntries = nextEntries.slice(nextEntries.length - SUPPLEMENT_PLAN_HISTORY_LIMIT);
+    }
+
+    supplementPlanHistoryState.entries = nextEntries;
+    supplementPlanHistoryState.index = nextEntries.length - 1;
+}
+
+async function applySupplementPlanHistoryIndex(nextIndex) {
+    if (
+        nextIndex < 0 ||
+        nextIndex >= supplementPlanHistoryState.entries.length ||
+        nextIndex === supplementPlanHistoryState.index
+    ) {
+        return;
+    }
+
+    if (isSupplementTableSheetDraftDirty()) return;
+
+    const nextPlan = cloneSupplementPlanHistoryEntry(supplementPlanHistoryState.entries[nextIndex]);
+    const currentPlan = cloneSupplementPlanHistoryEntry(state.supplementPlan || supplementPlanHistoryState.entries[supplementPlanHistoryState.index]);
+
+    clearSupplementTableCellSelection({ preserveMenu: true, revertPreview: true });
+    state._supplementsSkipNextRenderSignature = getSupplementPlanSnapshotSignature(nextPlan);
+
+    const saved = await updateSupplementPlanInFirestore(nextPlan, {
+        previousPlanOverride: currentPlan,
+        historyMode: 'apply-history',
+        historyIndex: nextIndex
+    });
+
+    if (!saved) {
+        delete state._supplementsSkipNextRenderSignature;
+        return;
+    }
+
+    renderSupplementsPage();
+    supplementTableSheetState.menuOpen = true;
+    syncSupplementTableTopBarMenu();
 }
 
 function clearSupplementDoseLongPressPopover() {
@@ -2180,10 +4650,43 @@ function clearSupplementDoseLongPressPopover() {
     supplementDoseLongPressOverlayCleanup = null;
 }
 
+/** Сбрасывает один следующий click по ячейкам таблицы (как после лонг-пресса), чтобы закрытие меню не открывало модалку. */
+function suppressNextSupplementTableDoseCellClick(tableWrapper) {
+    if (!tableWrapper) return;
+    tableWrapper.dataset.supplementDoseLongPressSuppress = '1';
+    setTimeout(() => {
+        if (tableWrapper.dataset.supplementDoseLongPressSuppress === '1') {
+            delete tableWrapper.dataset.supplementDoseLongPressSuppress;
+        }
+    }, 260);
+}
+
 function getSupplementDoseFromState(dateStr, supplementName) {
     const plan = state.supplementPlan || { data: [] };
     const dayRecord = (plan.data || []).find(day => day.date === dateStr);
     return dayRecord?.doses?.[supplementName] || '';
+}
+
+function applySupplementDoseCellVisualStyle(button, rawDose) {
+    if (!button) return;
+    const dose = parseSupplementDoseValue(rawDose);
+    const style = cloneSupplementDoseStyle(dose.style);
+
+    button.classList.toggle('supplement-dose-cell-btn--bold', style.bold);
+    button.classList.toggle('supplement-dose-cell-btn--italic', style.italic);
+    button.classList.toggle('supplement-dose-cell-btn--underline', style.underline);
+    button.classList.toggle('supplement-dose-cell-btn--strike', style.strike);
+    button.classList.toggle('supplement-dose-cell-btn--align-left', style.align === 'left');
+    button.classList.toggle('supplement-dose-cell-btn--align-center', style.align === 'center');
+    button.classList.toggle('supplement-dose-cell-btn--align-right', style.align === 'right');
+
+    button.style.color = style.color || '';
+    button.style.backgroundColor = style.background || '';
+    button.style.textAlign = style.align || '';
+    button.style.fontSize = `${style.fontSize || 10}px`;
+    button.style.fontFamily = style.fontFamily || 'Arial';
+    button.style.alignItems = style.align === 'left' ? 'flex-start' : style.align === 'right' ? 'flex-end' : 'center';
+    button.style.justifyContent = style.verticalAlign === 'top' ? 'flex-start' : style.verticalAlign === 'bottom' ? 'flex-end' : 'center';
 }
 
 function updateSupplementDoseCellButton(button, rawDose) {
@@ -2197,6 +4700,7 @@ function updateSupplementDoseCellButton(button, rawDose) {
     button.classList.toggle('has-dose', hasValue);
     button.classList.toggle('supplement-dose-cell-btn--with-time', Boolean(timeText));
     button.replaceChildren();
+    applySupplementDoseCellVisualStyle(button, rawDose);
 
     if (!hasValue) return;
 
@@ -2232,46 +4736,99 @@ function updateSupplementDoseCellButton(button, rawDose) {
     if (timeText) {
         button.append(createElement('span', 'supplement-dose-cell-time', timeText));
     }
+
 }
 
-function getSupplementDoseLongPressAction(dateStr, supplementName, rawDose) {
-    if (hasSupplementDoseValue(rawDose)) {
-        return 'copy';
-    }
-    if (hasSupplementDoseClipboardValue()) {
-        return 'paste';
-    }
-    return '';
-}
-
-function showSupplementDoseLongPressPopover(tableWrapper, anchorElement, label, onAction) {
+function showSupplementDoseLongPressActionMenu(tableWrapper, anchorElement, menuConfig) {
     clearSupplementDoseLongPressPopover();
-    if (!tableWrapper || !anchorElement || !label || typeof onAction !== 'function') return;
+    if (!tableWrapper || !anchorElement || !menuConfig || typeof menuConfig.onPick !== 'function') return;
 
-    const popover = createElement('div', 'supplement-dose-longpress-popover');
-    const button = createElement('button', 'supplement-dose-longpress-action', label);
-    button.type = 'button';
-    popover.append(button);
+    const { hasCellValue, hasClipboard, onPick, mergeMenu = { actionId: 'merge', label: 'Объединить' } } =
+        menuConfig;
+    const normalizedMergeMenu =
+        mergeMenu?.actionId === 'merge'
+            ? { ...mergeMenu, label: 'Выделить' }
+            : mergeMenu?.actionId === 'splitMerge'
+                ? { ...mergeMenu, label: 'Снять объединение' }
+                : mergeMenu;
+    const pasteLabel =
+        menuConfig.pasteLabel ||
+        (hasCellValue && hasClipboard ? 'Заменить' : 'Вставить');
+
+    const cutEnabled = Boolean(hasCellValue);
+    const copyEnabled = Boolean(hasCellValue);
+    const pasteEnabled = Boolean(hasClipboard);
+    const deleteEnabled = Boolean(hasCellValue);
+
+    const popover = createElement(
+        'div',
+        'supplement-dose-longpress-popover supplement-dose-longpress-popover--menu'
+    );
+
+    const rows = [
+        { id: 'cut', label: 'Вырезать', enabled: cutEnabled },
+        { id: 'copy', label: 'Копировать', enabled: copyEnabled },
+        { id: 'paste', label: pasteLabel, enabled: pasteEnabled },
+        { id: 'delete', label: 'Удалить', enabled: deleteEnabled }
+    ];
+
+    rows.forEach((row) => {
+        const btn = createElement('button', 'supplement-dose-longpress-menu-item', row.label);
+        btn.type = 'button';
+        btn.disabled = !row.enabled;
+        if (!row.enabled) btn.classList.add('supplement-dose-longpress-menu-item--disabled');
+        btn.addEventListener('click', async (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!row.enabled) return;
+            close();
+            await onPick(row.id);
+        });
+        popover.append(btn);
+    });
+
+    popover.append(createElement('div', 'supplement-dose-longpress-menu-divider'));
+
+    const mergeBtn = createElement('button', 'supplement-dose-longpress-menu-item', normalizedMergeMenu.label);
+    mergeBtn.type = 'button';
+    mergeBtn.addEventListener('click', async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        close();
+        await onPick(normalizedMergeMenu.actionId);
+    });
+    popover.append(mergeBtn);
+
     document.body.append(popover);
 
     let closed = false;
     const syncPosition = () => {
         if (closed || !popover.isConnected || !anchorElement.isConnected) return;
         const anchorRect = anchorElement.getBoundingClientRect();
-        const viewportWidth = Math.round(window.visualViewport?.width || window.innerWidth || document.documentElement?.clientWidth || 0);
-        const viewportHeight = Math.round(window.visualViewport?.height || window.innerHeight || document.documentElement?.clientHeight || 0);
-        const popoverWidth = Math.round(popover.offsetWidth || 92);
-        const popoverHeight = Math.round(popover.offsetHeight || 46);
+        const viewportWidth = Math.round(
+            window.visualViewport?.width ||
+                window.innerWidth ||
+                document.documentElement?.clientWidth ||
+                0
+        );
+        const viewportHeight = Math.round(
+            window.visualViewport?.height ||
+                window.innerHeight ||
+                document.documentElement?.clientHeight ||
+                0
+        );
+        const popoverWidth = Math.round(popover.offsetWidth || 160);
+        const popoverHeight = Math.round(popover.offsetHeight || 120);
         const nextLeft = clampValue(
             Math.round(anchorRect.left + (anchorRect.width - popoverWidth) / 2),
             8,
             Math.max(8, viewportWidth - popoverWidth - 8)
         );
-        const nextTop = clampValue(
-            Math.round(anchorRect.top - popoverHeight - 8),
-            8,
-            Math.max(8, viewportHeight - popoverHeight - 8)
-        );
+        let nextTop = Math.round(anchorRect.top - popoverHeight - 8);
+        if (nextTop < 8) {
+            nextTop = Math.round(anchorRect.bottom + 8);
+        }
+        nextTop = clampValue(nextTop, 8, Math.max(8, viewportHeight - popoverHeight - 8));
 
         popover.style.left = `${nextLeft}px`;
         popover.style.top = `${nextTop}px`;
@@ -2295,15 +4852,11 @@ function showSupplementDoseLongPressPopover(tableWrapper, anchorElement, label, 
     const handleWrapperScroll = () => close();
     const handlePointerDown = (event) => {
         if (popover.contains(event.target)) return;
+        if (tableWrapper.contains(event.target)) {
+            suppressNextSupplementTableDoseCellClick(tableWrapper);
+        }
         close();
     };
-
-    button.addEventListener('click', async (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        close();
-        await onAction();
-    });
 
     document.addEventListener('pointerdown', handlePointerDown, true);
     tableWrapper.addEventListener('scroll', handleWrapperScroll, { passive: true });
@@ -2317,6 +4870,7 @@ function showSupplementDoseLongPressPopover(tableWrapper, anchorElement, label, 
 
 function formatSupplementDoseQuantity(rawDose, options = {}) {
     const dose = parseSupplementDoseValue(rawDose);
+    if (dose.text) return dose.text;
     const hasManyTimes = dose.times.length > 1;
     const quantityPrefix = hasManyTimes ? 'по ' : '';
     const tabletSuffix = options.compactTabletSuffix === false ? ' табл.' : 'табл';
@@ -2341,6 +4895,11 @@ function formatSupplementDoseTimeLine(rawDose) {
 
 function formatSupplementDoseSummary(rawDose) {
     const dose = parseSupplementDoseValue(rawDose);
+    if (dose.text) {
+        const textValue = dose.text;
+        const timesText = formatSupplementTimesText(dose.times);
+        return timesText ? `${textValue} в ${timesText}` : textValue;
+    }
     const hasManyTimes = dose.times.length > 1;
     const quantityPrefix = hasManyTimes ? 'по ' : '';
     const quantityParts = [];
@@ -2491,24 +5050,55 @@ function getSupplementCycleBaseWeekStartDate(cycle = null) {
     return getSupplementWeekStartDate(getSupplementCycleStartDate(cycle));
 }
 
-function getSupplementVirtualDayRecord(date, dateMap) {
-    const dateString = formatSupplementDateString(date);
-    const existingRecord = dateMap.get(dateString);
-    if (existingRecord) return existingRecord;
+function getSupplementImportSourceCycles() {
+    return (state.cycles || []).filter((cycle) => cycle?.id && cycle.id !== state.selectedCycleId);
+}
+
+function formatSupplementImportDateDisplay(isoDateString = '') {
+    if (!isoDateString) return 'Выбрать';
+    const [year, month, day] = String(isoDateString).split('-');
+    if (!year || !month || !day) return 'Выбрать';
+    return `${day}.${month}.${year}`;
+}
+
+function getSupplementImportPlanBounds(planData) {
+    const sortedDates = (Array.isArray(planData?.data) ? planData.data : [])
+        .map((dayRecord) => parseSupplementDateString(dayRecord?.date))
+        .filter((date) => date instanceof Date && !Number.isNaN(date.getTime()))
+        .sort((left, right) => compareSupplementDates(left, right));
+    if (sortedDates.length === 0) return null;
+
+    const firstDate = formatSupplementDateString(sortedDates[0]);
+    const lastDate = formatSupplementDateString(sortedDates[sortedDates.length - 1]);
 
     return {
-        date: dateString,
-        dayOfWeek: getSupplementWeekdayShortName(date),
-        doses: {}
+        firstDate,
+        lastDate,
+        firstIso: dateToInputFormat(firstDate),
+        lastIso: dateToInputFormat(lastDate)
     };
 }
 
-function getSupplementTableWindowRecords(planData, startDate, totalDays = SUPPLEMENT_TABLE_RENDER_DAYS) {
-    const dateMap = getSupplementPlanDateMap(planData);
-    return Array.from({ length: totalDays }, (_, index) => {
-        const nextDate = addSupplementDays(startDate, index);
-        return getSupplementVirtualDayRecord(nextDate, dateMap);
-    });
+function hasSupplementPlanContent(planData) {
+    const { plan } = sanitizeSupplementPlan(
+        JSON.parse(JSON.stringify(planData || { supplements: [], data: [] }))
+    );
+
+    if (Array.isArray(plan.supplements) && plan.supplements.length > 0) {
+        return true;
+    }
+
+    if (Array.isArray(plan.doseMerges) && plan.doseMerges.length > 0) {
+        return true;
+    }
+
+    return Array.isArray(plan.data) && plan.data.some((dayRecord) =>
+        Object.values(dayRecord?.doses || {}).some((value) => hasSupplementDoseValue(value))
+    );
+}
+
+function getSupplementDateOffset(baseDate, targetDate) {
+    return Math.round((cloneSupplementDate(targetDate).getTime() - cloneSupplementDate(baseDate).getTime()) / 86400000);
 }
 
 function buildSupplementHistoryRangesBySlot(planData, tableColumns) {
@@ -2588,7 +5178,7 @@ function getSupplementMonthTitle(date) {
     return `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
 }
 
-async function updateSupplementPlanInFirestore(newPlan) {
+async function updateSupplementPlanInFirestore(newPlan, options = {}) {
     const cycleRef = getCycleDocRef(); // 👈 теперь цикл, а не supplements
     if (!cycleRef) {
         showToast('Ошибка: Не выбран цикл для сохранения плана добавок.');
@@ -2598,11 +5188,31 @@ async function updateSupplementPlanInFirestore(newPlan) {
     try {
         // Любое изменение плана вызывает перерендер страницы; фиксируем текущий скролл таблицы,
         // чтобы после добавления/удаления/редактирования не сбрасывало на текущую неделю.
+        const previousPlan = cloneSupplementPlanHistoryEntry(options.previousPlanOverride ?? state.supplementPlan);
+        const previousSignature = getSupplementPlanSnapshotSignature(previousPlan);
         const { plan: sanitizedPlan } = sanitizeSupplementPlan(newPlan);
+        const nextSignature = getSupplementPlanSnapshotSignature(sanitizedPlan);
+        if (previousSignature === nextSignature) {
+            state.supplementPlan = sanitizedPlan;
+            syncSupplementsBottomNavBadge(sanitizedPlan);
+            if (options.historyMode === 'apply-history' && Number.isInteger(options.historyIndex)) {
+                supplementPlanHistoryState.index = options.historyIndex;
+            } else {
+                syncSupplementPlanHistoryWithState(sanitizedPlan, state.selectedCycleId);
+            }
+            syncSupplementTableTopBarMenu();
+            return true;
+        }
         rememberCurrentSupplementTableScroll();
         await updateDoc(cycleRef, { supplementPlan: sanitizedPlan });
         state.supplementPlan = sanitizedPlan;
         syncSupplementsBottomNavBadge(sanitizedPlan);
+        if (options.historyMode === 'apply-history' && Number.isInteger(options.historyIndex)) {
+            supplementPlanHistoryState.index = options.historyIndex;
+        } else {
+            commitSupplementPlanHistoryEntry(previousPlan, sanitizedPlan);
+        }
+        syncSupplementTableTopBarMenu();
         // return true;
         // showToast('План добавок сохранен!');
         console.log("✅ supplementPlan обновлён в документе цикла:", newPlan);
@@ -2650,47 +5260,46 @@ async function addWeek() {
     const currentCycle = state.cycles.find(c => c.id === state.selectedCycleId);
     if (!currentCycle || !state.supplementPlan) return;
 
-    const newPlan = JSON.parse(JSON.stringify(state.supplementPlan));
-    const currentLength = newPlan.data.length;
+    const newPlan = appendWeeksToSupplementPlan(state.supplementPlan, currentCycle, 1);
+    if (!newPlan) return;
 
-    let nextStartDateString;
-    if (currentLength > 0) {
-        // Берем последнюю дату и сдвигаем на 1 день вперед
-        const lastDateString = newPlan.data[currentLength - 1].date;
-        const [startDay, startMonth, startYear] = lastDateString.split('.');
-        const lastDate = new Date(`${startYear}-${startMonth}-${startDay}`);
-        const nextStartDate = new Date(lastDate);
-        nextStartDate.setDate(lastDate.getDate() + 1);
+    await updateSupplementPlanInFirestore(newPlan);
+}
 
-        const day = String(nextStartDate.getDate()).padStart(2, '0');
-        const month = String(nextStartDate.getMonth() + 1).padStart(2, '0');
-        const year = nextStartDate.getFullYear();
-        nextStartDateString = `${day}.${month}.${year}`;
-    } else {
-        // Если план пустой, начинаем с даты начала цикла
-        nextStartDateString = currentCycle.startDateString;
+async function addSupplementExtraWeeks(weeksRaw) {
+    const currentCycle = state.cycles.find((c) => c.id === state.selectedCycleId);
+    if (!currentCycle || !state.supplementPlan) return;
+
+    const weeks = Math.floor(Number(weeksRaw));
+    if (!Number.isFinite(weeks) || weeks === 0) {
+        showToast('Укажите число недель: положительное — добавить, отрицательное — убрать с конца.');
+        return;
     }
 
-    const newDates = generateDates(nextStartDateString, 7);
-    const newRecords = newDates.map(dateInfo => {
-        const doseMap = {};
-        // Заполняем пустые дозировки для всех существующих препаратов
-        getSupplementNames(newPlan).forEach(supName => {
-            doseMap[supName] = '';
-        });
+    let newPlan;
+    if (weeks < 0) {
+        newPlan = removeWeeksFromSupplementPlan(state.supplementPlan, -weeks);
+        if (!newPlan) {
+            showToast('Не удалось удалить недели: мало дней в плане.');
+            return;
+        }
+        showToast(`Удалено ${-weeks} ${formatSupplementWeeksWordRu(-weeks)} с конца плана.`);
+    } else {
+        newPlan = appendWeeksToSupplementPlan(state.supplementPlan, currentCycle, weeks);
+        if (!newPlan) return;
+    }
 
-        return {
-            date: dateInfo.date,
-            dayOfWeek: dateInfo.dayOfWeek,
-            doses: doseMap
-        };
-    });
-
-    newPlan.data.push(...newRecords);
-
-    // Если план был пустой, нам нужно обновить state.supplementPlan перед сохранением
-    // чтобы onSnapshot не пропустил инициализацию, но в данном случае лучше просто сохранить.
     await updateSupplementPlanInFirestore(newPlan);
+}
+
+function formatSupplementWeeksWordRu(n) {
+    const abs = Math.abs(Math.floor(Number(n)) || 0);
+    const last = abs % 10;
+    const lastTwo = abs % 100;
+    if (lastTwo >= 11 && lastTwo <= 14) return 'недель';
+    if (last === 1) return 'неделя';
+    if (last >= 2 && last <= 4) return 'недели';
+    return 'недель';
 }
 
 // Отложенное сохранение дозировки
@@ -3580,6 +6189,7 @@ async function renameSupplement(oldName, newName) {
 // Drag&Drop перестановка колонок
 async function reorderSupplementColumns(dragFrom, dragTo) {
   const plan = JSON.parse(JSON.stringify(state.supplementPlan || { supplements: [], data: [] }));
+  const previousPlan = state.supplementPlan;
   ensureSupplementEntrySlots(plan);
   const activeEntries = getSupplementEntries(plan);
   if (dragFrom === dragTo) return false;
@@ -3614,7 +6224,28 @@ async function reorderSupplementColumns(dragFrom, dragTo) {
     return meta;
   });
 
-  await updateSupplementPlanInFirestore(plan);
+  if (Array.isArray(plan.doseMerges)) {
+    plan.doseMerges = plan.doseMerges.map((merge) => {
+      const nextMerge = { ...merge };
+      const normalizedSlot = normalizeSupplementSlot(nextMerge.slot);
+      if (slotRemap.has(normalizedSlot)) {
+        nextMerge.slot = slotRemap.get(normalizedSlot);
+      }
+      return nextMerge;
+    });
+  }
+
+  const saved = await updateSupplementPlanInFirestore(plan, { previousPlanOverride: previousPlan });
+  if (!saved) return false;
+
+  const previousSignature = getSupplementPlanSnapshotSignature(previousPlan);
+  const nextSignature = getSupplementPlanSnapshotSignature(plan);
+  if (previousSignature !== nextSignature && !hasSupplementPlanHistoryChanges()) {
+    commitSupplementPlanHistoryEntry(previousPlan, plan);
+  }
+
+  syncSupplementTableTopBarMenu();
+  renderSupplementsPage();
   return true;
 }
 
@@ -3647,12 +6278,7 @@ function enableSupplementDoseCellLongPressActions(tableWrapper) {
   };
 
   const suppressNextClick = () => {
-    tableWrapper.dataset.supplementDoseLongPressSuppress = '1';
-    setTimeout(() => {
-      if (tableWrapper.dataset.supplementDoseLongPressSuppress === '1') {
-        delete tableWrapper.dataset.supplementDoseLongPressSuppress;
-      }
-    }, 260);
+    suppressNextSupplementTableDoseCellClick(tableWrapper);
   };
 
   const cleanup = () => {
@@ -3668,6 +6294,7 @@ function enableSupplementDoseCellLongPressActions(tableWrapper) {
   const runCellAction = async (button, action) => {
     const dateStr = button?.dataset.date || '';
     const supplementName = button?.dataset.supplementName || '';
+    const slot = Number(button?.dataset.supplementSlot);
     if (!dateStr || !supplementName) return;
 
     if (action === 'copy') {
@@ -3683,33 +6310,134 @@ function enableSupplementDoseCellLongPressActions(tableWrapper) {
       return;
     }
 
-    if (action === 'paste') {
-      if (!hasSupplementDoseClipboardValue()) return;
+    if (action === 'cut') {
+      const rawDose = getSupplementDoseFromState(dateStr, supplementName);
+      if (!hasSupplementDoseValue(rawDose)) return;
+      setSupplementDoseClipboardValue(rawDose, {
+        cellKey: `${dateStr}::${supplementName}`,
+        dateStr,
+        supplementName
+      });
 
       const plan = JSON.parse(JSON.stringify(state.supplementPlan || { supplements: [], data: [] }));
-      const dayIndex = (plan.data || []).findIndex(day => day.date === dateStr);
-      if (dayIndex === -1) return;
+      const { scope } = clearSupplementDoseCellOrMergeInPlan(plan, dateStr, supplementName, slot);
+      if (scope === 'none') return;
+
       const previousPlan = state.supplementPlan;
       const previousRawDose = getSupplementDoseFromState(dateStr, supplementName);
-
-      plan.data[dayIndex].doses = plan.data[dayIndex].doses || {};
-      plan.data[dayIndex].doses[supplementName] = cloneSupplementDoseValue(supplementDoseClipboard);
       state.supplementPlan = plan;
       syncSupplementsBottomNavBadge(plan);
-      updateSupplementDoseCellButton(button, plan.data[dayIndex].doses[supplementName]);
       state._supplementsSkipNextRenderSignature = getSupplementPlanSnapshotSignature(plan);
 
       rememberCurrentSupplementTableScroll();
       navigator.vibrate?.(8);
-      const saved = await updateSupplementPlanInFirestore(plan);
+      if (scope === 'single') {
+        updateSupplementDoseCellButton(button, '');
+      }
+
+      const saved = await updateSupplementPlanInFirestore(plan, { previousPlanOverride: previousPlan });
       if (!saved) {
         state.supplementPlan = previousPlan;
         syncSupplementsBottomNavBadge(previousPlan);
         delete state._supplementsSkipNextRenderSignature;
-        updateSupplementDoseCellButton(button, previousRawDose);
+        if (scope === 'single') {
+          updateSupplementDoseCellButton(button, previousRawDose);
+        } else if (scope === 'merge' || scope === 'block') {
+          await renderSupplementsPage();
+        }
         return;
       }
-      showToast('Вставлено');
+      showToast('Вырезано');
+      if (scope === 'merge') {
+        renderSupplementsPage();
+      }
+      return;
+    }
+
+    if (action === 'delete') {
+      const plan = JSON.parse(JSON.stringify(state.supplementPlan || { supplements: [], data: [] }));
+      const { scope } = clearSupplementDoseCellOrMergeInPlan(plan, dateStr, supplementName, slot);
+      if (scope === 'none') return;
+
+      const previousPlan = state.supplementPlan;
+      const previousRawDose = getSupplementDoseFromState(dateStr, supplementName);
+      state.supplementPlan = plan;
+      syncSupplementsBottomNavBadge(plan);
+      state._supplementsSkipNextRenderSignature = getSupplementPlanSnapshotSignature(plan);
+
+      rememberCurrentSupplementTableScroll();
+      navigator.vibrate?.(8);
+      if (scope === 'single') {
+        updateSupplementDoseCellButton(button, '');
+      }
+
+      const saved = await updateSupplementPlanInFirestore(plan, { previousPlanOverride: previousPlan });
+      if (!saved) {
+        state.supplementPlan = previousPlan;
+        syncSupplementsBottomNavBadge(previousPlan);
+        delete state._supplementsSkipNextRenderSignature;
+        if (scope === 'single') {
+          updateSupplementDoseCellButton(button, previousRawDose);
+        }
+        return;
+      }
+      showToast('Удалено');
+      if (scope === 'merge') {
+        renderSupplementsPage();
+      }
+      return;
+    }
+
+    if (action === 'paste') {
+      if (!hasSupplementDoseClipboardValue() && !hasSupplementDoseRangeClipboardValue()) return;
+
+      const plan = JSON.parse(JSON.stringify(state.supplementPlan || { supplements: [], data: [] }));
+      const previousPlan = state.supplementPlan;
+      const previousRawDose = getSupplementDoseFromState(dateStr, supplementName);
+      const { scope } = hasSupplementDoseRangeClipboardValue()
+        ? pasteSupplementDoseRangeToPlan(
+            plan,
+            dateStr,
+            supplementName,
+            slot,
+            supplementDoseRangeClipboard
+          )
+        : pasteSupplementDoseToCellOrMergeInPlan(
+            plan,
+            dateStr,
+            supplementName,
+            slot,
+            supplementDoseClipboard
+          );
+      if (scope === 'none') return;
+
+      state.supplementPlan = plan;
+      syncSupplementsBottomNavBadge(plan);
+      if (scope === 'single') {
+        const dayIndex = plan.data.findIndex(day => day.date === dateStr);
+        updateSupplementDoseCellButton(button, plan.data[dayIndex]?.doses?.[supplementName]);
+      } else if (scope === 'merge' || scope === 'block') {
+        await renderSupplementsPage();
+      }
+      state._supplementsSkipNextRenderSignature = getSupplementPlanSnapshotSignature(plan);
+
+      rememberCurrentSupplementTableScroll();
+      navigator.vibrate?.(8);
+      const saved = await updateSupplementPlanInFirestore(plan, { previousPlanOverride: previousPlan });
+      if (!saved) {
+        state.supplementPlan = previousPlan;
+        syncSupplementsBottomNavBadge(previousPlan);
+        delete state._supplementsSkipNextRenderSignature;
+        if (scope === 'single') {
+          updateSupplementDoseCellButton(button, previousRawDose);
+        }
+        return;
+      }
+      showToast(hasSupplementDoseValue(previousRawDose) ? 'Заменено' : 'Вставлено');
+      if (scope === 'merge' || scope === 'block') {
+        await renderSupplementsPage();
+      }
+      return;
     }
   };
 
@@ -3719,18 +6447,43 @@ function enableSupplementDoseCellLongPressActions(tableWrapper) {
     if (!dateStr || !supplementName) return;
 
     const rawDose = getSupplementDoseFromState(dateStr, supplementName);
-    const action = getSupplementDoseLongPressAction(dateStr, supplementName, rawDose);
-    if (!action) return;
+    const hasCellValue = hasSupplementDoseValue(rawDose);
+    const hasClipboard = hasSupplementDoseClipboardValue() || hasSupplementDoseRangeClipboardValue();
+
+    const slot = Number(button?.dataset?.supplementSlot);
+    const mergeCover =
+        state.supplementPlan && Number.isFinite(slot)
+            ? findSupplementDoseMergeCovering(state.supplementPlan, dateStr, slot, supplementName)
+            : null;
+    const isMergedDoseCell = Boolean(mergeCover && mergeCover.startDate === dateStr);
 
     longPressTriggered = true;
     suppressNextClick();
     navigator.vibrate?.(8);
-    showSupplementDoseLongPressPopover(
-      tableWrapper,
-      button,
-      action === 'copy' ? 'Копировать' : 'Вставить',
-      async () => runCellAction(button, action)
-    );
+
+    if (supplementDoseMergeSession?.tableWrapper === tableWrapper) {
+      endSupplementDoseMergeMode();
+    }
+
+    showSupplementDoseLongPressActionMenu(tableWrapper, button, {
+      hasCellValue,
+      hasClipboard,
+      pasteLabel: hasCellValue && hasClipboard ? 'Заменить' : 'Вставить',
+      mergeMenu: isMergedDoseCell
+        ? { actionId: 'splitMerge', label: 'Снять выделение' }
+        : { actionId: 'merge', label: 'Объединить' },
+      onPick: async (actionId) => {
+        if (actionId === 'merge') {
+          startSupplementDoseMergeMode(tableWrapper, button);
+          return;
+        }
+        if (actionId === 'splitMerge') {
+          await applySplitSupplementDoseMerge(button);
+          return;
+        }
+        await runCellAction(button, actionId);
+      }
+    });
   };
 
   function handlePointerMove(event) {

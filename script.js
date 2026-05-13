@@ -64,6 +64,7 @@ import {
     deleteObject
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
+document.addEventListener('contextmenu', (e) => e.preventDefault(), { capture: true });
 
 // =================================================================
 // ✅ ВАША РЕАЛЬНАЯ КОНФИГУРАЦИЯ FIREBASE
@@ -82,6 +83,7 @@ const firebaseConfig = {
 
 const CLOUDINARY_CLOUD_NAME = 'dck5p8h6x';
 const CLOUDINARY_UPLOAD_PRESET = 'training_diary';
+const LAST_SELECTED_CYCLE_STORAGE_PREFIX = 'trainingDiary:lastSelectedCycle:v1';
 
 
 // Используем projectId в качестве уникального ID приложения для структуры базы
@@ -352,6 +354,55 @@ function hasSelectedClient() {
 
 function hasSelectedCycle() {
     return !!state.selectedCycleId;
+}
+
+function getLastSelectedCycleStorageKey() {
+    if (!userId || !state.currentMode) return null;
+    if (state.currentMode === 'own') {
+        return `${LAST_SELECTED_CYCLE_STORAGE_PREFIX}:${userId}:own`;
+    }
+    if (state.currentMode === 'personal' && state.selectedClientId) {
+        return `${LAST_SELECTED_CYCLE_STORAGE_PREFIX}:${userId}:personal:${state.selectedClientId}`;
+    }
+    return null;
+}
+
+function persistLastSelectedCycleId(cycleId) {
+    const storageKey = getLastSelectedCycleStorageKey();
+    if (!storageKey) return;
+    try {
+        if (cycleId) {
+            localStorage.setItem(storageKey, String(cycleId));
+        } else {
+            localStorage.removeItem(storageKey);
+        }
+    } catch (_) {
+        // ignore storage failures
+    }
+}
+
+function readLastSelectedCycleId() {
+    const storageKey = getLastSelectedCycleStorageKey();
+    if (!storageKey) return '';
+    try {
+        return String(localStorage.getItem(storageKey) || '').trim();
+    } catch (_) {
+        return '';
+    }
+}
+
+function restoreLastSelectedCycleFromState() {
+    const savedCycleId = readLastSelectedCycleId();
+    if (!savedCycleId) return false;
+
+    const savedCycle = (state.cycles || []).find((cycle) => cycle.id === savedCycleId);
+    if (!savedCycle) {
+        persistLastSelectedCycleId('');
+        return false;
+    }
+
+    applyCycleSelection(savedCycle, { preserveJournalSelection: true });
+    return true;
 }
 
 function isClientContextReady() {
@@ -1076,6 +1127,7 @@ function syncSelectedCycleAfterVisibilityChange() {
     const currentCycle = state.cycles.find((cycle) => cycle.id === state.selectedCycleId);
     if (currentCycle) return;
 
+    persistLastSelectedCycleId('');
     resetCycleScopedState();
     state.selectedJournalCategory = '';
     state.selectedJournalProgram = '';
@@ -1135,6 +1187,7 @@ function applyCycleSelection(cycle, options = {}) {
     if (!cycle?.id) return false;
 
     const shouldReload = options.reloadData === true || state.selectedCycleId !== cycle.id;
+    persistLastSelectedCycleId(cycle.id);
 
     if (options.captureFlip === true) {
         state.cycleFlipPrevRects = captureCycleCardRectsForFlip();
@@ -1199,6 +1252,9 @@ function mergeCyclesTrainerClientBuffers() {
     }
     state.cycles = sortCyclesForAccessUi(Array.from(map.values()));
     syncSelectedCycleAfterVisibilityChange();
+    if (!state.selectedCycleId && state.cycles.length > 0) {
+        restoreLastSelectedCycleFromState();
+    }
 }
 
 async function syncTrainerClientCardsFromAcceptedInvites() {
@@ -3518,6 +3574,7 @@ async function saveExerciseNote(programId, exerciseId, note, media = []) {
 // ===============================
 let __openSwipeRoot = null;
 let __activeExerciseReorder = null;
+let __activeSetReorder = null;
 
 let __activeProgramReorder = null;
 
@@ -3559,6 +3616,492 @@ function __exerciseReorderLayoutItems(parentEl, draggedEl) {
     if (el === draggedEl) return false;
     return el.style.display !== 'none';
   });
+}
+
+function __setReorderLayoutItems(parentEl, draggedEl) {
+  return [...parentEl.querySelectorAll('.set-row')].filter((el) => {
+    if (el === draggedEl) return false;
+    return el.style.display !== 'none';
+  });
+}
+
+function __createSetReorderPlaceholder(fromEl) {
+  const ph = document.createElement('div');
+  ph.className = 'set-reorder-placeholder';
+  const r = fromEl.getBoundingClientRect();
+  ph.style.height = `${Math.max(1, Math.round(r.height))}px`;
+  return ph;
+}
+
+function __createSetReorderGhost(fromEl, rect) {
+  const ghost = fromEl.cloneNode(true);
+  ghost.classList.add('set-reorder-ghost');
+  ghost.style.width = `${Math.round(rect.width)}px`;
+  ghost.style.height = `${Math.round(rect.height)}px`;
+  ghost.style.left = '0px';
+  ghost.style.top = '0px';
+  document.body.appendChild(ghost);
+  return ghost;
+}
+
+function __setPlaceholderSlotIndex(parentEl, ph, draggedEl) {
+  const layoutItems = __setReorderLayoutItems(parentEl, draggedEl);
+  let el = ph.nextElementSibling;
+  while (el && (!(el instanceof HTMLElement) || el.style.display === 'none')) {
+    el = el.nextElementSibling;
+  }
+  if (!el || !el.classList?.contains('set-row')) return layoutItems.length;
+  const idx = layoutItems.indexOf(el);
+  return idx < 0 ? layoutItems.length : idx;
+}
+
+function __updateSetReorderGhostPos(active, clientX, clientY) {
+  if (!active?.ghostEl || !active.placeholderEl) return;
+  const ph = active.placeholderEl.getBoundingClientRect();
+  const lift = typeof active.setGhostLiftPx === 'number' ? active.setGhostLiftPx : -6;
+  const maxOff = Math.min(18, Math.min(ph.width, ph.height) * 0.2);
+  const cx = ph.left + ph.width / 2;
+  const cy = ph.top + ph.height / 2;
+  const sx = active.setStartX ?? clientX;
+  const sy = active.setStartY ?? clientY;
+  let ox = 0;
+  let oy = (clientY - sy) + lift;
+  if (oy > maxOff) oy = maxOff;
+  if (oy < -maxOff) oy = -maxOff;
+  const gw = active.ghostEl.offsetWidth || ph.width || 0;
+  const gh = active.ghostEl.offsetHeight || ph.height || 0;
+  const rawX = cx - gw / 2 + ox;
+  const rawY = cy - gh / 2 + oy;
+  const { x, y } = __clampGhostTranslateToViewport(active.ghostEl, rawX, rawY);
+  active.ghostEl.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+}
+
+function updateSetReorderVisual(active) {
+  if (!active?.placeholderEl || !active?.parentEl || !active?.itemEl) return;
+  const layoutItems = __setReorderLayoutItems(active.parentEl, active.itemEl);
+  const currentIndex = __setPlaceholderSlotIndex(active.parentEl, active.placeholderEl, active.itemEl);
+  const lastIndex = layoutItems.length;
+  active.placeholderEl.classList.toggle('set-reorder-placeholder--can-up', currentIndex > 0);
+  active.placeholderEl.classList.toggle('set-reorder-placeholder--can-down', currentIndex >= 0 && currentIndex < lastIndex);
+  active.itemEl.classList.toggle('set-row--can-move-up', currentIndex > 0);
+  active.itemEl.classList.toggle('set-row--can-move-down', currentIndex >= 0 && currentIndex < lastIndex);
+}
+
+function refreshSetApproachOrderNumbers(parentEl) {
+  if (!parentEl) return;
+  const dragged = [...parentEl.querySelectorAll('.set-row.set-row--dragging-source')][0];
+  const layoutItems = __setReorderLayoutItems(parentEl, dragged || null);
+  layoutItems.forEach((itemEl, index) => {
+    const nextOrder = `${index + 1}.`;
+    itemEl.dataset.approachOrder = String(index + 1);
+    itemEl.querySelectorAll('.set-label').forEach((labelEl) => {
+      labelEl.textContent = nextOrder;
+    });
+    itemEl.querySelectorAll('.set-display-line__ord').forEach((ordEl) => {
+      ordEl.textContent = nextOrder;
+    });
+  });
+}
+
+function placeSetPlaceholderAtIndex(active, targetIndex) {
+  if (!active?.placeholderEl || !active?.parentEl) return false;
+
+  const parentEl = active.parentEl;
+  const ph = active.placeholderEl;
+  const layoutItems = __setReorderLayoutItems(parentEl, active.itemEl);
+  const currentIndex = __setPlaceholderSlotIndex(parentEl, ph, active.itemEl);
+  const clampedIndex = Math.max(0, Math.min(layoutItems.length, targetIndex | 0));
+
+  if (currentIndex < 0 || currentIndex === clampedIndex) return false;
+
+  const beforeRects = new Map();
+  layoutItems.forEach((el) => {
+    beforeRects.set(el, el.getBoundingClientRect());
+  });
+
+  if (clampedIndex >= layoutItems.length) {
+    if (active.tailAnchorEl && active.tailAnchorEl !== ph && active.tailAnchorEl.parentElement === parentEl) {
+      parentEl.insertBefore(ph, active.tailAnchorEl);
+    } else {
+      parentEl.appendChild(ph);
+    }
+  } else {
+    const beforeEl = layoutItems[clampedIndex];
+    if (beforeEl) parentEl.insertBefore(ph, beforeEl);
+  }
+
+  const afterLayout = __setReorderLayoutItems(parentEl, active.itemEl);
+  afterLayout.forEach((el) => {
+    const before = beforeRects.get(el);
+    if (!before) return;
+    const after = el.getBoundingClientRect();
+    const dy = before.top - after.top;
+    if (!dy) return;
+
+    el.style.transition = 'none';
+    el.style.transform = `translateY(${dy}px)`;
+    void el.offsetHeight;
+    el.style.transition = 'transform 160ms ease';
+    el.style.transform = '';
+    window.setTimeout(() => {
+      if (el.style.transition === 'transform 160ms ease') el.style.transition = '';
+    }, 190);
+  });
+
+  active.didChange = clampedIndex !== (active.originSlotIndex ?? currentIndex);
+  refreshSetApproachOrderNumbers(parentEl);
+  updateSetReorderVisual(active);
+  return true;
+}
+
+function moveSetPlaceholderByPointerY(active, pointerY) {
+  if (!active?.itemEl || !active?.parentEl || !active.placeholderEl) return false;
+
+  const layoutItems = __setReorderLayoutItems(active.parentEl, active.itemEl);
+  let targetIndex = layoutItems.length;
+
+  for (let index = 0; index < layoutItems.length; index += 1) {
+    const rect = layoutItems[index].getBoundingClientRect();
+    const mid = rect.top + rect.height / 2;
+    if (pointerY < mid) {
+      targetIndex = index;
+      break;
+    }
+  }
+
+  return placeSetPlaceholderAtIndex(active, targetIndex);
+}
+
+function moveSetInReorder(active, direction) {
+  if (!active?.placeholderEl || !active?.parentEl || !direction) return false;
+
+  const parentEl = active.parentEl;
+  const ph = active.placeholderEl;
+  const layoutItems = __setReorderLayoutItems(parentEl, active.itemEl);
+  const effectiveFrom = __setPlaceholderSlotIndex(parentEl, ph, active.itemEl);
+  const toIndex = effectiveFrom + direction;
+  if (effectiveFrom < 0 || toIndex < 0 || toIndex > layoutItems.length) return false;
+  return placeSetPlaceholderAtIndex(active, toIndex);
+}
+
+function __collectExerciseApproachGroups(exercise) {
+  const groups = [];
+  if (!Array.isArray(exercise?.sets)) return groups;
+
+  let setIndex = 0;
+  while (setIndex < exercise.sets.length) {
+    if (exercise.sets[setIndex]?.continuation) {
+      setIndex += 1;
+      continue;
+    }
+    const [start, end] = __getDropSetGroupBounds(exercise, setIndex);
+    groups.push({
+      key: `${String(exercise.id)}:${start}`,
+      start,
+      end,
+      sets: JSON.parse(JSON.stringify(exercise.sets.slice(start, end + 1)))
+    });
+    setIndex = end + 1;
+  }
+
+  return groups;
+}
+
+async function finishSetReorder(saveChanges = true) {
+  const active = __activeSetReorder;
+  if (!active) return;
+
+  __activeSetReorder = null;
+
+  if (active.ghostEl) {
+    active.ghostEl.remove();
+    active.ghostEl = null;
+  }
+
+  if (active.placeholderEl && active.placeholderEl.parentElement) {
+    active.parentEl.insertBefore(active.itemEl, active.placeholderEl);
+    active.placeholderEl.remove();
+    active.placeholderEl = null;
+  }
+
+  active.itemEl.style.transform = '';
+  if (active.restoreSetStyle) {
+    active.itemEl.style.visibility = active.restoreSetStyle.visibility;
+    active.itemEl.style.opacity = active.restoreSetStyle.opacity;
+    active.itemEl.style.display = active.restoreSetStyle.display;
+    active.itemEl.style.pointerEvents = active.restoreSetStyle.pointerEvents;
+  } else {
+    active.itemEl.style.visibility = '';
+    active.itemEl.style.opacity = '';
+    active.itemEl.style.display = '';
+    active.itemEl.style.pointerEvents = '';
+  }
+
+  active.itemEl.dataset.setReorderLock = '0';
+  active.itemEl.classList.remove(
+    'set-row--reorder-active',
+    'set-row--can-move-up',
+    'set-row--can-move-down',
+    'set-row--dragging-source'
+  );
+  if (active.placeholderEl) {
+    active.placeholderEl.classList.remove('set-reorder-placeholder--can-up', 'set-reorder-placeholder--can-down');
+  }
+  document.documentElement.classList.remove('exercise-reorder-lock');
+  document.body.classList.remove('exercise-reorder-lock');
+
+  active.itemEl._preventClick = true;
+  window.setTimeout(() => {
+    active.itemEl._preventClick = false;
+  }, 220);
+
+  if (!saveChanges || !active.didChange) {
+    refreshSetApproachOrderNumbers(active.parentEl);
+    return;
+  }
+
+  const orderedKeys = [...active.parentEl.querySelectorAll('.set-row[data-approach-key]')]
+    .map((rowEl) => rowEl.dataset.approachKey)
+    .filter(Boolean);
+
+  const nextGroups = orderedKeys
+    .map((key) => active.groupMap.get(key))
+    .filter(Boolean);
+
+  if (!nextGroups.length) {
+    refreshSetApproachOrderNumbers(active.parentEl);
+    return;
+  }
+
+  active.exercise.sets = nextGroups.flatMap((group) => JSON.parse(JSON.stringify(group.sets)));
+
+  try {
+    await updateDoc(doc(getUserProgramsCollection(), active.selectedProgram.id), {
+      exercises: active.selectedProgram.exercises
+    });
+    render();
+  } catch (error) {
+    console.error('Не удалось сохранить порядок подходов:', error);
+    active.exercise.sets = JSON.parse(JSON.stringify(active.originalSets));
+    showToast('Не удалось сохранить порядок подходов');
+    render();
+  }
+}
+
+function attachSetReorderLongPress({ setRow, selectedProgram, exercise }) {
+  if (!setRow || setRow.dataset.setReorderBound === '1') return;
+  setRow.dataset.setReorderBound = '1';
+
+  let pointerId = null;
+  let touchId = null;
+  let pressTimer = null;
+  let startX = 0;
+  let startY = 0;
+  let lastY = 0;
+  let reorderStarted = false;
+
+  const clearPressTimer = () => {
+    if (!pressTimer) return;
+    clearTimeout(pressTimer);
+    pressTimer = null;
+  };
+
+  const beginReorder = () => {
+    if (__activeSetReorder || __activeExerciseReorder || !setRow.parentElement) return;
+
+    reorderStarted = true;
+
+    try {
+      if (pointerId != null) setRow.setPointerCapture?.(pointerId);
+    } catch (_) {
+      /* noop */
+    }
+
+    const parentEl = setRow.parentElement;
+    const rect = setRow.getBoundingClientRect();
+    const placeholderEl = __createSetReorderPlaceholder(setRow);
+    parentEl.insertBefore(placeholderEl, setRow);
+    const ghostEl = __createSetReorderGhost(setRow, rect);
+    const tailAnchorEl = [...parentEl.children].find((child) =>
+      child instanceof HTMLElement
+      && child !== setRow
+      && child !== placeholderEl
+      && !child.classList.contains('set-row')
+      && !child.classList.contains('set-reorder-placeholder')
+    ) || null;
+
+    const restoreSetStyle = {
+      visibility: setRow.style.visibility,
+      opacity: setRow.style.opacity,
+      display: setRow.style.display,
+      pointerEvents: setRow.style.pointerEvents
+    };
+
+    __activeSetReorder = {
+      selectedProgram,
+      exercise,
+      itemEl: setRow,
+      parentEl,
+      placeholderEl,
+      ghostEl,
+      tailAnchorEl,
+      originalSets: JSON.parse(JSON.stringify(exercise.sets || [])),
+      groupMap: new Map(__collectExerciseApproachGroups(exercise).map((group) => [group.key, group])),
+      didChange: false,
+      setStartX: startX,
+      setStartY: lastY,
+      setGhostLiftPx: -6,
+      originSlotIndex: __setPlaceholderSlotIndex(parentEl, placeholderEl, setRow),
+      restoreSetStyle
+    };
+
+    setRow.classList.add('set-row--reorder-active', 'set-row--dragging-source');
+    setRow.dataset.setReorderLock = '1';
+    setRow.style.opacity = '0';
+    setRow.style.pointerEvents = 'none';
+    setRow.style.display = 'none';
+    document.documentElement.classList.add('exercise-reorder-lock');
+    document.body.classList.add('exercise-reorder-lock');
+
+    __updateSetReorderGhostPos(__activeSetReorder, startX, lastY);
+    updateSetReorderVisual(__activeSetReorder);
+  };
+
+  const handlePointerDown = (e) => {
+    if (e.pointerType === 'touch') return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (e.target.closest('.delete-set-btn, .edit-note-btn, .action-btn, input, textarea, select, a, button')) return;
+    if (__activeSetReorder || __activeExerciseReorder) return;
+
+    pointerId = e.pointerId;
+    startX = e.clientX;
+    startY = e.clientY;
+    lastY = e.clientY;
+    reorderStarted = false;
+    clearPressTimer();
+    pressTimer = setTimeout(beginReorder, 320);
+    window.addEventListener('pointermove', handlePointerMove, { passive: false });
+    window.addEventListener('pointerup', handlePointerEnd);
+    window.addEventListener('pointercancel', handlePointerEnd);
+  };
+
+  const handlePointerMove = (e) => {
+    if (e.pointerId !== pointerId) return;
+
+    lastY = e.clientY;
+
+    if (!reorderStarted) {
+      if (Math.abs(e.clientX - startX) > 10 || Math.abs(e.clientY - startY) > 10) {
+        clearPressTimer();
+      }
+      return;
+    }
+
+    const active = __activeSetReorder;
+    if (!active) return;
+
+    if (e.cancelable) e.preventDefault();
+    moveSetPlaceholderByPointerY(active, e.clientY);
+    __updateSetReorderGhostPos(active, e.clientX, e.clientY);
+  };
+
+  const removeTouchWindowListeners = () => {
+    window.removeEventListener('touchmove', handleTouchMove);
+    window.removeEventListener('touchend', handleTouchEnd);
+    window.removeEventListener('touchcancel', handleTouchEnd);
+  };
+
+  const getTrackedTouch = (touchList) => {
+    if (touchId == null) return null;
+    return [...touchList].find((touch) => touch.identifier === touchId) || null;
+  };
+
+  const handleTouchStart = (e) => {
+    if (e.touches.length !== 1) return;
+    if (e.target.closest('.delete-set-btn, .edit-note-btn, .action-btn, input, textarea, select, a, button')) return;
+    if (__activeSetReorder || __activeExerciseReorder) return;
+
+    const touch = e.changedTouches[0];
+    touchId = touch.identifier;
+    startX = touch.clientX;
+    startY = touch.clientY;
+    lastY = touch.clientY;
+    reorderStarted = false;
+    clearPressTimer();
+    pressTimer = setTimeout(beginReorder, 320);
+    window.addEventListener('touchmove', handleTouchMove, { passive: false });
+    window.addEventListener('touchend', handleTouchEnd);
+    window.addEventListener('touchcancel', handleTouchEnd);
+  };
+
+  const handleTouchMove = (e) => {
+    const touch = getTrackedTouch(e.touches);
+    if (!touch) return;
+
+    lastY = touch.clientY;
+
+    if (!reorderStarted) {
+      if (Math.abs(touch.clientX - startX) > 10 || Math.abs(touch.clientY - startY) > 10) {
+        clearPressTimer();
+      }
+      return;
+    }
+
+    const active = __activeSetReorder;
+    if (!active) return;
+
+    if (e.cancelable) e.preventDefault();
+    moveSetPlaceholderByPointerY(active, touch.clientY);
+    __updateSetReorderGhostPos(active, touch.clientX, touch.clientY);
+  };
+
+  const releasePointer = () => {
+    if (pointerId == null) return;
+    try {
+      setRow.releasePointerCapture?.(pointerId);
+    } catch (_) {
+      /* noop */
+    }
+    pointerId = null;
+  };
+
+  const removeWindowListeners = () => {
+    window.removeEventListener('pointermove', handlePointerMove);
+    window.removeEventListener('pointerup', handlePointerEnd);
+    window.removeEventListener('pointercancel', handlePointerEnd);
+  };
+
+  const handlePointerEnd = async () => {
+    clearPressTimer();
+    removeWindowListeners();
+    releasePointer();
+
+    const didReorder = reorderStarted;
+    reorderStarted = false;
+
+    if (didReorder) {
+      await finishSetReorder(true);
+    }
+  };
+
+  const handleTouchEnd = async (e) => {
+    const trackedTouchEnded = touchId != null && [...e.changedTouches].some((touch) => touch.identifier === touchId);
+    if (!trackedTouchEnded) return;
+
+    clearPressTimer();
+    removeTouchWindowListeners();
+    touchId = null;
+
+    const didReorder = reorderStarted;
+    reorderStarted = false;
+
+    if (didReorder) {
+      await finishSetReorder(true);
+    }
+  };
+
+  setRow.addEventListener('pointerdown', handlePointerDown);
+  setRow.addEventListener('touchstart', handleTouchStart, { passive: true });
 }
 
 function __updateExerciseReorderGhostPos(active, clientX, clientY) {
@@ -4580,6 +5123,7 @@ function enableSwipeDone(setRow, setsArg) {
     let panAxis = null;
 
     setRow.addEventListener("touchstart", (e) => {
+        if (setRow.dataset.setReorderLock === '1') return;
         if (!e.touches || !e.touches.length) return;
         startX = e.touches[0].clientX;
         startY = e.touches[0].clientY;
@@ -4590,6 +5134,7 @@ function enableSwipeDone(setRow, setsArg) {
     }, { passive: true });
 
     setRow.addEventListener("touchmove", (e) => {
+        if (setRow.dataset.setReorderLock === '1') return;
         if (!isSwipe || !e.touches || !e.touches.length) return;
 
         currentX = e.touches[0].clientX;
@@ -4617,6 +5162,13 @@ function enableSwipeDone(setRow, setsArg) {
     }, { passive: false });
 
     setRow.addEventListener("touchend", (e) => {
+        if (setRow.dataset.setReorderLock === '1') {
+            isSwipe = false;
+            dragged = false;
+            panAxis = null;
+            setRow.style.transform = "translateX(0)";
+            return;
+        }
         panAxis = null;
         if (!isSwipe) return;
         isSwipe = false;
@@ -4830,12 +5382,18 @@ exerciseHeader.addEventListener('click', () => {
                     const headSet = groupSets[0];
 
                     const setRow = createElement('div', `set-row ${headSet.isMain ? 'main-set' : ''}${isDropGroup ? ' set-row--drop-group' : ''}`);
+                    const approachOrd = __getApproachOrdinalForSet(exercise.sets, gStart);
+                    setRow.dataset.approachKey = `${String(exercise.id)}:${gStart}`;
+                    setRow.dataset.approachOrder = String(approachOrd);
                     if (groupSets.some((s) => s.done)) {
                         setRow.classList.add('done');
                     }
                     enableSwipeDone(setRow, groupSets);
-
-                    const approachOrd = __getApproachOrdinalForSet(exercise.sets, gStart);
+                    attachSetReorderLongPress({
+                        setRow,
+                        selectedProgram,
+                        exercise
+                    });
 
                     if (isDropGroup) {
                         const stack = createElement('div', 'set-display-stack');
@@ -8342,7 +8900,8 @@ function attachCycleDataListeners() {
                 const supplementPlan = docData.supplementPlan || {};
                 const rawPlan = {
                     supplements: Array.isArray(supplementPlan.supplements) ? supplementPlan.supplements : [],
-                    data: Array.isArray(supplementPlan.data) ? supplementPlan.data : []
+                    data: Array.isArray(supplementPlan.data) ? supplementPlan.data : [],
+                    doseMerges: Array.isArray(supplementPlan.doseMerges) ? supplementPlan.doseMerges : []
                 };
                 const { plan: nextPlan, changed } = sanitizeSupplementPlan(rawPlan);
                 state.supplementPlan = nextPlan;

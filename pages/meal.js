@@ -2367,7 +2367,9 @@ function getMonthMealsDailySummaryStats(monthDate, dailySummary = {}) {
         averageEaten: eatenDaysCount ? Math.round(totalEaten / eatenDaysCount) : 0,
         averagePercent: percentCount ? Math.round(percentSum / percentCount) : null,
         totalBurned: totalBurned > 0 ? Math.round(totalBurned) : null,
-        averageBurned: eatenDaysCount && totalBurned > 0 ? Math.round(totalBurned / eatenDaysCount) : null
+        averageBurned: eatenDaysCount && totalBurned > 0 ? Math.round(totalBurned / eatenDaysCount) : null,
+        totalDifference: Math.round(totalEaten - totalBurned),
+        averageDifference: eatenDaysCount ? Math.round((totalEaten - totalBurned) / eatenDaysCount) : null
     };
 }
 
@@ -3216,6 +3218,172 @@ function attachMealOverlayBottomNavSync(target, syncFn) {
     target._mealBottomNavSync = typeof syncFn === 'function' ? syncFn : null;
 }
 
+function appendMealOverlayCleanup(target, cleanupFn) {
+    if (!target || typeof cleanupFn !== 'function') return;
+    const previousCleanup = typeof target._mealOverlayCleanup === 'function'
+        ? target._mealOverlayCleanup
+        : null;
+
+    target._mealOverlayCleanup = () => {
+        if (previousCleanup) {
+            try {
+                previousCleanup();
+            } catch (_) {}
+        }
+
+        try {
+            cleanupFn();
+        } catch (_) {}
+    };
+}
+
+function getCreateFoodKeyboardHeight() {
+    const viewport = window.visualViewport;
+    if (!viewport) return 0;
+
+    const layoutHeight = window.innerHeight || document.documentElement.clientHeight || viewport.height || 0;
+    const visibleBottom = viewport.height + (viewport.offsetTop || 0);
+    return Math.max(0, Math.round(layoutHeight - visibleBottom));
+}
+
+function getCreateFoodScrollRoot(container) {
+    if (!container) return null;
+    if (container.scrollHeight > container.clientHeight + 1) return container;
+
+    const overlay = container.closest?.('.meal-overlay-layer');
+    if (overlay && overlay.scrollHeight > overlay.clientHeight + 1) return overlay;
+
+    return container;
+}
+
+function attachCreateFoodKeyboardAvoidance(container) {
+    if (!container) return;
+
+    let frameId = 0;
+    const focusTimers = new Set();
+    let isFocusedInside = false;
+
+    const clearTimers = () => {
+        if (frameId) {
+            cancelAnimationFrame(frameId);
+            frameId = 0;
+        }
+        focusTimers.forEach((timerId) => clearTimeout(timerId));
+        focusTimers.clear();
+    };
+
+    const findFocusedControl = () => {
+        const active = document.activeElement;
+        if (!active || !container.contains(active)) return null;
+        if (!active.matches?.('input, textarea, select, [contenteditable="true"]')) return null;
+        return active;
+    };
+
+    const syncKeyboardState = () => {
+        const keyboardHeight = getCreateFoodKeyboardHeight();
+        const focusedControl = findFocusedControl();
+        const keyboardOpen = keyboardHeight > 80 || Boolean(focusedControl);
+        const nav = document.querySelector('.navigation.navigation--meal-search');
+        const navRect = nav?.getBoundingClientRect?.();
+        const navHeight = navRect?.height || 0;
+        const bottomPadding = keyboardOpen
+            ? Math.max(120, Math.round(keyboardHeight + navHeight + 28))
+            : 0;
+
+        container.classList.toggle('create-food-keyboard-open', keyboardOpen);
+        document.body.classList.toggle('meal-create-form-keyboard-open', keyboardOpen);
+        container.style.setProperty('--create-food-keyboard-padding', `${bottomPadding}px`);
+    };
+
+    const keepFocusedControlVisible = () => {
+        const focusedControl = findFocusedControl();
+        if (!focusedControl) {
+            syncKeyboardState();
+            return;
+        }
+
+        syncKeyboardState();
+
+        const scrollRoot = getCreateFoodScrollRoot(container);
+        if (!scrollRoot) return;
+
+        const row = focusedControl.closest?.('.create-food-row') || focusedControl;
+        const viewport = window.visualViewport;
+        const viewportTop = viewport?.offsetTop || 0;
+        const viewportHeight = viewport?.height || window.innerHeight || document.documentElement.clientHeight || 0;
+        const viewportBottom = viewportTop + viewportHeight;
+        const nav = document.querySelector('.navigation.navigation--meal-search');
+        const navRect = nav?.getBoundingClientRect?.();
+        const navTop = navRect && navRect.height > 0 ? navRect.top : viewportBottom;
+        const visibleTop = viewportTop + 18;
+        const visibleBottom = Math.min(viewportBottom, navTop) - 18;
+        const rowRect = row.getBoundingClientRect();
+
+        if (rowRect.bottom > visibleBottom) {
+            scrollRoot.scrollTop += Math.ceil(rowRect.bottom - visibleBottom);
+            return;
+        }
+
+        if (rowRect.top < visibleTop) {
+            scrollRoot.scrollTop -= Math.ceil(visibleTop - rowRect.top);
+        }
+    };
+
+    const scheduleKeepVisible = (delay = 0) => {
+        const timerId = window.setTimeout(() => {
+            focusTimers.delete(timerId);
+            if (frameId) cancelAnimationFrame(frameId);
+            frameId = requestAnimationFrame(keepFocusedControlVisible);
+        }, delay);
+        focusTimers.add(timerId);
+    };
+
+    const handleFocusIn = (event) => {
+        if (!event.target?.matches?.('input, textarea, select, [contenteditable="true"]')) return;
+        isFocusedInside = true;
+        scheduleKeepVisible(40);
+        scheduleKeepVisible(180);
+    };
+
+    const handleFocusOut = () => {
+        window.setTimeout(() => {
+            isFocusedInside = Boolean(findFocusedControl());
+            if (!isFocusedInside) {
+                container.classList.remove('create-food-keyboard-open');
+                document.body.classList.remove('meal-create-form-keyboard-open');
+                container.style.setProperty('--create-food-keyboard-padding', '0px');
+                return;
+            }
+            scheduleKeepVisible(40);
+        }, 80);
+    };
+
+    const handleViewportChange = () => {
+        if (!isFocusedInside && !findFocusedControl()) {
+            syncKeyboardState();
+            return;
+        }
+        scheduleKeepVisible(20);
+        scheduleKeepVisible(160);
+    };
+
+    container.addEventListener('focusin', handleFocusIn);
+    container.addEventListener('focusout', handleFocusOut);
+    window.visualViewport?.addEventListener?.('resize', handleViewportChange, { passive: true });
+    window.visualViewport?.addEventListener?.('scroll', handleViewportChange, { passive: true });
+    window.addEventListener('resize', handleViewportChange, { passive: true });
+
+    appendMealOverlayCleanup(container, () => {
+        clearTimers();
+        container.removeEventListener('focusin', handleFocusIn);
+        container.removeEventListener('focusout', handleFocusOut);
+        window.visualViewport?.removeEventListener?.('resize', handleViewportChange);
+        window.visualViewport?.removeEventListener?.('scroll', handleViewportChange);
+        window.removeEventListener('resize', handleViewportChange);
+        document.body.classList.remove('meal-create-form-keyboard-open');
+    });
+}
+
 function cleanupMealOverlayNode(node) {
     if (typeof node?._mealOverlayCleanup !== 'function') return;
 
@@ -3730,11 +3898,50 @@ function renderMealMonthlySummaryPage() {
         `;
     }
 
+    function formatMealSummaryDifferenceLabel(value) {
+        if (!Number.isFinite(value)) return '';
+        const rounded = Math.round(value);
+        const sign = rounded > 0 ? '+' : rounded < 0 ? '-' : '';
+        const absValue = String(Math.abs(rounded));
+        return `(${sign}${formatNumberWithSpaces(Math.abs(rounded))} Всего)`;
+    }
+
     function closeMonthPicker() {
         monthPicker.classList.remove('open');
         monthPickerBackdrop.classList.remove('open');
         monthPicker.style.display = 'none';
         monthPickerBackdrop.style.display = 'none';
+    }
+
+    function formatMealSummaryDifferenceMarkup(value) {
+        if (!Number.isFinite(value)) return '';
+        const rounded = Math.round(value);
+        const sign = rounded > 0 ? '+' : rounded < 0 ? '-' : '';
+        return `
+            <span class="meal-monthly-summary-difference">
+                <span class="meal-monthly-summary-difference-bracket">(</span>
+                <span class="meal-monthly-summary-difference-value">${sign}${Math.abs(rounded)}</span>
+                <span class="meal-monthly-summary-difference-label">Всего</span>
+                <span class="meal-monthly-summary-difference-bracket">)</span>
+            </span>
+        `;
+    }
+
+    function formatMealSummarySideArrowMarkup(value) {
+        if (!Number.isFinite(value)) return '';
+        const rounded = Math.round(value);
+        const directionClass = rounded < 0
+            ? 'meal-monthly-summary-side-arrow--down'
+            : rounded > 0
+                ? 'meal-monthly-summary-side-arrow--up'
+                : 'meal-monthly-summary-side-arrow--flat';
+        return `
+            <span class="meal-monthly-summary-side-arrow ${directionClass}" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="14" height="14">
+                    <path d="M12 4v16m0 0 6-6m-6 6-6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </span>
+        `;
     }
 
     function renderMonthPicker() {
@@ -3803,14 +4010,17 @@ function renderMealMonthlySummaryPage() {
             `;
         }
 
+        const difference = Number(entry?.eatenCalories || 0) - burned;
+
         return `
             <span class="meal-monthly-summary-card-icon" aria-hidden="true">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Workout-sport SVG Icon</title><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M16 4.5a1.5 1.5 0 1 1-3 0a1.5 1.5 0 0 1 3 0Z"/><path stroke-linecap="round" stroke-linejoin="round" d="m5 12l1.476-2.326c.26-.41.391-.616.562-.783c.17-.167.374-.29.782-.534l.922-.553c.862-.518 1.293-.777 1.77-.802s.93.187 1.839.61l1.695.792c.373.174.56.26.723.383q.174.13.318.295c.135.156.24.34.45.708c.37.647.555.97.816 1.199c.184.16.394.285.62.368c.32.118.68.118 1.398.118H19M11.5 7.5L8 14m0 0l1.447 2.026a2 2 0 0 1-.31 2.667L6.5 21M8 14h3.5m5.5 4l-2.4-3.2A2 2 0 0 0 13 14h-1.5m0 0L15 9"/></g></svg>
             </span>
             <span class="meal-monthly-summary-card-main">
                 <strong>${formatNumberWithSpaces(burned)}</strong>
-                <span>ккал</span>
+                <span>${formatMealSummaryDifferenceMarkup(difference)}</span>
             </span>
+            ${formatMealSummarySideArrowMarkup(difference)}
         `;
     }
 
@@ -3879,20 +4089,20 @@ function renderMealMonthlySummaryPage() {
                     <b>${formatNumberWithSpaces(monthStats.averageEaten || 0)}</b>
                     ${Number.isFinite(monthStats.averagePercent) ? `<span>(${monthStats.averagePercent}%)</span>` : '<span></span>'}
                 </div>
-                <div class="meal-monthly-summary-footer-value">
+                <div class="meal-monthly-summary-footer-value meal-monthly-summary-footer-value--burned">
                     <b>${monthStats.averageBurned ? formatNumberWithSpaces(monthStats.averageBurned) : '—'}</b>
-                    <span></span>
+                    <span>${Number.isFinite(monthStats.averageDifference) ? formatMealSummaryDifferenceMarkup(monthStats.averageDifference) : ''}</span>
                 </div>
             </div>
             <div class="meal-monthly-summary-footer-row">
                 <strong>Всего</strong>
-                <div class="meal-monthly-summary-footer-value">
+                <div class="meal-monthly-summary-footer-value meal-monthly-summary-footer-value--burned">
                     <b>${formatNumberWithSpaces(monthStats.totalEaten || 0)}</b>
                     <span></span>
                 </div>
                 <div class="meal-monthly-summary-footer-value">
                     <b>${monthStats.totalBurned ? formatNumberWithSpaces(monthStats.totalBurned) : '—'}</b>
-                    <span></span>
+                    <span>${Number.isFinite(monthStats.totalDifference) ? formatMealSummaryDifferenceMarkup(monthStats.totalDifference) : ''}</span>
                 </div>
             </div>
         `;
@@ -7035,6 +7245,7 @@ async function renderEditFood() {
     attachMealOverlayBottomNavSync(container, syncCreateFoodBottomNav);
     container.append(stickyHeader, formCard);
     pushMealOverlay(container);
+    attachCreateFoodKeyboardAvoidance(container);
 
     requestAnimationFrame(() => {
         setupCreateFoodStickyTitleBorder({
@@ -13041,6 +13252,7 @@ function renderQuickAddStub() {
     attachMealOverlayBottomNavSync(container, syncQuickAddBottomNav);
     container.append(stickyHeader, formCard);
     pushMealOverlay(container);
+    attachCreateFoodKeyboardAvoidance(container);
 
     requestAnimationFrame(() => {
         setupCreateFoodStickyTitleBorder({
@@ -13450,6 +13662,7 @@ function renderCreateFood() {
     attachMealOverlayBottomNavSync(container, syncCreateFoodBottomNav);
     container.append(stickyHeader, formCard);
     pushMealOverlay(container);
+    attachCreateFoodKeyboardAvoidance(container);
 
     requestAnimationFrame(() => {
         setupCreateFoodStickyTitleBorder({
@@ -13704,7 +13917,7 @@ function renderCreateRecipe() {
     };
 
     formCard.append(
-        createFormRow('Название рецепта', titleInput, true),
+        createFormRow('Название', titleInput, true),
         createFormRow('Описание', descriptionInput, false, 'is-textarea'),
         createFormRow('Кол-во порций', servingsInput, true),
         createFormRow(
@@ -13816,6 +14029,7 @@ function renderCreateRecipe() {
     attachMealOverlayBottomNavSync(container, syncCreateRecipeBottomNav);
     container.append(stickyHeader, formCard);
     pushMealOverlay(container);
+    attachCreateFoodKeyboardAvoidance(container);
 
     requestAnimationFrame(() => {
         setupCreateFoodStickyTitleBorder({
@@ -14061,7 +14275,7 @@ async function renderEditRecipe() {
     };
 
     formCard.append(
-        createFormRow('Название рецепта', titleInput, true),
+        createFormRow('Название', titleInput, true),
         createFormRow('Описание', descriptionInput, false, 'is-textarea'),
         createFormRow('Кол-во порций', servingsInput, true),
         createFormRow(
@@ -14157,6 +14371,7 @@ async function renderEditRecipe() {
     attachMealOverlayBottomNavSync(container, syncCreateRecipeBottomNav);
     container.append(stickyHeader, formCard);
     pushMealOverlay(container);
+    attachCreateFoodKeyboardAvoidance(container);
 
     requestAnimationFrame(() => {
         setupCreateFoodStickyTitleBorder({
