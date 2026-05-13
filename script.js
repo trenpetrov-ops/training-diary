@@ -9579,7 +9579,71 @@ function ensureRootScrollLockBinding() {
     }
 }
 
-ensureAppViewportHeightBinding();
+let initialBootstrapSettled = false;
+let bootstrapFallbackShown = false;
+
+function hideInitialLoadingScreen() {
+    initialBootstrapSettled = true;
+    const loading = document.getElementById('loading-screen');
+    if (loading) {
+        loading.classList.add('hide');
+    }
+}
+
+function showBootstrapFallbackScreen(user) {
+    bootstrapFallbackShown = true;
+
+    try {
+        if (user) {
+            userId = user.uid;
+            state.currentMode = null;
+            state.currentPage = 'modeSelect';
+            toggleAppVisibility(true);
+        } else {
+            userId = null;
+            state.currentMode = null;
+            state.selectedClientId = null;
+            state.currentPage = 'auth';
+            state.userProfile = null;
+            toggleAppVisibility(false);
+        }
+
+        render();
+    } catch (fallbackError) {
+        console.error('[bootstrap] fallback render failed:', fallbackError);
+    } finally {
+        hideInitialLoadingScreen();
+    }
+}
+
+function recoverFromBootstrapError(label, detail, user = auth?.currentUser ?? null) {
+    if (initialBootstrapSettled || bootstrapFallbackShown) {
+        hideInitialLoadingScreen();
+        return;
+    }
+
+    console.error(`[bootstrap] ${label} failed:`, detail);
+    showBootstrapFallbackScreen(user);
+}
+
+function runBootstrapStep(label, fn) {
+    try {
+        return fn();
+    } catch (error) {
+        recoverFromBootstrapError(label, error);
+        return null;
+    }
+}
+
+window.addEventListener('error', (event) => {
+    recoverFromBootstrapError('window.error', event?.error || event?.message || event);
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+    recoverFromBootstrapError('window.unhandledrejection', event?.reason || event);
+});
+
+runBootstrapStep('ensureAppViewportHeightBinding', ensureAppViewportHeightBinding);
 
 export function render() {
     const root = document.getElementById('root');
@@ -9677,8 +9741,13 @@ export function render() {
 }
 window.render = render;
 
-initBottomNav();
-void installCapacitorAppleHealthReturnListener();
+runBootstrapStep('initBottomNav', initBottomNav);
+void Promise.resolve()
+    .then(() => installCapacitorAppleHealthReturnListener())
+    .catch((error) => {
+        console.error('[bootstrap] installCapacitorAppleHealthReturnListener failed:', error);
+        hideInitialLoadingScreen();
+    });
 
 async function hideStatusBarEverywhere() {
     try {
@@ -9807,7 +9876,14 @@ onAuthStateChanged(auth, async (user) => {
     const loading = document.getElementById('loading-screen');
 
     // Пока грузится — показываем лоадер
-    loading.classList.remove('hide');
+    bootstrapFallbackShown = false;
+    initialBootstrapSettled = false;
+
+    if (loading) {
+        loading.classList.remove('hide');
+    }
+
+    try {
 
     unsubscribeAll();
 
@@ -9843,7 +9919,11 @@ onAuthStateChanged(auth, async (user) => {
     render();
 
     // ❗ Даем приложению дорендериться → и скрываем загрузку
-    setTimeout(() => {
-        loading.classList.add('hide');
+    } catch (error) {
+        console.error('[bootstrap] onAuthStateChanged failed:', error);
+        showBootstrapFallbackScreen(user);
+    } finally {
+        window.setTimeout(() => {
+            hideInitialLoadingScreen();
     }, 300); // можно увеличить если захочешь плавности
 });
