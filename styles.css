@@ -15105,7 +15105,7 @@ button.delete-food-from-meal-btn {
     box-sizing: border-box;
 }
 .meal-search-topbar.meal-search-topbar--bottom-nav-mode {
-    padding-top: var(--top-bar-pad-top);
+    /* padding-top: var(--top-bar-pad-top); */
 }
 .meal-search-topbar--bottom-nav-mode .meal-search-meal-picker {
     margin-left: 0;
