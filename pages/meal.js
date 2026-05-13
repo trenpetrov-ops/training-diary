@@ -3256,6 +3256,7 @@ function attachCreateFoodKeyboardAvoidance(container) {
     let frameId = 0;
     const focusTimers = new Set();
     let isFocusedInside = false;
+    let nativeKeyboardHeight = 0;
 
     const clearTimers = () => {
         if (frameId) {
@@ -3273,29 +3274,18 @@ function attachCreateFoodKeyboardAvoidance(container) {
         return active;
     };
 
-    const syncViewportFrame = () => {
-        const viewport = window.visualViewport;
-        const viewportHeight = Math.round(
-            viewport?.height ||
-            window.innerHeight ||
-            document.documentElement.clientHeight ||
-            0
-        );
-
-        if (!viewportHeight) return;
-
-        container.style.setProperty('--create-food-viewport-height', `${viewportHeight}px`);
-    };
+    let currentKeyboardHeight = 0;
 
     const syncKeyboardState = () => {
-        const keyboardHeight = getCreateFoodKeyboardHeight();
+        const keyboardHeight = Math.max(getCreateFoodKeyboardHeight(), nativeKeyboardHeight);
         const focusedControl = findFocusedControl();
         const keyboardOpen = keyboardHeight > 80 || Boolean(focusedControl);
-
-        syncViewportFrame();
+        currentKeyboardHeight = Math.max(0, keyboardHeight);
 
         container.classList.toggle('create-food-keyboard-open', keyboardOpen);
         document.body.classList.toggle('meal-create-form-keyboard-open', keyboardOpen);
+        container.style.setProperty('--create-food-keyboard-height', `${currentKeyboardHeight}px`);
+        return keyboardOpen;
     };
 
     const keepFocusedControlVisible = () => {
@@ -3305,12 +3295,20 @@ function attachCreateFoodKeyboardAvoidance(container) {
             return;
         }
 
-        syncKeyboardState();
+        const keyboardOpen = syncKeyboardState();
 
         const scrollRoot = getCreateFoodScrollRoot(container);
         if (!scrollRoot) return;
 
         const row = focusedControl.closest?.('.create-food-row') || focusedControl;
+        const viewport = window.visualViewport;
+        const viewportTop = viewport?.offsetTop || 0;
+        const viewportBottom = viewportTop + (
+            viewport?.height ||
+            window.innerHeight ||
+            document.documentElement.clientHeight ||
+            0
+        );
         const containerRect = container.getBoundingClientRect();
         const stickyHeader = container.querySelector('.create-food-sticky-header');
         const stickyBottom = stickyHeader?.getBoundingClientRect?.().bottom || containerRect.top;
@@ -3318,10 +3316,25 @@ function attachCreateFoodKeyboardAvoidance(container) {
         const navRect = nav?.getBoundingClientRect?.();
         const visibleTop = Math.max(containerRect.top, stickyBottom) + 12;
         const visibleBottomBase = navRect && navRect.height > 0
-            ? Math.min(containerRect.bottom, navRect.top)
-            : containerRect.bottom;
-        const visibleBottom = visibleBottomBase - 14;
+            ? Math.min(viewportBottom, navRect.top)
+            : viewportBottom;
+        const visibleBottom = visibleBottomBase - 18;
         const rowRect = row.getBoundingClientRect();
+        const rowHeight = Math.max(1, rowRect.height || focusedControl.getBoundingClientRect?.().height || 44);
+
+        if (keyboardOpen && viewport?.offsetTop) {
+            window.scrollTo?.(0, 0);
+        }
+
+        if (keyboardOpen) {
+            const targetBottom = Math.max(visibleTop + rowHeight + 8, visibleBottom - 16);
+            const delta = Math.round(rowRect.bottom - targetBottom);
+
+            if (Math.abs(delta) > 2) {
+                scrollRoot.scrollTop += delta;
+                return;
+            }
+        }
 
         if (rowRect.bottom > visibleBottom) {
             scrollRoot.scrollTop += Math.ceil(rowRect.bottom - visibleBottom);
@@ -3355,7 +3368,7 @@ function attachCreateFoodKeyboardAvoidance(container) {
             if (!isFocusedInside) {
                 container.classList.remove('create-food-keyboard-open');
                 document.body.classList.remove('meal-create-form-keyboard-open');
-                syncViewportFrame();
+                container.style.setProperty('--create-food-keyboard-height', '0px');
                 return;
             }
             scheduleKeepVisible(40);
@@ -3371,12 +3384,35 @@ function attachCreateFoodKeyboardAvoidance(container) {
         scheduleKeepVisible(160);
     };
 
+    const readNativeKeyboardHeight = (event) => {
+        const info = event?.detail || event || {};
+        const value = Number(info.keyboardHeight ?? info.height ?? 0);
+        return Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
+    };
+
+    const handleNativeKeyboardShow = (event) => {
+        nativeKeyboardHeight = readNativeKeyboardHeight(event);
+        scheduleKeepVisible(0);
+        scheduleKeepVisible(120);
+        scheduleKeepVisible(260);
+    };
+
+    const handleNativeKeyboardHide = () => {
+        nativeKeyboardHeight = 0;
+        container.classList.remove('create-food-keyboard-open');
+        document.body.classList.remove('meal-create-form-keyboard-open');
+        container.style.setProperty('--create-food-keyboard-height', '0px');
+    };
+
     container.addEventListener('focusin', handleFocusIn);
     container.addEventListener('focusout', handleFocusOut);
     window.visualViewport?.addEventListener?.('resize', handleViewportChange, { passive: true });
     window.visualViewport?.addEventListener?.('scroll', handleViewportChange, { passive: true });
     window.addEventListener('resize', handleViewportChange, { passive: true });
-    syncViewportFrame();
+    window.addEventListener('keyboardWillShow', handleNativeKeyboardShow);
+    window.addEventListener('keyboardDidShow', handleNativeKeyboardShow);
+    window.addEventListener('keyboardWillHide', handleNativeKeyboardHide);
+    window.addEventListener('keyboardDidHide', handleNativeKeyboardHide);
     syncKeyboardState();
 
     appendMealOverlayCleanup(container, () => {
@@ -3386,8 +3422,12 @@ function attachCreateFoodKeyboardAvoidance(container) {
         window.visualViewport?.removeEventListener?.('resize', handleViewportChange);
         window.visualViewport?.removeEventListener?.('scroll', handleViewportChange);
         window.removeEventListener('resize', handleViewportChange);
+        window.removeEventListener('keyboardWillShow', handleNativeKeyboardShow);
+        window.removeEventListener('keyboardDidShow', handleNativeKeyboardShow);
+        window.removeEventListener('keyboardWillHide', handleNativeKeyboardHide);
+        window.removeEventListener('keyboardDidHide', handleNativeKeyboardHide);
         document.body.classList.remove('meal-create-form-keyboard-open');
-        container.style.removeProperty('--create-food-viewport-height');
+        container.style.removeProperty('--create-food-keyboard-height');
     });
 }
 
