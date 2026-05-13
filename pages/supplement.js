@@ -1422,6 +1422,15 @@ function collectSupplementTableEditorTimes(container) {
 function appendSupplementTableEditorTimeRow(container, value = '') {
     if (!container) return;
     const row = createElement('div', 'supplement-sheet-editor__time-row');
+    const field = createElement('div', 'supplement-sheet-editor__time-field');
+    const icon = createElement('span', 'supplement-sheet-editor__time-icon');
+    icon.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 1.75a10.25 10.25 0 1 0 10.25 10.25A10.26 10.26 0 0 0 12 1.75m0 18.5A8.25 8.25 0 1 1 20.25 12A8.26 8.26 0 0 1 12 20.25m.75-12.5a1 1 0 0 0-2 0v4.67a1 1 0 0 0 .38.78l3.25 2.58a1 1 0 1 0 1.24-1.56l-2.87-2.28Z"/></svg>`;
+    const meta = createElement('div', 'supplement-sheet-editor__time-meta');
+    const label = createElement(
+        'span',
+        'supplement-sheet-editor__time-label',
+        `Прием ${container.querySelectorAll('.supplement-sheet-editor__time-row').length + 1}`
+    );
     const input = createElement('input', 'supplement-sheet-editor__time-input');
     input.type = 'time';
     input.step = '60';
@@ -1436,6 +1445,7 @@ function appendSupplementTableEditorTimeRow(container, value = '') {
 
     const removeBtn = createElement('button', 'supplement-sheet-editor__time-remove', '×');
     removeBtn.type = 'button';
+    removeBtn.setAttribute('aria-label', 'Удалить время приема');
     removeBtn.addEventListener('click', () => {
         const rows = container.querySelectorAll('.supplement-sheet-editor__time-row');
         if (rows.length <= 1) {
@@ -1450,7 +1460,9 @@ function appendSupplementTableEditorTimeRow(container, value = '') {
         syncSupplementTableEditorShell();
     });
 
-    row.append(input, removeBtn);
+    meta.append(label, input);
+    field.append(icon, meta);
+    row.append(field, removeBtn);
     container.append(row);
 }
 
@@ -1525,11 +1537,27 @@ function addSupplementTableEditorTimeRow(container, value = '') {
 
 function syncSupplementTableEditorViewportOffset() {
     if (!supplementTableSheetElements?.shell) return;
+    const activeElement = document.activeElement;
+    const hasKeyboardFocus = Boolean(
+        activeElement &&
+        supplementTableSheetElements.shell.contains(activeElement) &&
+        (
+            activeElement === supplementTableSheetElements.textInput ||
+            activeElement.classList?.contains('supplement-sheet-editor__time-input')
+        )
+    );
+
+    if (!hasKeyboardFocus) {
+        supplementTableSheetElements.shell.style.setProperty('--supplement-sheet-keyboard-offset', '0px');
+        return;
+    }
+
     const visualViewport = window.visualViewport;
     const layoutHeight = Math.round(window.innerHeight || document.documentElement.clientHeight || 0);
-    const keyboardOffset = visualViewport
+    const rawKeyboardOffset = visualViewport
         ? Math.max(0, Math.round(layoutHeight - visualViewport.height - visualViewport.offsetTop))
         : 0;
+    const keyboardOffset = rawKeyboardOffset >= 120 ? rawKeyboardOffset : 0;
     supplementTableSheetElements.shell.style.setProperty('--supplement-sheet-keyboard-offset', `${keyboardOffset}px`);
 }
 
@@ -1584,7 +1612,10 @@ function ensureSupplementTableSheetEditorShell() {
     const formulaRow = createElement('div', 'supplement-sheet-editor__formula');
     const formulaIcon = createElement('button', 'supplement-sheet-editor__formula-icon');
     formulaIcon.type = 'button';
-    formulaIcon.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><title>Edit SVG Icon</title><path fill="currentColor" d="M4 21.4V17l10.6-10.6q.275-.275.638-.425t.737-.15t.75.15t.625.425l1.4 1.4q.275.275.425.638T20.325 9t-.15.75t-.425.625L9.15 21H4zm2-2h2.325l8.6-8.6l-2.325-2.325L6 17.075zm9.75-9.775l-1.175-1.15l2.325 2.325z"/></svg>`;
+    formulaIcon.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 17 12" aria-hidden="true"><g><path fill="none" fill-rule="evenodd" d="M6.5,12.39 L6.5,12.39 L6.44,12.4 L6.43,12.4 L6.43,12.4 L6.38,12.39 C6.38,12.37 6.38,12.39 6.37,12.39 L6.37,12.39 L6.36,12.64 L6.37,12.65 L6.37,12.65 L6.43,12.7 L6.44,12.7 L6.44,12.7 L6.51,12.65 L6.51,12.65 L6.52,12.64 L6.51,12.39 C6.51,12.39 6.5,12.39 6.5,12.39 M6.65,12.31 L6.65,12.31 L6.53,12.37 L6.53,12.37 L6.53,12.39 L6.53,12.62 L6.54,12.64 L6.54,12.64 L6.66,12.69 C6.68,12.7 6.68,12.7 6.69,12.69 L6.69,12.68 L6.66,12.32 C6.66,12.32 6.66,12.31 6.65,12.31 M6.23,12.31 C6.23,12.31 6.22,12.31 6.22,12.32 L6.22,12.32 L6.19,12.68 C6.19,12.69 6.2,12.69 6.2,12.7 L6.22,12.69 L6.34,12.64 L6.35,12.64 L6.35,12.62 L6.35,12.39 L6.35,12.37 L6.35,12.37 Z"></path></g><g><path fill="none" fill-rule="evenodd" d="M6.44,12.09 L6.44,12.09 L6.39,12.1 L6.38,12.1 L6.38,12.1 L6.34,12.09 C6.34,12.08 6.34,12.09 6.31,12.09 L6.31,12.09 L6.3,12.34 L6.31,12.36 L6.31,12.36 L6.38,12.4 L6.39,12.4 L6.39,12.4 L6.46,12.36 L6.46,12.36 L6.47,12.34 L6.46,12.09 C6.46,12.09 6.44,12.09 6.44,12.09 M6.6,12.02 L6.6,12.02 L6.48,12.08 L6.48,12.08 L6.48,12.09 L6.48,12.32 L6.49,12.34 L6.49,12.34 L6.61,12.39 C6.63,12.4 6.63,12.4 6.63,12.39 L6.63,12.38 L6.61,12.03 C6.61,12.03 6.61,12.02 6.6,12.02 M6.18,12.02 C6.18,12.02 6.17,12.02 6.17,12.03 L6.17,12.03 L6.15,12.38 C6.15,12.39 6.16,12.39 6.16,12.4 L6.17,12.39 L6.29,12.34 L6.29,12.34 L6.29,12.32 L6.29,12.09 L6.29,12.08 L6.29,12.08 Z"></path><g><path fill="none" fill-rule="evenodd" d="M6.35,12.48 L6.35,12.48 L6.29,12.51 L6.28,12.51 L6.28,12.51 L6.24,12.48 C6.24,12.47 6.24,12.48 6.23,12.48 L6.23,12.48 L6.22,12.74 L6.23,12.75 L6.23,12.75 L6.28,12.8 L6.29,12.8 L6.29,12.8 L6.36,12.75 L6.36,12.75 L6.37,12.74 L6.36,12.48 C6.36,12.48 6.35,12.48 6.35,12.48 M6.51,12.41 L6.51,12.41 L6.38,12.47 L6.38,12.47 L6.38,12.48 L6.38,12.73 L6.39,12.74 L6.39,12.74 L6.52,12.79 C6.54,12.8 6.54,12.8 6.55,12.79 L6.55,12.78 L6.52,12.43 C6.52,12.43 6.52,12.41 6.51,12.41 M6.08,12.41 C6.08,12.41 6.06,12.41 6.06,12.43 L6.06,12.43 L6.04,12.78 C6.04,12.79 6.05,12.79 6.05,12.8 L6.06,12.79 L6.18,12.74 L6.2,12.74 L6.2,12.73 L6.2,12.48 L6.2,12.47 L6.2,12.47 Z"></path></g></g><g><path fill="none" fill-rule="evenodd" d="M5.3,10.73 L5.3,10.73 L5.26,10.75 L5.26,10.75 L5.25,10.75 L5.21,10.73 C5.21,10.73 5.21,10.73 5.2,10.74 L5.2,10.74 L5.19,10.95 L5.2,10.96 L5.2,10.96 L5.25,11 L5.26,11 L5.26,11 L5.31,10.96 L5.32,10.95 L5.32,10.95 L5.31,10.74 C5.31,10.74 5.31,10.73 5.3,10.73 M5.43,10.68 L5.42,10.68 L5.34,10.72 L5.33,10.73 L5.33,10.73 L5.34,10.94 L5.34,10.95 L5.35,10.95 L5.44,10.99 C5.45,11 5.45,11 5.46,10.99 L5.46,10.98 L5.44,10.69 C5.44,10.68 5.44,10.68 5.43,10.68 M5.09,10.68 C5.08,10.68 5.08,10.68 5.08,10.68 L5.07,10.69 L5.06,10.98 C5.06,10.99 5.06,10.99 5.06,11 L5.07,10.99 L5.17,10.95 L5.17,10.95 L5.17,10.94 L5.18,10.73 L5.18,10.73 L5.18,10.72 Z"></path><path fill="currentColor" fill-rule="evenodd" d="M11.31,9.45 C11.56,9.2 11.99,9.19 12.26,9.41 C12.53,9.65 12.56,10.04 12.35,10.33 L12.28,10.4 L11.25,11.39 C10.4,12.2 9.04,12.2 8.19,11.39 C7.92,11.11 7.47,11.1 7.18,11.32 L7.1,11.39 L6.75,11.74 C6.49,11.98 6.08,11.98 5.81,11.76 C5.53,11.52 5.47,11.11 5.72,10.84 L5.78,10.79 L6.12,10.46 C6.95,9.64 8.31,9.64 9.17,10.46 C9.44,10.72 9.89,10.74 10.21,10.5 L10.26,10.46 Z M10.04,.58 C10.72,-.05 11.78,-.06 12.46,.55 C13.12,1.16 13.19,2.19 12.58,2.86 L12.49,2.94 L4.49,10.65 C4.39,10.74 4.27,10.83 4.14,10.86 L4.04,10.92 L2.07,11.44 C1.84,11.51 1.59,11.46 1.42,11.3 C1.26,11.14 1.18,10.92 1.21,10.69 L1.22,10.61 L1.78,8.73 C1.82,8.59 1.89,8.47 1.98,8.37 L2.04,8.29 Z M11.68,1.19 C11.56,1.08 11.23,1.1 11.1,1.19 L10.67,1.46 L2.89,8.93 L2.31,10.33 L3.76,9.91 L11.82,2.15 C11.96,2.03 11.96,1.86 11.96,1.46"></path></g></svg>`;
+    formulaIcon.addEventListener('click', () => {
+        textInput.focus();
+    });
 
     const textInput = createElement('textarea', 'supplement-sheet-editor__input');
     textInput.rows = 1;
@@ -1609,31 +1640,15 @@ function ensureSupplementTableSheetEditorShell() {
     const blurBtn = createElement('button', 'supplement-sheet-editor__formula-commit');
     blurBtn.type = 'button';
     blurBtn.innerHTML = '✓';
-    blurBtn.addEventListener('click', () => {
-        textInput.blur();
+    blurBtn.addEventListener('click', async () => {
+        if (isSupplementTableSheetDraftDirty()) {
+            await saveSupplementTableSheetSelection();
+            return;
+        }
+        clearSupplementTableCellSelection({ preserveMenu: false, revertPreview: true });
     });
 
-    formulaRow.append(formulaIcon, textInput, blurBtn);
-
-    const symbols = createElement('div', 'supplement-sheet-editor__symbols');
-    ['=', '+', '-', '/', '*', '.', ',', ';', '(', ')'].forEach((symbol) => {
-        const btn = createElement('button', 'supplement-sheet-editor__symbol-btn', symbol);
-        btn.type = 'button';
-        btn.addEventListener('pointerdown', (event) => event.preventDefault());
-        btn.addEventListener('click', () => insertSupplementTableEditorSymbol(symbol));
-        symbols.append(btn);
-    });
-    const numericToggleBtn = createElement('button', 'supplement-sheet-editor__symbol-btn supplement-sheet-editor__symbol-btn--mode', '123');
-    numericToggleBtn.type = 'button';
-    numericToggleBtn.addEventListener('pointerdown', (event) => event.preventDefault());
-    numericToggleBtn.addEventListener('click', () => {
-        supplementTableSheetState.numericPadMode = !supplementTableSheetState.numericPadMode;
-        textInput.inputMode = supplementTableSheetState.numericPadMode ? 'decimal' : 'text';
-        textInput.blur();
-        requestAnimationFrame(() => textInput.focus());
-        syncSupplementTableEditorShell();
-    });
-    symbols.prepend(numericToggleBtn);
+    formulaRow.append(textInput, formulaIcon, blurBtn);
 
     const toolbar = createElement('div', 'supplement-sheet-editor__toolbar');
     const colorBtn = createElement('button', 'supplement-sheet-editor__tool-btn supplement-sheet-editor__tool-btn--color', 'A');
@@ -1659,7 +1674,7 @@ function ensureSupplementTableSheetEditorShell() {
 
     const timeBtn = createElement('button', 'supplement-sheet-editor__tool-btn supplement-sheet-editor__tool-btn--time');
     timeBtn.type = 'button';
-    timeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><title>Clock-plus SVG Icon</title><path fill="currentColor" d="M9 6h2v6H9zm6.92 5A8 8 0 1 0 18 16.29V15h2v1.29A8 8 0 0 0 15.92 11M19 8h-2V6h-2v2h-2v2h2v2h2v-2h2z"/></svg>`;
+    timeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><title>Round-more-time SVG Icon</title><path fill="currentColor" d="M10.75 8c-.41 0-.75.34-.75.75v4.69c0 .35.18.67.47.85l3.64 2.24a.713.713 0 1 0 .74-1.22L11.5 13.3V8.75c0-.41-.34-.75-.75-.75"></path><path fill="currentColor" d="M17.92 12A6.957 6.957 0 0 1 11 20c-3.9 0-7-3.1-7-7s3.1-7 7-7c.7 0 1.37.1 2 .29V4.23c-.64-.15-1.31-.23-2-.23c-5 0-9 4-9 9s4 9 9 9a8.963 8.963 0 0 0 8.94-10z"></path><path fill="currentColor" d="M22 5h-2V3c0-.55-.45-1-1-1s-1 .45-1 1v2h-2c-.55 0-1 .45-1 1s.45 1 1 1h2v2c0 .55.45 1 1 1s1-.45 1-1V7h2c.55 0 1-.45 1-1s-.45-1-1-1"></path></svg>`;
     timeBtn.addEventListener('click', () => toggleSupplementTableTimePanel());
 
     toolbar.append(colorBtn, timeBtn);
@@ -1786,19 +1801,31 @@ function ensureSupplementTableSheetEditorShell() {
     textColorRow.classList.add('supplement-sheet-editor__palette-row--collapsible');
     fillColorRow.style.display = 'none';
 
-    const sizeRow = createElement('button', 'supplement-sheet-editor__setting-row');
-    sizeRow.type = 'button';
+    const sizeRow = createElement('div', 'supplement-sheet-editor__setting-row supplement-sheet-editor__setting-row--size');
     const sizeLabel = createElement('span', 'supplement-sheet-editor__setting-label', 'Размер');
     const sizeValueWrap = createElement('span', 'supplement-sheet-editor__setting-value-wrap');
-    const sizeDown = createElement('span', 'supplement-sheet-editor__step-btn', '⌄');
+    const sizeDown = createElement('button', 'supplement-sheet-editor__step-btn', '−');
+    sizeDown.type = 'button';
     const sizeValue = createElement('span', 'supplement-sheet-editor__setting-value', '10 пт');
-    const sizeUp = createElement('span', 'supplement-sheet-editor__step-btn', '⌃');
+    const sizeUp = createElement('button', 'supplement-sheet-editor__step-btn', '+');
+    sizeUp.type = 'button';
     sizeValueWrap.append(sizeDown, sizeValue, sizeUp);
     sizeRow.append(sizeLabel, sizeValueWrap);
-    sizeRow.addEventListener('click', () => {
+    const applyFontSizeDelta = (delta) => {
         const current = Number(supplementTableSheetState.draft?.style?.fontSize || 10);
-        const next = current >= 24 ? 8 : current + 1;
+        const next = Math.min(24, Math.max(8, current + delta));
+        if (next === current) return;
         commitSupplementTableSheetDraftPatch({ style: { fontSize: next } });
+    };
+    sizeDown.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        applyFontSizeDelta(-1);
+    });
+    sizeUp.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        applyFontSizeDelta(1);
     });
 
     const textColorSettingRow = createElement('button', 'supplement-sheet-editor__setting-row');
@@ -1814,17 +1841,7 @@ function ensureSupplementTableSheetEditorShell() {
         syncSupplementTableEditorShell();
     });
 
-    const fontRow = createElement('button', 'supplement-sheet-editor__setting-row');
-    fontRow.type = 'button';
-    fontRow.disabled = true;
-    fontRow.innerHTML = `<span class="supplement-sheet-editor__setting-label">Шрифт</span><span class="supplement-sheet-editor__setting-value-wrap"><span class="supplement-sheet-editor__setting-value">Arial</span><span class="supplement-sheet-editor__setting-chevron">›</span></span>`;
-
-    const rotationRow = createElement('button', 'supplement-sheet-editor__setting-row');
-    rotationRow.type = 'button';
-    rotationRow.disabled = true;
-    rotationRow.innerHTML = `<span class="supplement-sheet-editor__setting-label">Поворот текста</span><span class="supplement-sheet-editor__setting-value-wrap"><span class="supplement-sheet-editor__setting-value">A↔</span><span class="supplement-sheet-editor__setting-chevron">›</span></span>`;
-
-    formatContent.append(formatTabs, textStyleRow, formatQuickRow, sizeRow, textColorSettingRow, textColorRow, fontRow, rotationRow);
+    formatContent.append(formatTabs, textStyleRow, formatQuickRow, sizeRow, textColorSettingRow, textColorRow);
     formatPanel.append(formatContent);
 
     const timesPanel = createElement('div', 'supplement-sheet-editor__times');
@@ -1841,7 +1858,7 @@ function ensureSupplementTableSheetEditorShell() {
     });
     timesPanel.append(timesHeader, timesList);
 
-    shell.append(formulaRow, symbols, toolbar, formatPanel, timesPanel);
+    shell.append(formulaRow, toolbar, formatPanel, timesPanel);
     document.body.append(shell);
 
     supplementTableSheetViewportAbortController?.abort?.();
@@ -1850,17 +1867,36 @@ function ensureSupplementTableSheetEditorShell() {
         syncSupplementTableEditorViewportOffset();
         scrollSupplementTableSelectedCellIntoView();
     };
+    const handleDismissPointerDown = (event) => {
+        if (!supplementTableSheetState.selectedCell || !isSupplementTableSheetDraftDirty()) return;
+        const target = event.target;
+        if (!target) return;
+        if (shell.contains(target)) return;
+
+        const clickedCell = target.closest?.('.supplement-dose-cell-btn');
+        if (clickedCell) {
+            const tableWrapper = clickedCell.closest('.supplement-table-wrapper');
+            clearSupplementTableCellSelection({ preserveMenu: false, revertPreview: true });
+            suppressNextSupplementTableDoseCellClick(tableWrapper);
+            return;
+        }
+
+        clearSupplementTableCellSelection({ preserveMenu: false, revertPreview: true });
+    };
     window.addEventListener('resize', syncViewport, { signal: supplementTableSheetViewportAbortController.signal });
     window.addEventListener('orientationchange', syncViewport, { signal: supplementTableSheetViewportAbortController.signal });
     window.visualViewport?.addEventListener('resize', syncViewport, { signal: supplementTableSheetViewportAbortController.signal });
     window.visualViewport?.addEventListener('scroll', syncViewport, { signal: supplementTableSheetViewportAbortController.signal });
+    document.addEventListener('pointerdown', handleDismissPointerDown, {
+        signal: supplementTableSheetViewportAbortController.signal,
+        capture: true
+    });
 
     supplementTableSheetElements = {
         shell,
+        formulaIcon,
         textInput,
         blurBtn,
-        symbols,
-        numericToggleBtn,
         toolbar,
         colorBtn,
         timeBtn,
@@ -1911,12 +1947,17 @@ function syncSupplementTableEditorShell() {
     syncSupplementTableInteractionLock();
 
     refs.textInput.value = draft.text;
-    refs.textInput.inputMode = supplementTableSheetState.numericPadMode ? 'decimal' : 'text';
-    refs.symbols.classList.toggle('is-visible', supplementTableSheetState.textInputFocused);
-    refs.numericToggleBtn.classList.toggle('is-active', supplementTableSheetState.numericPadMode);
+    refs.textInput.inputMode = 'text';
+    const hasInputValue = refs.textInput.value.trim().length > 0;
+    refs.formulaIcon.classList.toggle('is-hidden', supplementTableSheetState.textInputFocused);
     refs.blurBtn.classList.toggle('is-visible', supplementTableSheetState.textInputFocused);
+    refs.blurBtn.classList.toggle('is-ready', supplementTableSheetState.textInputFocused && hasInputValue);
 
     refs.colorBtn.style.setProperty('--supplement-editor-accent', style.color || '#111827');
+    refs.colorBtn.classList.toggle('is-active', supplementTableSheetState.formatPanelOpen);
+    refs.timeBtn.classList.toggle('is-active', supplementTableSheetState.timePanelOpen);
+    refs.colorBtn.setAttribute('aria-pressed', supplementTableSheetState.formatPanelOpen ? 'true' : 'false');
+    refs.timeBtn.setAttribute('aria-pressed', supplementTableSheetState.timePanelOpen ? 'true' : 'false');
     refs.formatBoldBtn.classList.toggle('is-active', style.bold);
     refs.formatItalicBtn.classList.toggle('is-active', style.italic);
     refs.formatUnderlineBtn.classList.toggle('is-active', style.underline);
@@ -1966,17 +2007,21 @@ function syncSupplementTableTopBarMenu() {
 
     const selectionActive = isSupplementTableSheetSelectionActive();
     const historyVisible = hasSupplementPlanHistoryChanges();
-    const menuVisible = selectionActive || historyVisible;
+
+    const historyActionsVisible = historyVisible && !selectionActive;
+    const menuVisible = historyActionsVisible;
 
     if (calendarBtn) {
-        calendarBtn.style.display = selectionActive ? 'none' : '';
+        calendarBtn.style.display = '';
+        calendarBtn.classList.toggle('supplements-topbar-calendar-btn--history-visible', historyActionsVisible);
     }
     if (addBtn) {
-        addBtn.style.display = selectionActive ? 'none' : '';
+        addBtn.style.display = '';
     }
 
     menu.replaceChildren();
     menu.classList.toggle('is-open', menuVisible);
+    menu.classList.toggle('supplements-topbar-inline-menu--history-visible', historyActionsVisible);
     if (!menuVisible) return;
 
     const createIconBtn = (className, label, html, onClick, disabled = false) => {
@@ -2012,32 +2057,6 @@ function syncSupplementTableTopBarMenu() {
     );
     }
 
-    if (selectionActive) {
-        menu.append(
-            createIconBtn(
-                'supplements-topbar-inline-menu-btn--format',
-                'Формат текста',
-                `<span class="supplements-topbar-inline-menu-btn__letter">A</span>`,
-                () => toggleSupplementTableFormatPanel()
-            )
-        );
-
-        const cancelBtn = createElement('button', 'supplements-topbar-inline-menu-text-btn supplements-topbar-inline-menu-text-btn--cancel', 'Отмена');
-        menu.querySelector('.supplements-topbar-inline-menu-btn--format')?.remove();
-        cancelBtn.type = 'button';
-        cancelBtn.addEventListener('click', () => {
-            clearSupplementTableCellSelection({ preserveMenu: false, revertPreview: true });
-        });
-
-        const saveBtn = createElement('button', 'supplements-topbar-inline-menu-text-btn supplements-topbar-inline-menu-text-btn--save', 'Сохранить');
-        saveBtn.type = 'button';
-        saveBtn.disabled = !isSupplementTableSheetDraftDirty();
-        saveBtn.addEventListener('click', async () => {
-            await saveSupplementTableSheetSelection();
-        });
-
-        menu.append(cancelBtn, saveBtn);
-    }
 }
 
 function handleSupplementTableCellSelection(button, mergeRange = null) {
@@ -2056,7 +2075,7 @@ function handleSupplementTableCellSelection(button, mergeRange = null) {
     }
 
     if (isSupplementTableSheetSelectionActive() && isSupplementTableSheetDraftDirty()) {
-        showToast('Сначала сохраните или отмените изменения в выбранной ячейке.');
+        clearSupplementTableCellSelection({ preserveMenu: false, revertPreview: true });
         return;
     }
 
