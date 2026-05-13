@@ -3247,13 +3247,7 @@ function getCreateFoodKeyboardHeight() {
 }
 
 function getCreateFoodScrollRoot(container) {
-    if (!container) return null;
-    if (container.scrollHeight > container.clientHeight + 1) return container;
-
-    const overlay = container.closest?.('.meal-overlay-layer');
-    if (overlay && overlay.scrollHeight > overlay.clientHeight + 1) return overlay;
-
-    return container;
+    return container || null;
 }
 
 function attachCreateFoodKeyboardAvoidance(container) {
@@ -3279,20 +3273,29 @@ function attachCreateFoodKeyboardAvoidance(container) {
         return active;
     };
 
+    const syncViewportFrame = () => {
+        const viewport = window.visualViewport;
+        const viewportHeight = Math.round(
+            viewport?.height ||
+            window.innerHeight ||
+            document.documentElement.clientHeight ||
+            0
+        );
+
+        if (!viewportHeight) return;
+
+        container.style.setProperty('--create-food-viewport-height', `${viewportHeight}px`);
+    };
+
     const syncKeyboardState = () => {
         const keyboardHeight = getCreateFoodKeyboardHeight();
         const focusedControl = findFocusedControl();
         const keyboardOpen = keyboardHeight > 80 || Boolean(focusedControl);
-        const nav = document.querySelector('.navigation.navigation--meal-search');
-        const navRect = nav?.getBoundingClientRect?.();
-        const navHeight = navRect?.height || 0;
-        const bottomPadding = keyboardOpen
-            ? Math.max(120, Math.round(keyboardHeight + navHeight + 28))
-            : 0;
+
+        syncViewportFrame();
 
         container.classList.toggle('create-food-keyboard-open', keyboardOpen);
         document.body.classList.toggle('meal-create-form-keyboard-open', keyboardOpen);
-        container.style.setProperty('--create-food-keyboard-padding', `${bottomPadding}px`);
     };
 
     const keepFocusedControlVisible = () => {
@@ -3308,15 +3311,16 @@ function attachCreateFoodKeyboardAvoidance(container) {
         if (!scrollRoot) return;
 
         const row = focusedControl.closest?.('.create-food-row') || focusedControl;
-        const viewport = window.visualViewport;
-        const viewportTop = viewport?.offsetTop || 0;
-        const viewportHeight = viewport?.height || window.innerHeight || document.documentElement.clientHeight || 0;
-        const viewportBottom = viewportTop + viewportHeight;
+        const containerRect = container.getBoundingClientRect();
+        const stickyHeader = container.querySelector('.create-food-sticky-header');
+        const stickyBottom = stickyHeader?.getBoundingClientRect?.().bottom || containerRect.top;
         const nav = document.querySelector('.navigation.navigation--meal-search');
         const navRect = nav?.getBoundingClientRect?.();
-        const navTop = navRect && navRect.height > 0 ? navRect.top : viewportBottom;
-        const visibleTop = viewportTop + 18;
-        const visibleBottom = Math.min(viewportBottom, navTop) - 18;
+        const visibleTop = Math.max(containerRect.top, stickyBottom) + 12;
+        const visibleBottomBase = navRect && navRect.height > 0
+            ? Math.min(containerRect.bottom, navRect.top)
+            : containerRect.bottom;
+        const visibleBottom = visibleBottomBase - 14;
         const rowRect = row.getBoundingClientRect();
 
         if (rowRect.bottom > visibleBottom) {
@@ -3351,7 +3355,7 @@ function attachCreateFoodKeyboardAvoidance(container) {
             if (!isFocusedInside) {
                 container.classList.remove('create-food-keyboard-open');
                 document.body.classList.remove('meal-create-form-keyboard-open');
-                container.style.setProperty('--create-food-keyboard-padding', '0px');
+                syncViewportFrame();
                 return;
             }
             scheduleKeepVisible(40);
@@ -3372,6 +3376,8 @@ function attachCreateFoodKeyboardAvoidance(container) {
     window.visualViewport?.addEventListener?.('resize', handleViewportChange, { passive: true });
     window.visualViewport?.addEventListener?.('scroll', handleViewportChange, { passive: true });
     window.addEventListener('resize', handleViewportChange, { passive: true });
+    syncViewportFrame();
+    syncKeyboardState();
 
     appendMealOverlayCleanup(container, () => {
         clearTimers();
@@ -3381,6 +3387,7 @@ function attachCreateFoodKeyboardAvoidance(container) {
         window.visualViewport?.removeEventListener?.('scroll', handleViewportChange);
         window.removeEventListener('resize', handleViewportChange);
         document.body.classList.remove('meal-create-form-keyboard-open');
+        container.style.removeProperty('--create-food-viewport-height');
     });
 }
 
@@ -12520,12 +12527,91 @@ topRow.append(titleWrap);
         renderMealPage();
     }
 
+    let mealSearchViewportSyncFrame = 0;
+    const mealSearchViewportSyncTimers = new Set();
+
+    function syncMealSearchBodyViewportHeight() {
+        mealSearchViewportSyncFrame = 0;
+        if (!screen.isConnected || !body.isConnected) return;
+
+        if (typeof syncBottomNavClearanceVar === 'function') {
+            try {
+                syncBottomNavClearanceVar();
+            } catch (_) {}
+        }
+
+        const viewport = window.visualViewport;
+        const viewportBottom = Math.round(
+            (viewport?.offsetTop || 0) +
+            (viewport?.height || window.innerHeight || document.documentElement.clientHeight || 0)
+        );
+        if (!viewportBottom) return;
+
+        const bodyRect = body.getBoundingClientRect();
+        if (!Number.isFinite(bodyRect.top)) return;
+
+        const nextBodyHeight = Math.max(0, Math.floor(viewportBottom - bodyRect.top));
+        if (!nextBodyHeight) return;
+
+        const nextHeightPx = `${nextBodyHeight}px`;
+        if (body.style.height !== nextHeightPx) {
+            body.style.height = nextHeightPx;
+            body.style.maxHeight = nextHeightPx;
+        }
+    }
+
+    function scheduleMealSearchBodyViewportHeightSync(delay = 0) {
+        if (delay > 0) {
+            const timerId = window.setTimeout(() => {
+                mealSearchViewportSyncTimers.delete(timerId);
+                scheduleMealSearchBodyViewportHeightSync();
+            }, delay);
+            mealSearchViewportSyncTimers.add(timerId);
+            return;
+        }
+
+        if (mealSearchViewportSyncFrame) {
+            cancelAnimationFrame(mealSearchViewportSyncFrame);
+        }
+
+        mealSearchViewportSyncFrame = requestAnimationFrame(syncMealSearchBodyViewportHeight);
+    }
+
+    const handleMealSearchViewportChange = () => {
+        scheduleMealSearchBodyViewportHeightSync();
+    };
+
     body.append(carousel);
     screen.append(topRow, controlsStrip, body);
     attachMealOverlayBottomNavSync(screen, () => {
         setMealBottomNavOverlayMode(buildMealSearchBottomNavConfig(state.mealSearchTab || 'all'));
+        scheduleMealSearchBodyViewportHeightSync();
     });
     pushMealOverlay(screen, { isSearch: true });
+
+    window.addEventListener('resize', handleMealSearchViewportChange, { passive: true });
+    window.addEventListener('orientationchange', handleMealSearchViewportChange, { passive: true });
+    window.visualViewport?.addEventListener?.('resize', handleMealSearchViewportChange, { passive: true });
+    window.visualViewport?.addEventListener?.('scroll', handleMealSearchViewportChange, { passive: true });
+
+    appendMealOverlayCleanup(screen, () => {
+        if (mealSearchViewportSyncFrame) {
+            cancelAnimationFrame(mealSearchViewportSyncFrame);
+            mealSearchViewportSyncFrame = 0;
+        }
+        mealSearchViewportSyncTimers.forEach((timerId) => clearTimeout(timerId));
+        mealSearchViewportSyncTimers.clear();
+        window.removeEventListener('resize', handleMealSearchViewportChange);
+        window.removeEventListener('orientationchange', handleMealSearchViewportChange);
+        window.visualViewport?.removeEventListener?.('resize', handleMealSearchViewportChange);
+        window.visualViewport?.removeEventListener?.('scroll', handleMealSearchViewportChange);
+        body.style.removeProperty('height');
+        body.style.removeProperty('max-height');
+    });
+
+    scheduleMealSearchBodyViewportHeightSync();
+    scheduleMealSearchBodyViewportHeightSync(140);
+    scheduleMealSearchBodyViewportHeightSync(320);
 
     scheduleMealSearchCarouselFrame();
 
