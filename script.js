@@ -9925,5 +9925,6 @@ onAuthStateChanged(auth, async (user) => {
     } finally {
         window.setTimeout(() => {
             hideInitialLoadingScreen();
-    }, 300); // можно увеличить если захочешь плавности
+        }, 300); // можно увеличить если захочешь плавности
+    }
 });
