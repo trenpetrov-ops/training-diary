@@ -14885,9 +14885,8 @@ button.delete-food-from-meal-btn {
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    box-sizing: border-box;
     padding-bottom: 0;
-    padding-top: var(--top-bar-pad-top);
+    /* padding-top: var(--top-bar-pad-top); */
 }
 .meal-search-screen--fill .meal-search-topbar {
     /* flex-shrink: 0; */
@@ -15073,10 +15072,6 @@ button.delete-food-from-meal-btn {
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: none;
     touch-action: pan-x pan-y;
-}
-.meal-search-screen--history .meal-search-tab-panel[data-tab="all"] .meal-search-list,
-.meal-search-screen--history .meal-search-tab-panel[data-tab="all"] .food-info-header-content {
-    touch-action: pan-y;
 }
 .meal-search-tab-carousel .meal-search-empty {
     width: 100%;
