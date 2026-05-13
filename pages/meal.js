@@ -3237,153 +3237,6 @@ function appendMealOverlayCleanup(target, cleanupFn) {
     };
 }
 
-function getCreateFoodKeyboardHeight() {
-    const viewport = window.visualViewport;
-    if (!viewport) return 0;
-
-    const layoutHeight = window.innerHeight || document.documentElement.clientHeight || viewport.height || 0;
-    const visibleBottom = viewport.height + (viewport.offsetTop || 0);
-    return Math.max(0, Math.round(layoutHeight - visibleBottom));
-}
-
-function getCreateFoodScrollRoot(container) {
-    if (!container) return null;
-    if (container.scrollHeight > container.clientHeight + 1) return container;
-
-    const overlay = container.closest?.('.meal-overlay-layer');
-    if (overlay && overlay.scrollHeight > overlay.clientHeight + 1) return overlay;
-
-    return container;
-}
-
-function attachCreateFoodKeyboardAvoidance(container) {
-    if (!container) return;
-
-    let frameId = 0;
-    const focusTimers = new Set();
-    let isFocusedInside = false;
-
-    const clearTimers = () => {
-        if (frameId) {
-            cancelAnimationFrame(frameId);
-            frameId = 0;
-        }
-        focusTimers.forEach((timerId) => clearTimeout(timerId));
-        focusTimers.clear();
-    };
-
-    const findFocusedControl = () => {
-        const active = document.activeElement;
-        if (!active || !container.contains(active)) return null;
-        if (!active.matches?.('input, textarea, select, [contenteditable="true"]')) return null;
-        return active;
-    };
-
-    const syncKeyboardState = () => {
-        const keyboardHeight = getCreateFoodKeyboardHeight();
-        const focusedControl = findFocusedControl();
-        const keyboardOpen = keyboardHeight > 80 || Boolean(focusedControl);
-        const nav = document.querySelector('.navigation.navigation--meal-search');
-        const navRect = nav?.getBoundingClientRect?.();
-        const navHeight = navRect?.height || 0;
-        const bottomPadding = keyboardOpen
-            ? Math.max(120, Math.round(keyboardHeight + navHeight + 28))
-            : 0;
-
-        container.classList.toggle('create-food-keyboard-open', keyboardOpen);
-        document.body.classList.toggle('meal-create-form-keyboard-open', keyboardOpen);
-        container.style.setProperty('--create-food-keyboard-padding', `${bottomPadding}px`);
-    };
-
-    const keepFocusedControlVisible = () => {
-        const focusedControl = findFocusedControl();
-        if (!focusedControl) {
-            syncKeyboardState();
-            return;
-        }
-
-        syncKeyboardState();
-
-        const scrollRoot = getCreateFoodScrollRoot(container);
-        if (!scrollRoot) return;
-
-        const row = focusedControl.closest?.('.create-food-row') || focusedControl;
-        const viewport = window.visualViewport;
-        const viewportTop = viewport?.offsetTop || 0;
-        const viewportHeight = viewport?.height || window.innerHeight || document.documentElement.clientHeight || 0;
-        const viewportBottom = viewportTop + viewportHeight;
-        const nav = document.querySelector('.navigation.navigation--meal-search');
-        const navRect = nav?.getBoundingClientRect?.();
-        const navTop = navRect && navRect.height > 0 ? navRect.top : viewportBottom;
-        const visibleTop = viewportTop + 18;
-        const visibleBottom = Math.min(viewportBottom, navTop) - 18;
-        const rowRect = row.getBoundingClientRect();
-
-        if (rowRect.bottom > visibleBottom) {
-            scrollRoot.scrollTop += Math.ceil(rowRect.bottom - visibleBottom);
-            return;
-        }
-
-        if (rowRect.top < visibleTop) {
-            scrollRoot.scrollTop -= Math.ceil(visibleTop - rowRect.top);
-        }
-    };
-
-    const scheduleKeepVisible = (delay = 0) => {
-        const timerId = window.setTimeout(() => {
-            focusTimers.delete(timerId);
-            if (frameId) cancelAnimationFrame(frameId);
-            frameId = requestAnimationFrame(keepFocusedControlVisible);
-        }, delay);
-        focusTimers.add(timerId);
-    };
-
-    const handleFocusIn = (event) => {
-        if (!event.target?.matches?.('input, textarea, select, [contenteditable="true"]')) return;
-        isFocusedInside = true;
-        scheduleKeepVisible(40);
-        scheduleKeepVisible(180);
-    };
-
-    const handleFocusOut = () => {
-        window.setTimeout(() => {
-            isFocusedInside = Boolean(findFocusedControl());
-            if (!isFocusedInside) {
-                container.classList.remove('create-food-keyboard-open');
-                document.body.classList.remove('meal-create-form-keyboard-open');
-                container.style.setProperty('--create-food-keyboard-padding', '0px');
-                return;
-            }
-            scheduleKeepVisible(40);
-        }, 80);
-    };
-
-    const handleViewportChange = () => {
-        if (!isFocusedInside && !findFocusedControl()) {
-            syncKeyboardState();
-            return;
-        }
-        scheduleKeepVisible(20);
-        scheduleKeepVisible(160);
-    };
-
-    container.addEventListener('focusin', handleFocusIn);
-    container.addEventListener('focusout', handleFocusOut);
-    window.visualViewport?.addEventListener?.('resize', handleViewportChange, { passive: true });
-    window.visualViewport?.addEventListener?.('scroll', handleViewportChange, { passive: true });
-    window.addEventListener('resize', handleViewportChange, { passive: true });
-
-    appendMealOverlayCleanup(container, () => {
-        clearTimers();
-        container.removeEventListener('focusin', handleFocusIn);
-        container.removeEventListener('focusout', handleFocusOut);
-        window.visualViewport?.removeEventListener?.('resize', handleViewportChange);
-        window.visualViewport?.removeEventListener?.('scroll', handleViewportChange);
-        window.removeEventListener('resize', handleViewportChange);
-        document.body.classList.remove('meal-create-form-keyboard-open');
-    });
-}
-
 function cleanupMealOverlayNode(node) {
     if (typeof node?._mealOverlayCleanup !== 'function') return;
 
@@ -7245,7 +7098,6 @@ async function renderEditFood() {
     attachMealOverlayBottomNavSync(container, syncCreateFoodBottomNav);
     container.append(stickyHeader, formCard);
     pushMealOverlay(container);
-    attachCreateFoodKeyboardAvoidance(container);
 
     requestAnimationFrame(() => {
         setupCreateFoodStickyTitleBorder({
@@ -13252,7 +13104,6 @@ function renderQuickAddStub() {
     attachMealOverlayBottomNavSync(container, syncQuickAddBottomNav);
     container.append(stickyHeader, formCard);
     pushMealOverlay(container);
-    attachCreateFoodKeyboardAvoidance(container);
 
     requestAnimationFrame(() => {
         setupCreateFoodStickyTitleBorder({
@@ -13662,7 +13513,6 @@ function renderCreateFood() {
     attachMealOverlayBottomNavSync(container, syncCreateFoodBottomNav);
     container.append(stickyHeader, formCard);
     pushMealOverlay(container);
-    attachCreateFoodKeyboardAvoidance(container);
 
     requestAnimationFrame(() => {
         setupCreateFoodStickyTitleBorder({
@@ -14029,7 +13879,6 @@ function renderCreateRecipe() {
     attachMealOverlayBottomNavSync(container, syncCreateRecipeBottomNav);
     container.append(stickyHeader, formCard);
     pushMealOverlay(container);
-    attachCreateFoodKeyboardAvoidance(container);
 
     requestAnimationFrame(() => {
         setupCreateFoodStickyTitleBorder({
@@ -14371,7 +14220,6 @@ async function renderEditRecipe() {
     attachMealOverlayBottomNavSync(container, syncCreateRecipeBottomNav);
     container.append(stickyHeader, formCard);
     pushMealOverlay(container);
-    attachCreateFoodKeyboardAvoidance(container);
 
     requestAnimationFrame(() => {
         setupCreateFoodStickyTitleBorder({

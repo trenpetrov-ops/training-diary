@@ -6289,8 +6289,6 @@ function setupProgramDetailsTopBarTitleSync() {
 
     rootScroll.addEventListener('scroll', requestUpdate, { passive: true });
     window.addEventListener('resize', requestUpdate);
-    window.visualViewport?.addEventListener?.('resize', requestUpdate);
-    window.visualViewport?.addEventListener?.('scroll', requestUpdate);
 
     requestUpdate();
 
@@ -6301,8 +6299,6 @@ function setupProgramDetailsTopBarTitleSync() {
         }
         rootScroll.removeEventListener('scroll', requestUpdate);
         window.removeEventListener('resize', requestUpdate);
-        window.visualViewport?.removeEventListener?.('resize', requestUpdate);
-        window.visualViewport?.removeEventListener?.('scroll', requestUpdate);
         barTitle.style.opacity = '0';
         pageTitle.style.opacity = '1';
         topBar.classList.remove('top-bar-stuck-border');
@@ -6355,8 +6351,6 @@ function setupJournalRecordDetailsTopBarTitleSync() {
 
     rootScroll.addEventListener('scroll', requestUpdate, { passive: true });
     window.addEventListener('resize', requestUpdate);
-    window.visualViewport?.addEventListener?.('resize', requestUpdate);
-    window.visualViewport?.addEventListener?.('scroll', requestUpdate);
 
     requestUpdate();
 
@@ -6367,8 +6361,6 @@ function setupJournalRecordDetailsTopBarTitleSync() {
         }
         rootScroll.removeEventListener('scroll', requestUpdate);
         window.removeEventListener('resize', requestUpdate);
-        window.visualViewport?.removeEventListener?.('resize', requestUpdate);
-        window.visualViewport?.removeEventListener?.('scroll', requestUpdate);
         barTitle.style.opacity = '0';
         headerTitleGroup.style.opacity = '1';
         deleteBtn.style.opacity = '1';
@@ -7105,7 +7097,7 @@ function syncJournalCalendarLayout(container, viewport, track) {
         available = Math.max(0, Math.floor(filtersTop - containerTop - gapBeforeFilters));
     } else {
         // Fallback: считаем от высоты viewport (на случай, если фильтры ещё не в DOM / не измерились).
-        const vvHeight = window.visualViewport?.height || window.innerHeight || document.documentElement.clientHeight || 0;
+        const vvHeight = window.innerHeight || document.documentElement.clientHeight || 0;
         const bottomNavOccupied = typeof readCssPxVar === 'function' ? readCssPxVar('--bottom-nav-occupied', 82) : 82;
         const bottomNavGap = typeof readCssPxVar === 'function' ? readCssPxVar('--bottom-nav-gap', 10) : 10;
         // -19px тот же буфер, что и в основном пути (через filtersTop)
@@ -7282,8 +7274,6 @@ function renderCalendar(container, journalRecords) {
         const resync = () => syncJournalCalendarLayout(container, viewport, track);
         window.addEventListener('resize', resync, { passive: true });
         window.addEventListener('orientationchange', resync, { passive: true });
-        window.visualViewport?.addEventListener?.('resize', resync, { passive: true });
-        window.visualViewport?.addEventListener?.('scroll', resync, { passive: true });
     }
 
     // ✅ Закрытие меню по клику вне
@@ -9453,7 +9443,6 @@ async function syncAppChrome() {
 
 function syncAppViewportHeightVar() {
     const viewportHeight = Math.round(
-        window.visualViewport?.height ||
         window.innerHeight ||
         document.documentElement.clientHeight ||
         0
@@ -9482,7 +9471,6 @@ function syncBottomNavClearanceVar() {
 
     const navRect = nav.getBoundingClientRect();
     const viewportHeight = Math.round(
-        window.visualViewport?.height ||
         window.innerHeight ||
         document.documentElement.clientHeight ||
         0
@@ -9511,11 +9499,6 @@ function ensureAppViewportHeightBinding() {
 
     window.addEventListener('resize', resyncAppViewportHeight);
     window.addEventListener('orientationchange', resyncAppViewportHeight);
-
-    if (window.visualViewport) {
-        window.visualViewport.addEventListener('resize', resyncAppViewportHeight);
-        window.visualViewport.addEventListener('scroll', resyncAppViewportHeight);
-    }
 
     appViewportBindingsReady = true;
 }

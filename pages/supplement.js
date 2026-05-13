@@ -1536,29 +1536,7 @@ function addSupplementTableEditorTimeRow(container, value = '') {
 }
 
 function syncSupplementTableEditorViewportOffset() {
-    if (!supplementTableSheetElements?.shell) return;
-    const activeElement = document.activeElement;
-    const hasKeyboardFocus = Boolean(
-        activeElement &&
-        supplementTableSheetElements.shell.contains(activeElement) &&
-        (
-            activeElement === supplementTableSheetElements.textInput ||
-            activeElement.classList?.contains('supplement-sheet-editor__time-input')
-        )
-    );
-
-    if (!hasKeyboardFocus) {
-        supplementTableSheetElements.shell.style.setProperty('--supplement-sheet-keyboard-offset', '0px');
-        return;
-    }
-
-    const visualViewport = window.visualViewport;
-    const layoutHeight = Math.round(window.innerHeight || document.documentElement.clientHeight || 0);
-    const rawKeyboardOffset = visualViewport
-        ? Math.max(0, Math.round(layoutHeight - visualViewport.height - visualViewport.offsetTop))
-        : 0;
-    const keyboardOffset = rawKeyboardOffset >= 120 ? rawKeyboardOffset : 0;
-    supplementTableSheetElements.shell.style.setProperty('--supplement-sheet-keyboard-offset', `${keyboardOffset}px`);
+    return;
 }
 
 function scrollSupplementTableSelectedCellIntoView() {
@@ -1885,8 +1863,6 @@ function ensureSupplementTableSheetEditorShell() {
     };
     window.addEventListener('resize', syncViewport, { signal: supplementTableSheetViewportAbortController.signal });
     window.addEventListener('orientationchange', syncViewport, { signal: supplementTableSheetViewportAbortController.signal });
-    window.visualViewport?.addEventListener('resize', syncViewport, { signal: supplementTableSheetViewportAbortController.signal });
-    window.visualViewport?.addEventListener('scroll', syncViewport, { signal: supplementTableSheetViewportAbortController.signal });
     document.addEventListener('pointerdown', handleDismissPointerDown, {
         signal: supplementTableSheetViewportAbortController.signal,
         capture: true
@@ -2716,8 +2692,6 @@ function renderSupplementsTableView(contentContainer, planData) {
     attachSupplementTableBounceLock(tableWrapper, supplementTableViewportSyncController.signal);
     window.addEventListener('resize', scheduleTableViewportLayout, { signal: supplementTableViewportSyncController.signal });
     window.addEventListener('orientationchange', scheduleTableViewportLayout, { signal: supplementTableViewportSyncController.signal });
-    window.visualViewport?.addEventListener('resize', scheduleTableViewportLayout, { signal: supplementTableViewportSyncController.signal });
-    window.visualViewport?.addEventListener('scroll', scheduleTableViewportLayout, { signal: supplementTableViewportSyncController.signal });
 
     let syncFrameId = 0;
     const handleScroll = () => {
@@ -3219,7 +3193,6 @@ function bindSupplementJumpButton(buttonWrap, wrapper) {
     syncVisibility();
     resolvedWrapper.addEventListener('scroll', syncVisibility, { passive: true, signal: supplementTableViewportSyncController?.signal });
     window.addEventListener('resize', syncVisibility, { signal: supplementTableViewportSyncController?.signal });
-    window.visualViewport?.addEventListener('resize', syncVisibility, { signal: supplementTableViewportSyncController?.signal });
 }
 
 function syncSupplementsTableViewport(contentContainer, activeViewport, options = {}) {
@@ -3230,7 +3203,6 @@ function syncSupplementsTableViewport(contentContainer, activeViewport, options 
     } = options;
 
     const viewportHeight = Math.round(
-        window.visualViewport?.height ||
         window.innerHeight ||
         document.documentElement?.clientHeight ||
         0
@@ -3532,8 +3504,6 @@ function renderSupplementsCalendarView(contentContainer, planData) {
     requestAnimationFrame(syncCalendarLayout);
     window.addEventListener('resize', scheduleCalendarLayout, { signal: supplementTableViewportSyncController.signal });
     window.addEventListener('orientationchange', scheduleCalendarLayout, { signal: supplementTableViewportSyncController.signal });
-    window.visualViewport?.addEventListener('resize', scheduleCalendarLayout, { signal: supplementTableViewportSyncController.signal });
-    window.visualViewport?.addEventListener('scroll', scheduleCalendarLayout, { signal: supplementTableViewportSyncController.signal });
 }
 
 function renderSupplementCalendarMonthPage(page, monthDate, planData) {
@@ -4825,14 +4795,12 @@ function showSupplementDoseLongPressActionMenu(tableWrapper, anchorElement, menu
         if (closed || !popover.isConnected || !anchorElement.isConnected) return;
         const anchorRect = anchorElement.getBoundingClientRect();
         const viewportWidth = Math.round(
-            window.visualViewport?.width ||
-                window.innerWidth ||
+            window.innerWidth ||
                 document.documentElement?.clientWidth ||
                 0
         );
         const viewportHeight = Math.round(
-            window.visualViewport?.height ||
-                window.innerHeight ||
+            window.innerHeight ||
                 document.documentElement?.clientHeight ||
                 0
         );
@@ -4859,8 +4827,6 @@ function showSupplementDoseLongPressActionMenu(tableWrapper, anchorElement, menu
         document.removeEventListener('pointerdown', handlePointerDown, true);
         tableWrapper.removeEventListener('scroll', handleWrapperScroll);
         window.removeEventListener('resize', handleViewportChange);
-        window.visualViewport?.removeEventListener('resize', handleViewportChange);
-        window.visualViewport?.removeEventListener('scroll', handleViewportChange);
         popover.remove();
         if (supplementDoseLongPressOverlayCleanup === close) {
             supplementDoseLongPressOverlayCleanup = null;
@@ -4880,8 +4846,6 @@ function showSupplementDoseLongPressActionMenu(tableWrapper, anchorElement, menu
     document.addEventListener('pointerdown', handlePointerDown, true);
     tableWrapper.addEventListener('scroll', handleWrapperScroll, { passive: true });
     window.addEventListener('resize', handleViewportChange);
-    window.visualViewport?.addEventListener('resize', handleViewportChange);
-    window.visualViewport?.addEventListener('scroll', handleViewportChange);
 
     requestAnimationFrame(syncPosition);
     supplementDoseLongPressOverlayCleanup = close;
@@ -6831,8 +6795,8 @@ function syncSupplementColumnDragChip(tableWrapper, table, sourceColumnIndex, po
 
   chip.textContent = sourceHeaderCell.querySelector('.sup-name')?.textContent?.trim() || '';
 
-  const viewportHeight = Math.round(window.visualViewport?.height || window.innerHeight || document.documentElement?.clientHeight || 0);
-  const viewportWidth = Math.round(window.visualViewport?.width || window.innerWidth || document.documentElement?.clientWidth || 0);
+  const viewportHeight = Math.round(window.innerHeight || document.documentElement?.clientHeight || 0);
+  const viewportWidth = Math.round(window.innerWidth || document.documentElement?.clientWidth || 0);
   const wrapperRect = tableWrapper.getBoundingClientRect();
   const stickyHeaderRect = stickyHeader?.getBoundingClientRect() || wrapperRect;
   const columnRect = positionHeaderCell.getBoundingClientRect();
