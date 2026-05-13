@@ -14875,7 +14875,7 @@ button.delete-food-from-meal-btn {
     padding-bottom: 24px;
 }
 .meal-search-screen.meal-search-screen--fill.meal-search-screen--history {
-    padding-top: var(--top-bar-pad-top);
+    /* padding-top: var(--top-bar-pad-top); */
 }
 .meal-search-screen.meal-search-screen--fill {
     flex: 1;
@@ -14886,6 +14886,7 @@ button.delete-food-from-meal-btn {
     flex-direction: column;
     overflow: hidden;
     padding-bottom: 0;
+    padding-top: var(--top-bar-pad-top);
 }
 .meal-search-screen--fill .meal-search-topbar {
     /* flex-shrink: 0; */
@@ -15112,7 +15113,7 @@ button.delete-food-from-meal-btn {
     align-items: flex-start;
     /* height: 17px; */
     padding-top: 0;
-    padding: 0px 0px 6px 0;
+    padding: 0px 0px 12px 0;
 }
 .meal-search-topbar--bottom-nav-mode .meal-search-meal-picker .meal-search-meal-trigger {
     display: flex;
