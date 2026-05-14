@@ -9336,6 +9336,7 @@ if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
 // 🔄 ГЛАВНЫЙ РЕНДЕР: Определяет, что показать (ИСПРАВЛЕНО)
 // =================================================================
 let appViewportBindingsReady = false;
+let keyboardBottomNavBindingsReady = false;
 let rootScrollLockFrameId = 0;
 let rootScrollLockTimeoutId = 0;
 let rootScrollLockBindingsReady = false;
@@ -9503,6 +9504,34 @@ function ensureAppViewportHeightBinding() {
     appViewportBindingsReady = true;
 }
 
+function ensureNativeKeyboardBottomNavBinding() {
+    if (keyboardBottomNavBindingsReady) return;
+    keyboardBottomNavBindingsReady = true;
+
+    if (!isCapacitorNativePlatform()) return;
+
+    const Keyboard = window.Capacitor?.Plugins?.Keyboard;
+    if (!Keyboard?.addListener) return;
+
+    const setKeyboardVisible = (visible) => {
+        document.body?.classList.toggle('app-keyboard-visible', Boolean(visible));
+    };
+
+    const bindKeyboardEvent = (eventName, handler) => {
+        try {
+            const result = Keyboard.addListener(eventName, handler);
+            result?.catch?.(() => {});
+        } catch (_) {}
+    };
+
+    bindKeyboardEvent('keyboardWillShow', () => setKeyboardVisible(true));
+    bindKeyboardEvent('keyboardDidShow', () => setKeyboardVisible(true));
+    bindKeyboardEvent('keyboardWillHide', () => setKeyboardVisible(false));
+    bindKeyboardEvent('keyboardDidHide', () => setKeyboardVisible(false));
+
+    window.addEventListener('pagehide', () => setKeyboardVisible(false));
+}
+
 function syncRootScrollLockState() {
     const root = document.getElementById('root');
     if (!root) return;
@@ -9627,10 +9656,12 @@ window.addEventListener('unhandledrejection', (event) => {
 });
 
 runBootstrapStep('ensureAppViewportHeightBinding', ensureAppViewportHeightBinding);
+runBootstrapStep('ensureNativeKeyboardBottomNavBinding', ensureNativeKeyboardBottomNavBinding);
 
 export function render() {
     const root = document.getElementById('root');
     ensureAppViewportHeightBinding();
+    ensureNativeKeyboardBottomNavBinding();
     ensureRootScrollLockBinding();
 
     // Сохраняем scrollTop текущего экрана перед перерисовкой.
