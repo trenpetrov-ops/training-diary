@@ -52,7 +52,8 @@ import { bindSwipeBlock, closeSwipeRowVisual } from '../swipe-engine.js';
 import {
     syncMealSearchBottomNavFromOverlay,
     setMealBottomNavOverlayMode,
-    clearMealBottomNavOverlayMode
+    clearMealBottomNavOverlayMode,
+    setMealBottomNavSuppressed
 } from '../nav/bottom-nav.js';
 let unsubscribeMeals = null;
 let foodsMapCache = null;
@@ -3441,6 +3442,101 @@ function setupCreateFoodStickyTitleBorder({ titleEl, watchEl }) {
     };
 }
 
+function getMealOverlayBackIconMarkup() {
+    return `
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"></path>
+        </svg>
+    `;
+}
+
+function syncMealOverlayTopbarActionButton(button, {
+    text = '',
+    html = '',
+    label = '',
+    icon = false,
+    disabled = false,
+    hidden = false,
+    onClick = null
+} = {}) {
+    if (!button) return;
+
+    button.type = 'button';
+    button.classList.toggle('meal-search-topbar-action--icon', Boolean(icon));
+    button.classList.toggle('meal-search-topbar-action--text', !icon);
+    button.style.display = hidden ? 'none' : '';
+    button.disabled = Boolean(hidden || disabled);
+    button.classList.toggle('disabled', Boolean(disabled));
+
+    if (html) {
+        button.innerHTML = html;
+    } else {
+        button.textContent = String(text || '');
+    }
+
+    const ariaLabel = String(label || text || '').trim();
+    if (!hidden && ariaLabel) {
+        button.setAttribute('aria-label', ariaLabel);
+    } else {
+        button.removeAttribute('aria-label');
+    }
+
+    button.onclick = typeof onClick === 'function' ? onClick : null;
+}
+
+function createMealOverlayTopbarActionButton(config = {}) {
+    const button = createElement('button', 'meal-search-topbar-action meal-search-topbar-action--text');
+    syncMealOverlayTopbarActionButton(button, config);
+    return button;
+}
+
+function createMealOverlayInlineTopbar({
+    onBack = null,
+    centerContent = null,
+    actions = []
+} = {}) {
+    const topBar = createElement('div', 'meal-search-topbar meal-search-topbar--inline-actions meal-overlay-inline-topbar');
+
+    const leading = createElement('div', 'meal-search-topbar__leading');
+    const backBtn = createElement('button', 'meal-search-back-btn');
+    backBtn.type = 'button';
+    backBtn.setAttribute('aria-label', 'Назад');
+    backBtn.innerHTML = getMealOverlayBackIconMarkup();
+    backBtn.onclick = typeof onBack === 'function' ? onBack : null;
+    leading.append(backBtn);
+
+    const center = createElement('div', 'meal-search-topbar__center');
+    if (centerContent instanceof Node) {
+        center.append(centerContent);
+    } else if (centerContent != null && String(centerContent).trim()) {
+        center.append(createElement('div', 'meal-overlay-inline-center-title', String(centerContent)));
+    }
+
+    const actionsWrap = createElement('div', 'meal-search-actions meal-search-topbar__actions');
+    const actionButtons = actions.map((action) => {
+        const button = action instanceof Node ? action : createMealOverlayTopbarActionButton(action);
+        actionsWrap.append(button);
+        return button;
+    });
+
+    topBar.append(leading, center, actionsWrap);
+
+    return {
+        topBar,
+        backBtn,
+        center,
+        actionsWrap,
+        actionButtons
+    };
+}
+
+function attachMealOverlayTopbarMode(target) {
+    attachMealOverlayBottomNavSync(target, () => {
+        clearMealBottomNavOverlayMode();
+        setMealBottomNavSuppressed(true);
+    });
+}
+
 function setupMealMonthlySummaryStickyBorder(stickyEl, watchEl) {
     const scrollRoot = stickyEl?.closest('.meal-monthly-summary-screen')
         || stickyEl?.closest('.meal-overlay-layer')
@@ -3665,8 +3761,6 @@ function renderMealMonthlySummaryPage() {
     }
     const screen = createElement('div', 'meal-monthly-summary-screen');
     const sticky = createElement('div', 'meal-monthly-summary-sticky');
-    const title = createElement('h3', 'create-food-sticky-h3 meal-monthly-summary-title', 'Сводка калорий');
-
     const selector = createElement('div', 'meal-monthly-summary-selector');
 
     const prevBtn = createElement('button', 'meal-monthly-summary-nav-btn meal-monthly-summary-nav-btn--prev');
@@ -3692,6 +3786,16 @@ function renderMealMonthlySummaryPage() {
     `;
 
     selector.append(prevBtn, monthBtn, nextBtn);
+
+    const handleBackToMeal = () => {
+        closeMealOverlayAndShowMealMain();
+    };
+
+    const { topBar } = createMealOverlayInlineTopbar({
+        onBack: handleBackToMeal,
+        centerContent: selector
+    });
+    topBar.classList.add('meal-search-topbar--product-search-page', 'meal-monthly-summary-topbar');
 
     const head = createElement('div', 'meal-monthly-summary-head');
     head.innerHTML = `
@@ -3727,13 +3831,9 @@ function renderMealMonthlySummaryPage() {
     const monthPickerGrid = createElement('div', 'meal-monthly-summary-picker-grid');
     monthPicker.append(monthPickerHead, monthPickerGrid);
 
-    sticky.append(title, selector, head);
+    sticky.append(topBar, head);
     screen.append(sticky, body, monthPickerBackdrop, monthPicker);
     setupMealMonthlySummaryStickyBorder(sticky, body);
-
-    const handleBackToMeal = () => {
-        closeMealOverlayAndShowMealMain();
-    };
 
     const openBurnedStub = (dateStr) => {
         state.mealSummarySelectedDate = dateStr;
@@ -4047,14 +4147,7 @@ function renderMealMonthlySummaryPage() {
         renderMonthPicker();
     };
 
-    attachMealOverlayBottomNavSync(screen, () => {
-        setMealBottomNavOverlayMode({
-            visible: true,
-            onBack: handleBackToMeal,
-            actionVisible: false,
-            secondaryActionVisible: false
-        });
-    });
+    attachMealOverlayTopbarMode(screen);
 
     screen._mealOverlayCleanup = () => {
         closeMonthPicker();
@@ -4062,11 +4155,10 @@ function renderMealMonthlySummaryPage() {
     };
 
     openMealOverlay(screen);
-    setupCreateFoodStickyTitleBorder({ titleEl: title, watchEl: selector });
     cleanupSticky = () => {
-        if (typeof title._cleanupStickyBorder === 'function') {
-            title._cleanupStickyBorder();
-            title._cleanupStickyBorder = null;
+        if (typeof sticky._cleanupMonthlySummaryStickyBorder === 'function') {
+            sticky._cleanupMonthlySummaryStickyBorder();
+            sticky._cleanupMonthlySummaryStickyBorder = null;
         }
     };
     syncMonthButtonLabel();
@@ -4116,8 +4208,12 @@ function renderMealBurnedSummaryStubPage() {
 
     const dateStr = state.mealBurnedSummaryDate || state.mealSummarySelectedDate || formatLocalDate(new Date());
     const screen = createElement('div', 'meal-burned-summary-stub-screen meal-apple-health-screen');
-    const title = createElement('h3', 'create-food-sticky-h3 meal-burned-summary-stub-title', 'Потраченные калории');
-    const subtitle = createElement('div', 'meal-burned-summary-stub-date', formatMealSummaryStubDateLabel(dateStr));
+    const sticky = createElement('div', 'meal-monthly-summary-sticky meal-burned-summary-sticky');
+    const subtitle = createElement(
+        'div',
+        'meal-overlay-inline-center-title meal-burned-summary-stub-date',
+        formatMealSummaryStubDateLabel(dateStr)
+    );
     const actionRow = createElement('div', 'meal-apple-health-action-row');
     const syncBtn = createElement('button', 'btn btn-primary meal-apple-health-sync-btn', 'Получить данные Apple Watch');
     syncBtn.type = 'button';
@@ -4130,8 +4226,20 @@ function renderMealBurnedSummaryStubPage() {
     const content = createElement('div', 'meal-apple-health-content');
     const watchCard = createElement('div', 'meal-burned-summary-stub-card meal-apple-health-watch-card');
 
+    const handleBack = () => {
+        state.mealView = 'monthSummary';
+        renderMealPage();
+    };
+
+    const { topBar } = createMealOverlayInlineTopbar({
+        onBack: handleBack,
+        centerContent: subtitle
+    });
+    topBar.classList.add('meal-search-topbar--product-search-page', 'meal-burned-summary-topbar');
+    sticky.append(topBar);
+
     actionRow.append(syncBtn);
-    screen.append(title, subtitle, actionRow, notice, iosHint, content);
+    screen.append(sticky, actionRow, notice, iosHint, content);
 
     const pendingSync = state.appleHealthSyncReturn
         && state.appleHealthSyncReturn.target === 'mealBurned'
@@ -4361,11 +4469,11 @@ function renderMealBurnedSummaryStubPage() {
         }
     };
 
-    setupCreateFoodStickyTitleBorder({ titleEl: title, watchEl: actionRow });
+    setupMealMonthlySummaryStickyBorder(sticky, actionRow);
     const cleanupSticky = () => {
-        if (typeof title._cleanupStickyBorder === 'function') {
-            title._cleanupStickyBorder();
-            title._cleanupStickyBorder = null;
+        if (typeof sticky._cleanupMonthlySummaryStickyBorder === 'function') {
+            sticky._cleanupMonthlySummaryStickyBorder();
+            sticky._cleanupMonthlySummaryStickyBorder = null;
         }
     };
 
@@ -4382,19 +4490,7 @@ function renderMealBurnedSummaryStubPage() {
     document.addEventListener('visibilitychange', handleVisibilityResume);
     window.addEventListener('focus', handleWindowFocus);
 
-    const handleBack = () => {
-        state.mealView = 'monthSummary';
-        renderMealPage();
-    };
-
-    attachMealOverlayBottomNavSync(screen, () => {
-        setMealBottomNavOverlayMode({
-            visible: true,
-            onBack: handleBack,
-            actionVisible: false,
-            secondaryActionVisible: false
-        });
-    });
+    attachMealOverlayTopbarMode(screen);
 
     screen._mealOverlayCleanup = () => {
         document.removeEventListener('visibilitychange', handleVisibilityResume);
@@ -6743,15 +6839,7 @@ async function renderEditFood() {
 
     const container = createElement('div', 'create-food create-food-form-page');
 
-    const topBar = createElement('div', 'create-food-topbar');
-
-    const backBtn = createElement('button', 'back-btn');
-    backBtn.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
-            <path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"/>
-        </svg>
-    `;
-    backBtn.onclick = () => {
+    const handleBack = () => {
         const backTarget = state.editFoodBackTarget || 'foodDetails';
 
         if (backTarget === 'recipeFoodPreview') {
@@ -6772,6 +6860,17 @@ async function renderEditFood() {
         state.mealView = 'foodDetails';
         renderMealPage();
     };
+    let saveBtn = null;
+    const topBarActionBtn = createMealOverlayTopbarActionButton({
+        text: 'Сохранить продукт',
+        label: 'Сохранить продукт',
+        disabled: true,
+        onClick: () => saveBtn?.onclick?.()
+    });
+    const { topBar } = createMealOverlayInlineTopbar({
+        onBack: handleBack,
+        actions: [topBarActionBtn]
+    });
 
     const pageTitle = createElement('h3', 'create-food-sticky-h3', 'Редактировать продукт');
 
@@ -6987,16 +7086,15 @@ async function renderEditFood() {
 
     rows.forEach(row => formCard.append(row));
 
-    const saveBtn = createElement('button', 'save-btn create-food-submit-btn', 'Сохранить');
+    saveBtn = createElement('button', 'save-btn create-food-submit-btn', 'Сохранить');
     saveBtn.disabled = true;
 
-    function syncCreateFoodBottomNav() {
-        setMealBottomNavOverlayMode({
-            visible: true,
-            onBack: () => backBtn.onclick?.(),
-            actionText: 'Сохранить продукт',
-            onAction: () => saveBtn.onclick?.(),
-            actionDisabled: saveBtn.disabled
+    function syncCreateFoodTopbarAction() {
+        syncMealOverlayTopbarActionButton(topBarActionBtn, {
+            text: 'Сохранить продукт',
+            label: 'Сохранить продукт',
+            disabled: saveBtn.disabled,
+            onClick: () => saveBtn?.onclick?.()
         });
     }
 
@@ -7019,7 +7117,7 @@ async function renderEditFood() {
 
         saveBtn.disabled = !allFilled;
         saveBtn.classList.toggle('active', allFilled);
-        syncCreateFoodBottomNav();
+        syncCreateFoodTopbarAction();
     }
 
     [
@@ -7095,7 +7193,7 @@ async function renderEditFood() {
         renderMealPage();
     };
 
-    attachMealOverlayBottomNavSync(container, syncCreateFoodBottomNav);
+    attachMealOverlayTopbarMode(container);
     container.append(stickyHeader, formCard);
     pushMealOverlay(container);
 
@@ -7197,13 +7295,7 @@ async function renderFoodDetails() {
 
         if (!food) {
             const container = createElement('div', 'create-food');
-            const topBarCreateFood = createElement('div','topBar-create-food');
-            const backBtn = createElement('button', 'back-btn');
-                backBtn.innerHTML = `
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><title>Ios-arrow-ltr-24-filled SVG Icon</title><path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"></path></svg>
-                `;
-
-            backBtn.onclick = () => {
+            const handleBack = () => {
                 if (isRecipeFoodsSource) {
                     state.mealView = 'recipeFoodSearch';
                     renderMealPage();
@@ -7230,12 +7322,14 @@ async function renderFoodDetails() {
                     return;
                 }
             };
-
-            topBarCreateFood.append(backBtn);
+            const { topBar } = createMealOverlayInlineTopbar({
+                onBack: handleBack
+            });
             container.append(
-                topBarCreateFood,
+                topBar,
                 createElement('h3', null, 'Продукт не найден')
             );
+            attachMealOverlayTopbarMode(container);
             pushMealOverlay(container);
             return;
         }
@@ -7391,13 +7485,7 @@ async function renderFoodDetails() {
     }
 
     const container = createElement('div', 'create-food');
-    const topBarCreateFood = createElement('div','topBar-create-food');
-    const backBtn = createElement('button', 'back-btn');
-    backBtn.innerHTML = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><title>Ios-arrow-ltr-24-filled SVG Icon</title><path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"></path></svg>
-    `;
-
-    backBtn.onclick = () => {
+    const handleBack = () => {
         const source = state.foodDetailsSource;
 
         if (source === 'foods' || source === 'fatsecret' || source === 'globalCatalog') {
@@ -7419,17 +7507,26 @@ async function renderFoodDetails() {
 
         closeMealOverlayAndShowMealMain();
     };
-
-    if (shouldShowSearchMealLabel) {
-        topBarCreateFood.append(
-            createElement('div', 'food-details-meal-label meal-search-meal-text', `- ${getMealSearchCurrentLabel()} -`)
-        );
-    }
+    let saveBtn = null;
+    const topBarActionText = isMealSource ? 'Сохранить' : (isRecipeFoodsSource ? 'В рецепт' : 'В прием');
+    const topBarCenterContent = shouldShowSearchMealLabel
+        ? createElement('div', 'food-details-meal-label meal-search-meal-text', `- ${getMealSearchCurrentLabel()} -`)
+        : null;
+    const topBarActionBtn = createMealOverlayTopbarActionButton({
+        text: topBarActionText,
+        label: topBarActionText,
+        onClick: () => saveBtn?.onclick?.()
+    });
+    const { topBar } = createMealOverlayInlineTopbar({
+        onBack: handleBack,
+        centerContent: topBarCenterContent,
+        actions: [topBarActionBtn]
+    });
 
     const title = createElement('h3', 'create-food-sticky-h3', food.name || 'Продукт');
 
     const stickyHeader = createElement('div', 'create-food-sticky-header');
-    stickyHeader.append(topBarCreateFood, title);
+    stickyHeader.append(topBar, title);
 
     const titleDesc = food.description?.trim()
         ? createElement('div', 'food-title-description', food.description)
@@ -7454,10 +7551,6 @@ async function renderFoodDetails() {
     unitInput.value = food.baseUnit || 'г';
     unitInput.disabled = true;
 
-    const BlocksaveBtn = createElement('div', 'block-save-btn active');
-
-    let saveBtn = null;
-
     if (isMealSource) {
         saveBtn = createElement('button', 'save-btn active');
         saveBtn.innerHTML = `
@@ -7475,26 +7568,6 @@ async function renderFoodDetails() {
             </svg>
         `;
     }
-
-    const useBottomNavForFoodDetails =
-        isMealSource || isFoodsSource || isFatSecretSource || isGlobalCatalogSource;
-
-    function syncFoodDetailsBottomNav() {
-        if (!useBottomNavForFoodDetails || !saveBtn) {
-            clearMealBottomNavOverlayMode();
-            return;
-        }
-
-        setMealBottomNavOverlayMode({
-            visible: true,
-            onBack: () => backBtn.onclick?.(),
-            actionText: isMealSource ? 'Сохранить' : 'Добавить в прием',
-            onAction: () => saveBtn.onclick?.(),
-            actionDisabled: false
-        });
-    }
-
-    BlocksaveBtn.append(saveBtn);
 
     const deleteBtn = createElement('button', 'delete-food-from-meal-btn');
        deleteBtn.innerHTML = `
@@ -7921,12 +7994,6 @@ async function renderFoodDetails() {
     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><title>Calendar SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 4V2m0 2v2m0-2h-4.5M3 10v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-9zm0 0V6a2 2 0 0 1 2-2h2m0-2v4m14 4V6a2 2 0 0 0-2-2h-.5"/></svg>
     `;
 
-
-
-    BlocksaveBtn.append(saveBtn);
-    if (isRecipeFoodsSource) {
-        topBarCreateFood.append(backBtn, BlocksaveBtn);
-    }
     amountRow.append(plusMinusIcon, amountInput);
     unitRow.append(listIcon, unitInput);
     mealRow.append(mealIcon, mealValueBtn, mealDropdown);
@@ -8389,9 +8456,7 @@ async function renderFoodDetails() {
         }
     }
 
-    if (useBottomNavForFoodDetails) {
-        attachMealOverlayBottomNavSync(container, syncFoodDetailsBottomNav);
-    }
+    attachMealOverlayTopbarMode(container);
     pushMealOverlay(container);
 
     requestAnimationFrame(() => {
@@ -8430,17 +8495,7 @@ async function renderRecipeDetails() {
 
         if (!recipeSnap.exists()) {
             const container = createElement('div', 'create-food');
-            const topBarCreateFood = createElement('div','topBar-create-food');
-            const backBtn = createElement('button', 'back-btn');
-
-            backBtn.innerHTML = `
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
-                    <title>Ios-arrow-ltr-24-filled SVG Icon</title>
-                    <path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"></path>
-                </svg>
-            `;
-
-            backBtn.onclick = () => {
+            const handleBack = () => {
                 state.recipeServingsDraft = null;
                 state.recipeDetailsSource = null;
                 state.recipeMealSnapshot = null;
@@ -8457,12 +8512,14 @@ async function renderRecipeDetails() {
                     renderMealPage();
                 }
             };
-
-            topBarCreateFood.append(backBtn);
+            const { topBar } = createMealOverlayInlineTopbar({
+                onBack: handleBack
+            });
             container.append(
-                topBarCreateFood,
+                topBar,
                 createElement('h3', null, 'Рецепт не найден')
             );
+            attachMealOverlayTopbarMode(container);
             pushMealOverlay(container);
             return;
         }
@@ -8484,17 +8541,7 @@ async function renderRecipeDetails() {
     }
 
     const container = createElement('div', 'create-food');
-    const topBarCreateFood = createElement('div','topBar-create-food');
-
-    const backBtn = createElement('button', 'back-btn');
-    backBtn.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
-            <title>Ios-arrow-ltr-24-filled SVG Icon</title>
-            <path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"></path>
-        </svg>
-    `;
-
-    backBtn.onclick = () => {
+    const handleBack = () => {
         state.recipeServingsDraft = null;
         state.recipeDetailsSource = null;
         state.recipeMealSnapshot = null;
@@ -8516,17 +8563,11 @@ async function renderRecipeDetails() {
             renderMealPage();
         }
     };
-
-    if (!isMealSource) {
-        topBarCreateFood.append(
-            createElement('div', 'food-details-meal-label meal-search-meal-text', `- ${getMealSearchCurrentLabel()} -`)
-        );
-    }
+    const topBarCenterContent = !isMealSource
+        ? createElement('div', 'food-details-meal-label meal-search-meal-text', `- ${getMealSearchCurrentLabel()} -`)
+        : null;
 
     const title = createElement('h3', 'create-food-sticky-h3', recipe.title || 'Рецепт');
-
-    const stickyHeader = createElement('div', 'create-food-sticky-header');
-    stickyHeader.append(topBarCreateFood, title);
 
     const titleDesc = recipe.description?.trim()
         ? createElement('div', 'food-title-description', recipe.description)
@@ -8549,26 +8590,23 @@ async function renderRecipeDetails() {
     unitInput.value = 'порц';
     unitInput.disabled = true;
 
-    let topBarActionBtn = null;
-
-    function syncRecipeDetailsBottomNav() {
-        if (!topBarActionBtn) {
-            clearMealBottomNavOverlayMode();
-            return;
-        }
-
-        setMealBottomNavOverlayMode({
-            visible: true,
-            onBack: () => backBtn.onclick?.(),
-            actionText: isMealSource ? 'Сохранить' : 'Добавить в прием',
-            onAction: () => topBarActionBtn.onclick?.(),
-            actionDisabled: Boolean(topBarActionBtn.disabled)
-        });
-    }
+    let saveBtn = null;
+    const topBarActionText = isMealSource ? 'Сохранить' : 'В прием';
+    const topBarActionBtn = createMealOverlayTopbarActionButton({
+        text: topBarActionText,
+        label: topBarActionText,
+        onClick: () => saveBtn?.onclick?.()
+    });
+    const { topBar } = createMealOverlayInlineTopbar({
+        onBack: handleBack,
+        centerContent: topBarCenterContent,
+        actions: [topBarActionBtn]
+    });
+    const stickyHeader = createElement('div', 'create-food-sticky-header');
+    stickyHeader.append(topBar, title);
 
     if (!isMealSource) {
-        const BlocksaveBtn = createElement('div', 'block-save-btn active');
-        const saveBtn = createElement('button', 'food-add-btn meal-search-add-btn');
+        saveBtn = createElement('button', 'food-add-btn meal-search-add-btn');
         saveBtn.type = 'button';
         saveBtn.innerHTML = `
             <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24">
@@ -8612,12 +8650,8 @@ async function renderRecipeDetails() {
                 saveBtn.disabled = false;
             }
         };
-
-        topBarActionBtn = saveBtn;
-        BlocksaveBtn.append(saveBtn);
     } else {
-        const BlocksaveBtn = createElement('div', 'block-save-btn active');
-        const saveBtn = createElement('button', 'save-btn active');
+        saveBtn = createElement('button', 'save-btn active');
         saveBtn.innerHTML = `
             <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 512 512">
                 <path fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="44" d="M416 128L192 384l-96-96"></path>
@@ -8707,9 +8741,6 @@ async function renderRecipeDetails() {
                 saveBtn.disabled = false;
             }
         };
-
-        topBarActionBtn = saveBtn;
-        BlocksaveBtn.append(saveBtn);
     }
 
     const currentValuesWrap = createElement('div', 'food-current-card');
@@ -9103,7 +9134,7 @@ async function renderRecipeDetails() {
         container.append(actionsBlock);
     }
 
-    attachMealOverlayBottomNavSync(container, syncRecipeDetailsBottomNav);
+    attachMealOverlayTopbarMode(container);
     pushMealOverlay(container);
 
     requestAnimationFrame(() => {
@@ -10521,9 +10552,9 @@ function renderMealSearch() {
         screen.classList.toggle('meal-search-screen--history', tab === 'all');
     }
 
-    // ===== Верхняя строка (назад и действия — в нижнем меню)
+    // ===== Верхняя строка: назад слева, выбор приема по центру, действия справа
     const topRow = createElement('div', 'meal-search-topbar');
-    topRow.classList.add('meal-search-topbar--bottom-nav-mode');
+    topRow.classList.add('meal-search-topbar--inline-actions', 'meal-search-topbar--product-search-page');
 
     const handleMealSearchBack = () => {
         state.mealSearchTab = 'all';
@@ -10531,145 +10562,249 @@ function renderMealSearch() {
         closeMealOverlayAndShowMealMain();
     };
 
-const titleWrap = createElement('div', 'meal-search-meal-picker');
-const titleBtn = createElement('button', 'meal-search-meal-trigger');
-titleBtn.type = 'button';
-titleBtn.setAttribute('aria-haspopup', 'true');
-titleBtn.setAttribute('aria-expanded', 'false');
+    const leadingWrap = createElement('div', 'meal-search-topbar__leading');
+    const backBtn = createElement('button', 'meal-search-back-btn');
+    backBtn.type = 'button';
+    backBtn.setAttribute('aria-label', 'Назад');
+    backBtn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"></path>
+        </svg>
+    `;
+    backBtn.onclick = handleMealSearchBack;
+    leadingWrap.append(backBtn);
 
-const titleText = createElement('span', 'meal-search-meal-text', getMealSearchCurrentLabel());
-const titleArrow = createElement('span', 'meal-search-meal-arrow');
-titleArrow.innerHTML = `
-    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-        <path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-    </svg>
-`;
+    const centerWrap = createElement('div', 'meal-search-topbar__center');
+    const titleWrap = createElement('div', 'meal-search-meal-picker');
+    const titleBtn = createElement('button', 'meal-search-meal-trigger');
+    titleBtn.type = 'button';
+    titleBtn.setAttribute('aria-haspopup', 'true');
+    titleBtn.setAttribute('aria-expanded', 'false');
 
-titleBtn.append(titleText, titleArrow);
-titleWrap.append(titleBtn);
+    const titleText = createElement('span', 'meal-search-meal-text', getMealSearchCurrentLabel());
+    const titleArrow = createElement('span', 'meal-search-meal-arrow');
+    titleArrow.innerHTML = `
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+    `;
 
-const menuBackdrop = createElement('button', 'meal-search-picker-backdrop');
-menuBackdrop.type = 'button';
+    titleBtn.append(titleText, titleArrow);
+    titleWrap.append(titleBtn);
+    centerWrap.append(titleWrap);
 
-const dropdown = createElement('div', 'meal-search-picker-menu');
-dropdown.setAttribute('aria-hidden', 'true');
+    const actionsWrap = createElement('div', 'meal-search-actions meal-search-topbar__actions');
 
-const dropdownLabel = createElement('div', 'meal-search-picker-section-label', 'приёмы дня');
-const dropdownList = createElement('div', 'meal-search-picker-list');
-dropdown.append(dropdownLabel, dropdownList);
+    const menuBackdrop = createElement('button', 'meal-search-picker-backdrop');
+    menuBackdrop.type = 'button';
 
-function syncMealPickerState(isOpen) {
-    titleWrap.classList.toggle('open', isOpen);
-    dropdown.classList.toggle('open', isOpen);
-    titleBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-    dropdown.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
-}
+    const dropdown = createElement('div', 'meal-search-picker-menu');
+    dropdown.setAttribute('aria-hidden', 'true');
 
-function positionMealPickerDropdown() {
-    const pad = 12;
-    const rect = titleBtn.getBoundingClientRect();
-    const vw = window.innerWidth || document.documentElement.clientWidth || 320;
+    const dropdownLabel = createElement('div', 'meal-search-picker-section-label', 'приёмы дня');
+    const dropdownList = createElement('div', 'meal-search-picker-list');
+    dropdown.append(dropdownLabel, dropdownList);
 
-    dropdown.style.top = `${Math.round(rect.bottom + 8)}px`;
-    dropdown.style.left = `${Math.round(rect.left + rect.width / 2)}px`;
-    dropdown.style.transform = 'translateX(-50%)';
-    dropdown.style.maxWidth = `calc(${vw}px - 24px)`;
-
-    if (!dropdown.isConnected) {
-        screen.append(dropdown);
+    function syncMealPickerState(isOpen) {
+        titleWrap.classList.toggle('open', isOpen);
+        dropdown.classList.toggle('open', isOpen);
+        titleBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        dropdown.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
     }
 
-    void dropdown.offsetWidth;
+    function positionMealPickerDropdown() {
+        const pad = 12;
+        const rect = titleBtn.getBoundingClientRect();
+        const vw = window.innerWidth || document.documentElement.clientWidth || 320;
 
-    const menuWidth = dropdown.getBoundingClientRect().width || dropdown.offsetWidth || 150;
-    const halfWidth = menuWidth / 2;
-    const minLeft = pad + halfWidth;
-    const maxLeft = vw - pad - halfWidth;
-    const nextLeft = Math.min(maxLeft, Math.max(minLeft, rect.left + rect.width / 2));
+        dropdown.style.top = `${Math.round(rect.bottom + 8)}px`;
+        dropdown.style.left = `${Math.round(rect.left + rect.width / 2)}px`;
+        dropdown.style.transform = 'translateX(-50%)';
+        dropdown.style.maxWidth = `calc(${vw}px - 24px)`;
 
-    if (minLeft > maxLeft) {
-        dropdown.style.left = `${pad}px`;
-        dropdown.style.transform = 'none';
-        dropdown.style.maxWidth = `${Math.max(120, vw - pad * 2)}px`;
-        return;
+        if (!dropdown.isConnected) {
+            screen.append(dropdown);
+        }
+
+        void dropdown.offsetWidth;
+
+        const menuWidth = dropdown.getBoundingClientRect().width || dropdown.offsetWidth || 150;
+        const halfWidth = menuWidth / 2;
+        const minLeft = pad + halfWidth;
+        const maxLeft = vw - pad - halfWidth;
+        const nextLeft = Math.min(maxLeft, Math.max(minLeft, rect.left + rect.width / 2));
+
+        if (minLeft > maxLeft) {
+            dropdown.style.left = `${pad}px`;
+            dropdown.style.transform = 'none';
+            dropdown.style.maxWidth = `${Math.max(120, vw - pad * 2)}px`;
+            return;
+        }
+
+        dropdown.style.left = `${Math.round(nextLeft)}px`;
+        dropdown.style.transform = 'translateX(-50%)';
+        dropdown.style.maxWidth = `calc(${vw}px - 24px)`;
     }
 
-    dropdown.style.left = `${Math.round(nextLeft)}px`;
-    dropdown.style.transform = 'translateX(-50%)';
-    dropdown.style.maxWidth = `calc(${vw}px - 24px)`;
-}
+    function updateMealPickerSelection(mealId) {
+        const nextOption = mealOptions.find(opt => opt.id === mealId);
+        if (!nextOption) return;
 
-function updateMealPickerSelection(mealId) {
-    const nextOption = mealOptions.find(opt => opt.id === mealId);
-    if (!nextOption) return;
+        state.currentMealId = nextOption.id;
+        titleText.textContent = nextOption.label;
+        titleWrap.dataset.currentMealId = nextOption.id;
+        titleBtn.dataset.currentMealId = nextOption.id;
+        titleBtn.classList.add('active');
+        titleText.classList.add('active');
 
-    state.currentMealId = nextOption.id;
-    titleText.textContent = nextOption.label;
-    titleWrap.dataset.currentMealId = nextOption.id;
-    titleBtn.dataset.currentMealId = nextOption.id;
-    titleBtn.classList.add('active');
-    titleText.classList.add('active');
-
-    dropdownList.querySelectorAll('.meal-search-picker-item').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.mealId === nextOption.id);
-        btn.setAttribute('aria-pressed', btn.dataset.mealId === nextOption.id ? 'true' : 'false');
-    });
-}
-
-function closeMealPicker() {
-    syncMealPickerState(false);
-    menuBackdrop.remove();
-    dropdown.remove();
-}
-
-function openMealPicker() {
-    positionMealPickerDropdown();
-    if (!menuBackdrop.isConnected) {
-        screen.append(menuBackdrop);
-    }
-    syncMealPickerState(true);
-}
-
-menuBackdrop.onclick = closeMealPicker;
-
-titleBtn.onclick = () => {
-    if (titleWrap.classList.contains('open')) {
-        closeMealPicker();
-    } else {
-        openMealPicker();
-    }
-};
-
-function selectMealFromPicker(mealId, event) {
-    if (!mealId) return;
-
-    if (event) {
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation?.();
+        dropdownList.querySelectorAll('.meal-search-picker-item').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.mealId === nextOption.id);
+            btn.setAttribute('aria-pressed', btn.dataset.mealId === nextOption.id ? 'true' : 'false');
+        });
     }
 
-    updateMealPickerSelection(mealId);
-    closeMealPicker();
-}
+    function closeMealPicker() {
+        syncMealPickerState(false);
+        menuBackdrop.remove();
+        dropdown.remove();
+    }
 
-mealOptions.forEach(opt => {
-    const item = createElement('button', 'meal-search-picker-item', opt.label);
-    item.type = 'button';
-    item.dataset.mealId = opt.id;
-    item.classList.toggle('active', opt.id === state.currentMealId);
-    item.setAttribute('aria-pressed', opt.id === state.currentMealId ? 'true' : 'false');
+    function openMealPicker() {
+        positionMealPickerDropdown();
+        if (!menuBackdrop.isConnected) {
+            screen.append(menuBackdrop);
+        }
+        syncMealPickerState(true);
+    }
 
-    item.onclick = (event) => {
-        selectMealFromPicker(opt.id, event);
+    menuBackdrop.onclick = closeMealPicker;
+
+    titleBtn.onclick = () => {
+        if (titleWrap.classList.contains('open')) {
+            closeMealPicker();
+        } else {
+            openMealPicker();
+        }
     };
 
-    dropdownList.append(item);
-});
+    function selectMealFromPicker(mealId, event) {
+        if (!mealId) return;
 
-updateMealPickerSelection(state.currentMealId);
+        if (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation?.();
+        }
 
-topRow.append(titleWrap);
+        updateMealPickerSelection(mealId);
+        closeMealPicker();
+    }
+
+    mealOptions.forEach(opt => {
+        const item = createElement('button', 'meal-search-picker-item', opt.label);
+        item.type = 'button';
+        item.dataset.mealId = opt.id;
+        item.classList.toggle('active', opt.id === state.currentMealId);
+        item.setAttribute('aria-pressed', opt.id === state.currentMealId ? 'true' : 'false');
+
+        item.onclick = (event) => {
+            selectMealFromPicker(opt.id, event);
+        };
+
+        dropdownList.append(item);
+    });
+
+    function createMealSearchTopbarActionButton({
+        text = '',
+        html = '',
+        label = '',
+        icon = false,
+        onClick = null
+    } = {}) {
+        const btn = createElement(
+            'button',
+            `meal-search-topbar-action${icon ? ' meal-search-topbar-action--icon' : ' meal-search-topbar-action--text'}`
+        );
+        btn.type = 'button';
+        if (html) {
+            btn.innerHTML = html;
+        } else {
+            btn.textContent = text;
+        }
+        if (label || text) {
+            btn.setAttribute('aria-label', label || text);
+        }
+        if (typeof onClick === 'function') {
+            btn.onclick = onClick;
+        }
+        return btn;
+    }
+
+    function buildMealSearchTopbarActions(tab) {
+        const currentTab = tab || state.mealSearchTab || 'all';
+
+        if (currentTab === 'all') {
+            return [
+                {
+                    html: getMealQuickAddIconMarkup(),
+                    label: 'Быстрое добавление',
+                    icon: true,
+                    onClick: () => openQuickAddForm('search')
+                },
+                {
+                    html: getMealCameraIconMarkup(),
+                    label: 'Сделать фото',
+                    icon: true,
+                    onClick: () => openMealPhotoCaptureFlow(state.currentMealId)
+                }
+            ];
+        }
+
+        if (currentTab === 'products') {
+            return [
+                {
+                    text: '+ продукт',
+                    label: 'Новый продукт',
+                    onClick: () => {
+                        state.mealSearchReturnTab = state.mealSearchTab || 'products';
+                        state.createFoodBackTarget = 'search';
+                        state.mealView = 'create';
+                        renderMealPage();
+                    }
+                }
+            ];
+        }
+
+        if (currentTab === 'recipes') {
+            return [
+                {
+                    text: '+ рецепт',
+                    label: 'Новый рецепт',
+                    onClick: () => {
+                        saveMealPageScroll();
+                        mealScrollRestorePending = true;
+                        state.mealSearchReturnTab = state.mealSearchTab || 'recipes';
+                        state.recipeDraft = createEmptyRecipeDraft();
+                        state.mealView = 'recipe';
+                        renderMealPage();
+                    }
+                }
+            ];
+        }
+
+        return [];
+    }
+
+    function renderTopbarActionsForTab(tab) {
+        actionsWrap.innerHTML = '';
+        buildMealSearchTopbarActions(tab).forEach((action) => {
+            actionsWrap.append(createMealSearchTopbarActionButton(action));
+        });
+    }
+
+    updateMealPickerSelection(state.currentMealId);
+
+    topRow.append(leadingWrap, centerWrap, actionsWrap);
 
     // ===== Tabs
     const tabsRow = createElement('div', 'meal-search-tabs');
@@ -11398,7 +11533,7 @@ topRow.append(titleWrap);
         if (tab === 'base') tabBase.classList.add('active');
 
         syncTabsIndicatorToCarouselScroll({ animated: false });
-        syncMealSearchBottomNavActionForTab(tab);
+        syncMealSearchTopbarActionForTab(tab);
     }
 
     let mealSearchCarouselScrollEndTimer = 0;
@@ -11540,70 +11675,12 @@ topRow.append(titleWrap);
     wireMealSearchListScroll(listRecipes, 'recipes');
     wireMealSearchListScroll(listBase, 'base');
 
-    function buildMealSearchBottomNavConfig(tab) {
-        const currentTab = tab || state.mealSearchTab || 'all';
-
-        if (currentTab === 'all') {
-            return {
-                visible: true,
-                onBack: handleMealSearchBack,
-                secondaryActionHtml: getMealCameraIconMarkup(),
-                secondaryActionLabel: 'Сделать фото',
-                secondaryActionVisible: true,
-                secondaryActionIcon: true,
-                onSecondaryAction: () => openMealPhotoCaptureFlow(state.currentMealId),
-                actionHtml: getMealQuickAddIconMarkup(),
-                actionLabel: 'Быстрое добавление',
-                actionIcon: true,
-                onAction: () => {
-                    openQuickAddForm('search');
-                }
-            };
-        }
-
-        if (currentTab === 'base') {
-            return {
-                visible: true,
-                onBack: handleMealSearchBack,
-                actionVisible: false
-            };
-        }
-
-        if (currentTab === 'products') {
-            return {
-                visible: true,
-                onBack: handleMealSearchBack,
-                actionText: 'Добавить продукт',
-                onAction: () => {
-                    state.mealSearchReturnTab = state.mealSearchTab || 'products';
-                    state.createFoodBackTarget = 'search';
-                    state.mealView = 'create';
-                    renderMealPage();
-                }
-            };
-        }
-
-        return {
-            visible: true,
-            onBack: handleMealSearchBack,
-            actionText: 'Добавить рецепт',
-            onAction: () => {
-                saveMealPageScroll();
-                mealScrollRestorePending = true;
-                state.mealSearchReturnTab = state.mealSearchTab || 'recipes';
-                state.recipeDraft = createEmptyRecipeDraft();
-                state.mealView = 'recipe';
-                renderMealPage();
-            }
-        };
-    }
-
-    function syncMealSearchBottomNavActionForTab(tab) {
-        setMealBottomNavOverlayMode(buildMealSearchBottomNavConfig(tab));
+    function syncMealSearchTopbarActionForTab(tab) {
+        renderTopbarActionsForTab(tab);
     }
 
     function renderActionsForTab(tab) {
-        syncMealSearchBottomNavActionForTab(tab);
+        syncMealSearchTopbarActionForTab(tab);
     }
 
     function syncCarouselToState() {
@@ -12375,7 +12452,8 @@ topRow.append(titleWrap);
     body.append(carousel);
     screen.append(topRow, controlsStrip, body);
     attachMealOverlayBottomNavSync(screen, () => {
-        setMealBottomNavOverlayMode(buildMealSearchBottomNavConfig(state.mealSearchTab || 'all'));
+        clearMealBottomNavOverlayMode();
+        setMealBottomNavSuppressed(true);
     });
     pushMealOverlay(screen, { isSearch: true });
 
@@ -12417,9 +12495,11 @@ async function renderRecipeFoodSearch() {
         renderMealPage();
     };
 
-    const topRow = createElement('div', 'meal-search-topbar meal-search-topbar--bottom-nav-mode recipe-food-search-topbar');
-    const title = createElement('h3', 'create-food-sticky-h3 recipe-food-search-title', 'Продукты для рецепта');
-    topRow.append(title);
+    const { topBar: topRow } = createMealOverlayInlineTopbar({
+        onBack: handleBack,
+        centerContent: createElement('div', 'meal-overlay-inline-center-title recipe-food-search-title', 'Продукты для рецепта')
+    });
+    topRow.classList.add('recipe-food-search-topbar');
 
     const searchControls = createElement('div', 'recipe-food-search-controls');
     const searchWrap = createElement('div', 'meal-search-box recipe-food-search-input-wrap');
@@ -12575,14 +12655,7 @@ async function renderRecipeFoodSearch() {
     body.append(list);
     screen.append(sticky, body);
 
-    attachMealOverlayBottomNavSync(screen, () => {
-        setMealBottomNavOverlayMode({
-            visible: true,
-            onBack: handleBack,
-            actionVisible: false,
-            secondaryActionVisible: false
-        });
-    });
+    attachMealOverlayTopbarMode(screen);
 
     pushMealOverlay(screen, { isSearch: true });
     await loadAndRenderFoods();
@@ -12596,15 +12669,7 @@ async function renderRecipeFoodPreview() {
 
     if (!food) {
         const container = createElement('div', 'create-food');
-        const backBtn = createElement('button', 'back-btn');
-        backBtn.innerHTML = `
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
-                <title>Ios-arrow-ltr-24-filled SVG Icon</title>
-                <path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"></path>
-            </svg>
-        `;
-
-        backBtn.onclick = () => {
+        const handleBack = () => {
             state.mealView = state.recipeFoodPreviewBackTarget === 'recipeForm'
                 ? (state.createRecipeBackTarget === 'editRecipe' ? 'editRecipe' : 'recipe')
                 : 'recipeFoodSearch';
@@ -12614,19 +12679,15 @@ async function renderRecipeFoodPreview() {
             }
             renderMealPage();
         };
+        const { topBar } = createMealOverlayInlineTopbar({
+            onBack: handleBack
+        });
 
         container.append(
+            topBar,
             createElement('h3', null, 'Продукт не найден')
         );
-
-        attachMealOverlayBottomNavSync(container, () => {
-            setMealBottomNavOverlayMode({
-                visible: true,
-                onBack: () => backBtn.onclick?.(),
-                actionVisible: false,
-                secondaryActionVisible: false
-            });
-        });
+        attachMealOverlayTopbarMode(container);
 
         pushMealOverlay(container);
         return;
@@ -12656,15 +12717,7 @@ async function renderRecipeFoodPreview() {
 
     const container = createElement('div', 'create-food');
 
-    const backBtn = createElement('button', 'back-btn');
-    backBtn.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
-            <title>Ios-arrow-ltr-24-filled SVG Icon</title>
-            <path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"></path>
-        </svg>
-    `;
-
-    backBtn.onclick = () => {
+    const handleBack = () => {
         state.recipeIngredientEditIndex = null;
         state.mealView = getPreviewReturnView();
         if (hasUnderlyingMealSearch()) {
@@ -12673,16 +12726,19 @@ async function renderRecipeFoodPreview() {
         }
         renderMealPage();
     };
-
-    const isRecipeSearchPreview = getPreviewReturnView() === 'recipeFoodSearch';
-    const topBarCreateFood = isRecipeSearchPreview
-        ? createElement('div', 'topBar-create-food recipe-food-preview-topbar')
-        : null;
+    const topBarActionBtn = createMealOverlayTopbarActionButton({
+        text: 'В рецепт',
+        label: 'Добавить в рецепт'
+    });
+    const { topBar } = createMealOverlayInlineTopbar({
+        onBack: handleBack,
+        actions: [topBarActionBtn]
+    });
 
     const title = createElement('h3', 'create-food-sticky-h3', food.name || 'Продукт');
 
     const stickyHeader = createElement('div', 'create-food-sticky-header');
-    stickyHeader.append(...(topBarCreateFood ? [topBarCreateFood] : []), title);
+    stickyHeader.append(topBar, title);
 
     const titleDesc = food.description?.trim()
         ? createElement('div', 'food-title-description', food.description)
@@ -12817,6 +12873,12 @@ async function renderRecipeFoodPreview() {
             saveBtn.disabled = false;
         }
     };
+    syncMealOverlayTopbarActionButton(topBarActionBtn, {
+        text: 'В рецепт',
+        label: 'Добавить в рецепт',
+        disabled: false,
+        onClick: () => saveBtn?.onclick?.()
+    });
 
     const passportBlock = createElement('div', 'food-passport-block');
     passportBlock.innerHTML = `
@@ -12896,15 +12958,7 @@ async function renderRecipeFoodPreview() {
         passportBlock
     );
 
-    attachMealOverlayBottomNavSync(container, () => {
-        setMealBottomNavOverlayMode({
-            visible: true,
-            onBack: () => backBtn.onclick?.(),
-            actionText: 'Добавить в рецепт',
-            onAction: () => saveBtn.onclick?.(),
-            actionDisabled: false
-        });
-    });
+    attachMealOverlayTopbarMode(container);
 
     pushMealOverlay(container);
 
@@ -12925,16 +12979,7 @@ function renderQuickAddStub() {
 
     const container = createElement('div', 'create-food create-food-form-page meal-quick-add-page');
 
-    const topBar = createElement('div', 'create-food-topbar');
-
-    const backBtn = createElement('button', 'back-btn');
-    backBtn.type = 'button';
-    backBtn.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
-            <path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"/>
-        </svg>
-    `;
-    backBtn.onclick = () => {
+    const handleBack = () => {
         const target = state.quickAddBackTarget || (hasUnderlyingMealSearch() ? 'search' : 'main');
 
         if (target === 'main') {
@@ -12955,6 +13000,17 @@ function renderQuickAddStub() {
         state.mealView = 'search';
         renderMealSearch();
     };
+    let saveBtn = null;
+    const topBarActionBtn = createMealOverlayTopbarActionButton({
+        text: 'Сохранить',
+        label: 'Сохранить',
+        disabled: true,
+        onClick: () => saveBtn?.onclick?.()
+    });
+    const { topBar } = createMealOverlayInlineTopbar({
+        onBack: handleBack,
+        actions: [topBarActionBtn]
+    });
 
     const pageTitle = createElement('h3', 'create-food-sticky-h3', 'Быстрое добавление');
 
@@ -13023,24 +13079,19 @@ function renderQuickAddStub() {
 
     rows.forEach((row) => formCard.append(row));
 
-    const saveBtn = createElement('button', 'save-btn create-food-submit-btn', 'Сохранить');
+    saveBtn = createElement('button', 'save-btn create-food-submit-btn', 'Сохранить');
     saveBtn.disabled = true;
-
-    function syncQuickAddBottomNav() {
-        setMealBottomNavOverlayMode({
-            visible: true,
-            onBack: () => backBtn.onclick?.(),
-            actionText: 'Сохранить',
-            onAction: () => saveBtn.onclick?.(),
-            actionDisabled: saveBtn.disabled
-        });
-    }
 
     function validateForm() {
         const canSave = String(name.value || '').trim().length > 0;
         saveBtn.disabled = !canSave;
         saveBtn.classList.toggle('active', canSave);
-        syncQuickAddBottomNav();
+        syncMealOverlayTopbarActionButton(topBarActionBtn, {
+            text: 'Сохранить',
+            label: 'Сохранить',
+            disabled: saveBtn.disabled,
+            onClick: () => saveBtn?.onclick?.()
+        });
     }
 
     [name, portion, protein, fat, carbs, calories].forEach((el) => {
@@ -13101,7 +13152,7 @@ function renderQuickAddStub() {
         }
     };
 
-    attachMealOverlayBottomNavSync(container, syncQuickAddBottomNav);
+    attachMealOverlayTopbarMode(container);
     container.append(stickyHeader, formCard);
     pushMealOverlay(container);
 
@@ -13123,15 +13174,7 @@ function renderCreateFood() {
 
     const container = createElement('div', 'create-food create-food-form-page');
 
-    const topBar = createElement('div', 'create-food-topbar');
-
-    const backBtn = createElement('button', 'back-btn');
-    backBtn.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
-            <path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"/>
-        </svg>
-    `;
-    backBtn.onclick = () => {
+    const handleBack = () => {
         const target = state.createFoodBackTarget || 'search';
         state.createFoodBackTarget = null;
 
@@ -13163,6 +13206,17 @@ function renderCreateFood() {
         state.mealView = target;
         renderMealPage();
     };
+    let saveBtn = null;
+    const topBarActionBtn = createMealOverlayTopbarActionButton({
+        text: 'Сохранить продукт',
+        label: 'Сохранить продукт',
+        disabled: true,
+        onClick: () => saveBtn?.onclick?.()
+    });
+    const { topBar } = createMealOverlayInlineTopbar({
+        onBack: handleBack,
+        actions: [topBarActionBtn]
+    });
 
     const pageTitle = createElement('h3', 'create-food-sticky-h3', 'Новый продукт');
 
@@ -13380,16 +13434,15 @@ function renderCreateFood() {
 
     rows.forEach(row => formCard.append(row));
 
-    const saveBtn = createElement('button', 'save-btn create-food-submit-btn', 'Сохранить продукт');
+    saveBtn = createElement('button', 'save-btn create-food-submit-btn', 'Сохранить продукт');
     saveBtn.disabled = true;
 
-    function syncCreateFoodBottomNav() {
-        setMealBottomNavOverlayMode({
-            visible: true,
-            onBack: () => backBtn.onclick?.(),
-            actionText: 'Сохранить продукт',
-            onAction: () => saveBtn.onclick?.(),
-            actionDisabled: saveBtn.disabled
+    function syncCreateFoodTopbarAction() {
+        syncMealOverlayTopbarActionButton(topBarActionBtn, {
+            text: 'Сохранить продукт',
+            label: 'Сохранить продукт',
+            disabled: saveBtn.disabled,
+            onClick: () => saveBtn?.onclick?.()
         });
     }
 
@@ -13412,7 +13465,7 @@ function renderCreateFood() {
 
         saveBtn.disabled = !allFilled;
         saveBtn.classList.toggle('active', allFilled);
-        syncCreateFoodBottomNav();
+        syncCreateFoodTopbarAction();
     }
 
     [
@@ -13510,7 +13563,7 @@ function renderCreateFood() {
         }
     };
 
-    attachMealOverlayBottomNavSync(container, syncCreateFoodBottomNav);
+    attachMealOverlayTopbarMode(container);
     container.append(stickyHeader, formCard);
     pushMealOverlay(container);
 
@@ -13580,15 +13633,7 @@ function renderCreateRecipe() {
 
     const container = createElement('div', 'create-food create-food-form-page recipe-create-page');
 
-    const topBar = createElement('div', 'create-food-topbar');
-
-    const backBtn = createElement('button', 'back-btn');
-    backBtn.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24">
-            <path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"/>
-        </svg>
-    `;
-    backBtn.onclick = () => {
+    const handleBack = () => {
         state.mealView = 'search';
         if (state.mealSearchReturnTab) {
             state.mealSearchTab = state.mealSearchReturnTab;
@@ -13602,18 +13647,17 @@ function renderCreateRecipe() {
         }
     };
 
-    const saveBtn = createElement('button', 'save-btn create-food-submit-btn recipe-create-save-btn', 'Сохранить рецепт');
-    saveBtn.disabled = true;
-
-    function syncCreateRecipeBottomNav() {
-        setMealBottomNavOverlayMode({
-            visible: true,
-            onBack: () => backBtn.onclick?.(),
-            actionText: 'Сохранить рецепт',
-            onAction: () => saveBtn.onclick?.(),
-            actionDisabled: saveBtn.disabled
-        });
-    }
+    let saveBtn = null;
+    const topBarActionBtn = createMealOverlayTopbarActionButton({
+        text: 'Сохранить рецепт',
+        label: 'Сохранить рецепт',
+        disabled: true,
+        onClick: () => saveBtn?.onclick?.()
+    });
+    const { topBar } = createMealOverlayInlineTopbar({
+        onBack: handleBack,
+        actions: [topBarActionBtn]
+    });
 
 
     const pageTitle = createElement('h3', 'create-food-sticky-h3', 'Новый рецепт');
@@ -13780,6 +13824,9 @@ function renderCreateRecipe() {
     );
     renderIngredientsBlock();
 
+    saveBtn = createElement('button', 'save-btn create-food-submit-btn recipe-create-save-btn', 'Сохранить рецепт');
+    saveBtn.disabled = true;
+
     const syncRecipeDraftIngredients = () => {
         if (state.recipeDraft && state.recipeDraft !== draft && Array.isArray(state.recipeDraft.ingredients)) {
             draft.ingredients = state.recipeDraft.ingredients;
@@ -13809,9 +13856,12 @@ function renderCreateRecipe() {
         saveBtn.disabled = !isValid;
         saveBtn.classList.toggle('active', isValid);
         saveBtn.classList.toggle('disabled', !isValid);
-        if (mealOverlayStack[mealOverlayStack.length - 1] === container) {
-            syncCreateRecipeBottomNav();
-        }
+        syncMealOverlayTopbarActionButton(topBarActionBtn, {
+            text: 'Сохранить рецепт',
+            label: 'Сохранить рецепт',
+            disabled: saveBtn.disabled,
+            onClick: () => saveBtn?.onclick?.()
+        });
     }
 
     saveBtn.onclick = async () => {
@@ -13876,7 +13926,7 @@ function renderCreateRecipe() {
         }
     };
 
-    attachMealOverlayBottomNavSync(container, syncCreateRecipeBottomNav);
+    attachMealOverlayTopbarMode(container);
     container.append(stickyHeader, formCard);
     pushMealOverlay(container);
 
@@ -13933,15 +13983,7 @@ async function renderEditRecipe() {
 
     const container = createElement('div', 'create-food create-food-form-page recipe-create-page');
 
-    const topBar = createElement('div', 'create-food-topbar');
-
-    const backBtn = createElement('button', 'back-btn');
-    backBtn.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24">
-            <path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"/>
-        </svg>
-    `;
-    backBtn.onclick = () => {
+    const handleBack = () => {
         if (hasUnderlyingMealSearch()) {
             popMealOverlay();
             return;
@@ -13949,19 +13991,17 @@ async function renderEditRecipe() {
         state.mealView = 'recipeDetails';
         renderMealPage();
     };
-
-    const saveBtn = createElement('button', 'save-btn create-food-submit-btn recipe-create-save-btn', 'Сохранить рецепт');
-    saveBtn.disabled = true;
-
-    function syncCreateRecipeBottomNav() {
-        setMealBottomNavOverlayMode({
-            visible: true,
-            onBack: () => backBtn.onclick?.(),
-            actionText: 'Сохранить рецепт',
-            onAction: () => saveBtn.onclick?.(),
-            actionDisabled: saveBtn.disabled
-        });
-    }
+    let saveBtn = null;
+    const topBarActionBtn = createMealOverlayTopbarActionButton({
+        text: 'Сохранить рецепт',
+        label: 'Сохранить рецепт',
+        disabled: true,
+        onClick: () => saveBtn?.onclick?.()
+    });
+    const { topBar } = createMealOverlayInlineTopbar({
+        onBack: handleBack,
+        actions: [topBarActionBtn]
+    });
 
     const pageTitle = createElement('h3', 'create-food-sticky-h3', 'Редактировать рецепт');
 
@@ -14136,6 +14176,9 @@ async function renderEditRecipe() {
         )
     );
 
+    saveBtn = createElement('button', 'save-btn create-food-submit-btn recipe-create-save-btn', 'Сохранить рецепт');
+    saveBtn.disabled = true;
+
     function isFilled(value) {
         return String(value ?? '').trim() !== '';
     }
@@ -14153,9 +14196,12 @@ async function renderEditRecipe() {
         saveBtn.disabled = !isValid;
         saveBtn.classList.toggle('active', isValid);
         saveBtn.classList.toggle('disabled', !isValid);
-        if (mealOverlayStack[mealOverlayStack.length - 1] === container) {
-            syncCreateRecipeBottomNav();
-        }
+        syncMealOverlayTopbarActionButton(topBarActionBtn, {
+            text: 'Сохранить рецепт',
+            label: 'Сохранить рецепт',
+            disabled: saveBtn.disabled,
+            onClick: () => saveBtn?.onclick?.()
+        });
     }
 
     saveBtn.onclick = async () => {
@@ -14217,7 +14263,7 @@ async function renderEditRecipe() {
         window.removeEventListener('recipeDraftIngredientsChanged', syncRecipeDraftIngredients);
     };
 
-    attachMealOverlayBottomNavSync(container, syncCreateRecipeBottomNav);
+    attachMealOverlayTopbarMode(container);
     container.append(stickyHeader, formCard);
     pushMealOverlay(container);
 

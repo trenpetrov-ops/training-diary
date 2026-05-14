@@ -28,6 +28,8 @@ function mountBottomNavMarkup() {
 let mealSearchNavOnBack = null;
 let mealSearchNavOnAction = null;
 let mealSearchNavOnSecondaryAction = null;
+let mealBottomNavSuppressCommitTimer = 0;
+const MEAL_BOTTOM_NAV_SUPPRESS_FADE_MS = 90;
 
 function getMealOverlayNavElements() {
     ensureNavigationMealSearchStructure();
@@ -44,10 +46,51 @@ function getMealOverlayNavElements() {
     };
 }
 
+export function setMealBottomNavSuppressed(hidden) {
+    const { nav } = getMealOverlayNavElements();
+    const fon = document.querySelector('.navigation-fon');
+    const shouldHide = Boolean(hidden);
+
+    if (shouldHide) {
+        const alreadyHidden = nav?.classList.contains('navigation--suppressed')
+            || nav?.classList.contains('navigation--suppressed-fade-only');
+
+        if (!alreadyHidden) {
+            nav?.classList.remove('navigation--suppressed-enter');
+            fon?.classList.remove('navigation-fon--suppressed-enter');
+            nav?.classList.add('navigation--suppressed-fade-only');
+            fon?.classList.add('navigation-fon--suppressed-fade-only');
+
+            mealBottomNavSuppressCommitTimer = window.setTimeout(() => {
+                nav?.classList.add('navigation--suppressed-enter');
+                fon?.classList.add('navigation-fon--suppressed-enter');
+                nav?.classList.add('navigation--suppressed');
+                fon?.classList.add('navigation-fon--suppressed');
+                nav?.classList.remove('navigation--suppressed-fade-only');
+                fon?.classList.remove('navigation-fon--suppressed-fade-only');
+                mealBottomNavSuppressCommitTimer = 0;
+            }, MEAL_BOTTOM_NAV_SUPPRESS_FADE_MS);
+        }
+
+        return;
+    }
+
+    if (mealBottomNavSuppressCommitTimer) {
+        clearTimeout(mealBottomNavSuppressCommitTimer);
+        mealBottomNavSuppressCommitTimer = 0;
+    }
+
+    nav?.classList.remove('navigation--suppressed-fade-only', 'navigation--suppressed-enter');
+    fon?.classList.remove('navigation-fon--suppressed-fade-only', 'navigation-fon--suppressed-enter');
+    nav?.classList.remove('navigation--suppressed');
+    fon?.classList.remove('navigation-fon--suppressed');
+}
+
 function setMealBottomNavOverlayVisibility(visible) {
     const { nav, backBtn, actionBtn, secondaryActionBtn, wrap } = getMealOverlayNavElements();
     if (!nav) return;
 
+    setMealBottomNavSuppressed(false);
     nav.classList.toggle('navigation--meal-search', Boolean(visible));
     nav.classList.remove('navigation--meal-search-expanded');
     wrap?.classList.remove('navigation__icons-wrap--from-right');

@@ -45,7 +45,7 @@
     align-items: center;
     /* border-radius: 50px; */
     /* box-shadow: 0px 1px 3px #00000063 !important; */
-    transition: transform 0.2s ease, opacity 0.16s ease, color 0.3s ease;
+    /* transition: transform 0.2s ease, opacity 0.16s ease, color 0.3s ease; */
 }
 
 body.app-keyboard-visible .navigation,
@@ -53,6 +53,28 @@ body.app-keyboard-visible .navigation-fon {
     transform: translate3d(0, calc(100% + 24px), 0) !important;
     opacity: 0;
     pointer-events: none;
+}
+
+.navigation.navigation--suppressed,
+.navigation-fon.navigation-fon--suppressed {
+    /* transform: translate3d(0, calc(100% + 24px), 0) !important; */
+    /* opacity: 0 !important; */
+    /* pointer-events: none !important; */
+    display: none!important;
+}
+
+.navigation.navigation--suppressed-fade-only,
+.navigation-fon.navigation-fon--suppressed-fade-only {
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+.navigation.navigation--suppressed.navigation--suppressed-enter {
+    /* transition-duration: 0s, 0s, 0.3s; */
+}
+
+.navigation-fon.navigation-fon--suppressed.navigation-fon--suppressed-enter {
+    transition-duration: 0s, 0s;
 }
 
 .nav-btn {

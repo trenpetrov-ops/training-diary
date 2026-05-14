@@ -9339,6 +9339,8 @@ let appViewportBindingsReady = false;
 let keyboardBottomNavBindingsReady = false;
 let lastKnownKeyboardInsetHeight = 0;
 let lastKnownKeyboardViewportShift = 0;
+let activeKeyboardShiftHost = null;
+let activeKeyboardScrollHost = null;
 let rootScrollLockFrameId = 0;
 let rootScrollLockTimeoutId = 0;
 let rootScrollLockBindingsReady = false;
@@ -9512,43 +9514,148 @@ function isCapacitorIosPlatform() {
     return isCapacitorNativePlatform() && /iPhone|iPad|iPod/i.test(window.navigator?.userAgent || '');
 }
 
-function setKeyboardViewportShift(offsetPx, overlayHeightPx = offsetPx) {
-    const nextOffset = Math.max(0, Math.round(Number(offsetPx) || 0));
-    const nextOverlayHeight = Math.max(0, Math.round(Number(overlayHeightPx) || 0));
+const KEYBOARD_SHIFT_HOST_SELECTOR = [
+    '.supplement-sheet-editor',
+    '.meal-overlay-subpage',
+    '.meal-overlay-layer',
+    '.modal-overlay-remove-edit',
+    '.modal-overlay-edit',
+    '.modal-overlay-exercise',
+    '.modal-overlay-cicle',
+    '.modal-overlay',
+    '#auth-screen',
+    '#mode-select-screen',
+    '.container'
+].join(', ');
 
-    lastKnownKeyboardViewportShift = nextOffset;
-    lastKnownKeyboardInsetHeight = nextOverlayHeight;
+const KEYBOARD_VIEWPORT_TARGET_SELECTOR = [
+    '.create-food-row',
+    '.supplement-sheet-editor__formula',
+    '.supplement-sheet-editor__time-row'
+].join(', ');
 
-    document.documentElement.style.setProperty('--keyboard-offset', `${nextOffset}px`);
-    document.documentElement.style.setProperty('--keyboard-height', `${nextOverlayHeight}px`);
-    document.body?.classList.toggle('app-keyboard-shift-active', nextOffset > 0);
+function clearKeyboardShiftHost(host) {
+    if (!host) return;
+    try {
+        host.classList.remove('keyboard-viewport-shift-host');
+        host.style.removeProperty('--keyboard-local-shift');
+    } catch (_) {}
 }
 
-function getKeyboardVisibleViewportBottom() {
-    const viewportHeight = Math.round(
-        window.innerHeight ||
-        document.documentElement.clientHeight ||
-        0
-    );
-    if (!viewportHeight) return 0;
-    return Math.max(0, viewportHeight - Math.max(0, lastKnownKeyboardInsetHeight || 0));
+function resolveKeyboardShiftHost(node) {
+    return node?.closest?.(KEYBOARD_SHIFT_HOST_SELECTOR) || null;
 }
 
-function findKeyboardScrollHost(node) {
+function resolveKeyboardViewportTarget(node) {
+    return node?.closest?.(KEYBOARD_VIEWPORT_TARGET_SELECTOR) || node || null;
+}
+
+function clearKeyboardScrollHost(host) {
+    if (!host) return;
+    try {
+        host.classList.remove('keyboard-scroll-space-host');
+        host.style.removeProperty('--keyboard-extra-scroll-space');
+        host.style.removeProperty('--keyboard-scroll-space-base');
+    } catch (_) {}
+}
+
+function setKeyboardScrollHost(host, extraScrollSpacePx = 0) {
+    const nextExtra = Math.max(0, Math.round(Number(extraScrollSpacePx) || 0));
+
+    if (activeKeyboardScrollHost && activeKeyboardScrollHost !== host) {
+        clearKeyboardScrollHost(activeKeyboardScrollHost);
+    }
+
+    if (host && nextExtra > 0) {
+        const storedBasePadding = Number.parseFloat(host.style.getPropertyValue('--keyboard-scroll-space-base') || '');
+        const storedExtraPadding = Number.parseFloat(host.style.getPropertyValue('--keyboard-extra-scroll-space') || '');
+        const computedPaddingBottom = Number.parseFloat(window.getComputedStyle?.(host)?.paddingBottom || '0') || 0;
+        const basePadding = Math.max(
+            0,
+            Math.round(
+                Number.isFinite(storedBasePadding)
+                    ? storedBasePadding
+                    : computedPaddingBottom - (Number.isFinite(storedExtraPadding) ? storedExtraPadding : 0)
+            )
+        );
+
+        try {
+            host.classList.add('keyboard-scroll-space-host');
+            host.style.setProperty('--keyboard-extra-scroll-space', `${nextExtra}px`);
+            host.style.setProperty('--keyboard-scroll-space-base', `${basePadding}px`);
+        } catch (_) {}
+
+        activeKeyboardScrollHost = host;
+        return;
+    }
+
+    clearKeyboardScrollHost(activeKeyboardScrollHost);
+    if (host && host !== activeKeyboardScrollHost) {
+        clearKeyboardScrollHost(host);
+    }
+    activeKeyboardScrollHost = null;
+}
+
+function resolveKeyboardScrollHost(node, shiftHost = null) {
     let current = node?.parentElement || null;
 
     while (current && current !== document.body) {
         const styles = window.getComputedStyle?.(current);
         const overflowY = String(styles?.overflowY || '').toLowerCase();
-        const isScrollable =
+        const canScroll =
             (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') &&
             current.scrollHeight > current.clientHeight + 1;
 
-        if (isScrollable) return current;
+        if (canScroll) return current;
         current = current.parentElement;
     }
 
-    return document.getElementById('root') || document.scrollingElement || document.documentElement;
+    if (shiftHost?.matches?.('.container')) {
+        return document.getElementById('root') || document.scrollingElement || document.documentElement;
+    }
+
+    return null;
+}
+
+function getKeyboardScrollHostContentBottom(scrollHost) {
+    if (!scrollHost) return 0;
+
+    const hostRect = scrollHost.getBoundingClientRect?.();
+    const top = Number.isFinite(hostRect?.top) ? hostRect.top : 0;
+    const scrollTop = Math.max(0, Number(scrollHost.scrollTop || 0));
+    const scrollHeight = Math.max(0, Number(scrollHost.scrollHeight || 0));
+    return top + scrollHeight - scrollTop;
+}
+
+function setKeyboardViewportShift(host, offsetPx, overlayHeightPx = lastKnownKeyboardInsetHeight) {
+    const nextOffset = Math.max(0, Math.round(Number(offsetPx) || 0));
+    const nextOverlayHeight = Math.max(0, Math.round(Number(overlayHeightPx) || 0));
+
+    lastKnownKeyboardInsetHeight = nextOverlayHeight;
+
+    if (activeKeyboardShiftHost && activeKeyboardShiftHost !== host) {
+        clearKeyboardShiftHost(activeKeyboardShiftHost);
+    }
+
+    if (host && nextOffset > 0) {
+        try {
+            host.classList.add('keyboard-viewport-shift-host');
+            host.style.setProperty('--keyboard-local-shift', `${nextOffset}px`);
+        } catch (_) {}
+        activeKeyboardShiftHost = host;
+        lastKnownKeyboardViewportShift = nextOffset;
+    } else {
+        clearKeyboardShiftHost(activeKeyboardShiftHost);
+        if (host && host !== activeKeyboardShiftHost) {
+            clearKeyboardShiftHost(host);
+        }
+        activeKeyboardShiftHost = null;
+        lastKnownKeyboardViewportShift = 0;
+    }
+
+    document.documentElement.style.setProperty('--keyboard-offset', `${nextOffset}px`);
+    document.documentElement.style.setProperty('--keyboard-height', `${nextOverlayHeight}px`);
+    document.body?.classList.toggle('app-keyboard-shift-active', nextOffset > 0);
 }
 
 function ensureNativeKeyboardBottomNavBinding() {
@@ -9560,13 +9667,22 @@ function ensureNativeKeyboardBottomNavBinding() {
     const Keyboard = window.Capacitor?.Plugins?.Keyboard;
     if (!Keyboard?.addListener) return;
     const useManualViewportShift = isCapacitorIosPlatform();
+    let keyboardViewportSyncFrameId = 0;
 
     const setKeyboardVisible = (visible, keyboardHeight = 0) => {
         document.body?.classList.toggle('app-keyboard-visible', Boolean(visible));
-        if (useManualViewportShift) {
-            setKeyboardViewportShift(visible ? keyboardHeight : 0, visible ? keyboardHeight : 0);
-        } else if (!visible || lastKnownKeyboardViewportShift) {
-            setKeyboardViewportShift(0, 0);
+        if (useManualViewportShift && visible) {
+            const nextKeyboardHeight = Math.max(0, Math.round(Number(keyboardHeight) || 0));
+            lastKnownKeyboardInsetHeight = nextKeyboardHeight;
+            document.documentElement.style.setProperty('--keyboard-height', `${nextKeyboardHeight}px`);
+            return;
+        }
+
+        if (!visible || lastKnownKeyboardViewportShift || activeKeyboardShiftHost) {
+            setKeyboardViewportShift(null, 0, 0);
+        }
+        if (!visible || activeKeyboardScrollHost) {
+            setKeyboardScrollHost(null, 0);
         }
     };
 
@@ -9577,44 +9693,77 @@ function ensureNativeKeyboardBottomNavBinding() {
         return active;
     };
 
-    const scrollFocusedKeyboardControlIntoView = () => {
-        const active = getFocusedKeyboardControl();
-        if (!active) return;
-
-        const target =
-            active.closest?.(
-                '.create-food-row, .supplement-sheet-editor__formula, .supplement-sheet-editor__time-row'
-            ) || active;
-        const visibleTop = Math.max(12, readCssPxVar('--safe-top-fallback', 0) + 12);
-        const visibleBottom = Math.max(visibleTop + 44, getKeyboardVisibleViewportBottom() - 16);
-        const rect = target.getBoundingClientRect();
-
-        let delta = 0;
-        if (rect.bottom > visibleBottom) {
-            delta = rect.bottom - visibleBottom;
-        } else if (rect.top < visibleTop) {
-            delta = rect.top - visibleTop;
+    const requestFocusedKeyboardControlViewportSync = (keyboardHeight = lastKnownKeyboardInsetHeight) => {
+        if (keyboardViewportSyncFrameId) {
+            cancelAnimationFrame(keyboardViewportSyncFrameId);
         }
-
-        if (Math.abs(delta) < 1) return;
-
-        const scrollHost = findKeyboardScrollHost(target);
-        const nextTop = Math.max(0, (scrollHost?.scrollTop || 0) + delta);
-
-        try {
-            scrollHost?.scrollTo?.({
-                top: nextTop,
-                behavior: 'auto'
-            });
-        } catch (_) {
-            if (scrollHost) scrollHost.scrollTop = nextTop;
-        }
+        keyboardViewportSyncFrameId = requestAnimationFrame(() => {
+            keyboardViewportSyncFrameId = 0;
+            syncFocusedKeyboardControlViewport(keyboardHeight);
+        });
     };
 
-    const scheduleFocusedKeyboardControlScroll = (...delays) => {
+    const syncFocusedKeyboardControlViewport = (keyboardHeight = lastKnownKeyboardInsetHeight) => {
+        const active = getFocusedKeyboardControl();
+        if (!active || !useManualViewportShift) return;
+
+        const target = resolveKeyboardViewportTarget(active);
+        const host = resolveKeyboardShiftHost(active);
+        const scrollHost = resolveKeyboardScrollHost(active, host);
+        if (!target || !host) {
+            setKeyboardViewportShift(null, 0, keyboardHeight);
+            setKeyboardScrollHost(null, 0);
+            return;
+        }
+
+        const rect = target.getBoundingClientRect();
+        const currentShift = host === activeKeyboardShiftHost ? Math.max(0, lastKnownKeyboardViewportShift || 0) : 0;
+        const baseBottom = rect.bottom + currentShift;
+        const viewportHeight = Math.round(
+            window.innerHeight ||
+            document.documentElement.clientHeight ||
+            0
+        );
+        const safeKeyboardHeight = Math.max(0, Math.round(Number(keyboardHeight) || 0));
+
+        if (!viewportHeight || !safeKeyboardHeight) {
+            setKeyboardViewportShift(host, 0, safeKeyboardHeight);
+            setKeyboardScrollHost(null, 0);
+            return;
+        }
+
+        const keyboardClearance = 14;
+        const visibleBottom = Math.max(0, viewportHeight - safeKeyboardHeight - keyboardClearance);
+        const desiredShift = Math.max(0, baseBottom - visibleBottom);
+        const nextShift = Math.min(safeKeyboardHeight, Math.round(desiredShift));
+
+        const contentBottom = getKeyboardScrollHostContentBottom(scrollHost);
+        const scrollHostContainsShiftHost = Boolean(
+            scrollHost &&
+            host &&
+            (scrollHost === host || scrollHost.contains?.(host))
+        );
+        const projectedContentBottom = Math.max(
+            0,
+            contentBottom - (scrollHostContainsShiftHost ? nextShift : 0)
+        );
+        const contentHiddenByKeyboard = Math.max(0, projectedContentBottom - visibleBottom);
+        const shouldExposeExtraScroll = contentHiddenByKeyboard > 24;
+
+        setKeyboardScrollHost(
+            scrollHost,
+            shouldExposeExtraScroll ? safeKeyboardHeight + keyboardClearance : 0
+        );
+        if (host === activeKeyboardShiftHost && Math.abs(nextShift - currentShift) < 4) {
+            return;
+        }
+        setKeyboardViewportShift(host, nextShift, safeKeyboardHeight);
+    };
+
+    const scheduleFocusedKeyboardControlViewportSync = (...delays) => {
         delays.forEach((delay) => {
             window.setTimeout(() => {
-                requestAnimationFrame(scrollFocusedKeyboardControlIntoView);
+                requestFocusedKeyboardControlViewportSync();
             }, Math.max(0, Number(delay) || 0));
         });
     };
@@ -9633,7 +9782,8 @@ function ensureNativeKeyboardBottomNavBinding() {
     const handleKeyboardShow = (info = {}) => {
         const keyboardHeight = Math.max(0, Math.round(Number(info?.keyboardHeight) || 0));
         setKeyboardVisible(true, keyboardHeight);
-        scheduleFocusedKeyboardControlScroll(0, 120, 260);
+        requestFocusedKeyboardControlViewportSync(keyboardHeight);
+        scheduleFocusedKeyboardControlViewportSync(120, 260);
     };
 
     bindKeyboardEvent('keyboardWillShow', handleKeyboardShow);
@@ -9644,12 +9794,17 @@ function ensureNativeKeyboardBottomNavBinding() {
     document.addEventListener('focusin', (event) => {
         if (!event.target?.matches?.('input:not([type="hidden"]), textarea, select, [contenteditable="true"]')) return;
         if (document.body?.classList.contains('app-keyboard-visible')) {
-            scheduleFocusedKeyboardControlScroll(0, 120);
+            requestFocusedKeyboardControlViewportSync();
+            scheduleFocusedKeyboardControlViewportSync(120);
             return;
         }
-        scheduleFocusedKeyboardControlScroll(40, 180);
+        scheduleFocusedKeyboardControlViewportSync(40, 180);
     });
 
+    window.addEventListener('resize', () => {
+        if (!useManualViewportShift || !document.body?.classList.contains('app-keyboard-visible')) return;
+        requestFocusedKeyboardControlViewportSync();
+    });
     window.addEventListener('pagehide', () => setKeyboardVisible(false, 0));
 }
 
