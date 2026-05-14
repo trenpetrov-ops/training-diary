@@ -9337,6 +9337,8 @@ if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
 // =================================================================
 let appViewportBindingsReady = false;
 let keyboardBottomNavBindingsReady = false;
+let lastKnownKeyboardInsetHeight = 0;
+let lastKnownKeyboardViewportShift = 0;
 let rootScrollLockFrameId = 0;
 let rootScrollLockTimeoutId = 0;
 let rootScrollLockBindingsReady = false;
@@ -9504,6 +9506,51 @@ function ensureAppViewportHeightBinding() {
     appViewportBindingsReady = true;
 }
 
+function isCapacitorIosPlatform() {
+    const platform = String(window.Capacitor?.getPlatform?.() || '').toLowerCase();
+    if (platform) return platform === 'ios';
+    return isCapacitorNativePlatform() && /iPhone|iPad|iPod/i.test(window.navigator?.userAgent || '');
+}
+
+function setKeyboardViewportShift(offsetPx, overlayHeightPx = offsetPx) {
+    const nextOffset = Math.max(0, Math.round(Number(offsetPx) || 0));
+    const nextOverlayHeight = Math.max(0, Math.round(Number(overlayHeightPx) || 0));
+
+    lastKnownKeyboardViewportShift = nextOffset;
+    lastKnownKeyboardInsetHeight = nextOverlayHeight;
+
+    document.documentElement.style.setProperty('--keyboard-offset', `${nextOffset}px`);
+    document.documentElement.style.setProperty('--keyboard-height', `${nextOverlayHeight}px`);
+    document.body?.classList.toggle('app-keyboard-shift-active', nextOffset > 0);
+}
+
+function getKeyboardVisibleViewportBottom() {
+    const viewportHeight = Math.round(
+        window.innerHeight ||
+        document.documentElement.clientHeight ||
+        0
+    );
+    if (!viewportHeight) return 0;
+    return Math.max(0, viewportHeight - Math.max(0, lastKnownKeyboardInsetHeight || 0));
+}
+
+function findKeyboardScrollHost(node) {
+    let current = node?.parentElement || null;
+
+    while (current && current !== document.body) {
+        const styles = window.getComputedStyle?.(current);
+        const overflowY = String(styles?.overflowY || '').toLowerCase();
+        const isScrollable =
+            (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') &&
+            current.scrollHeight > current.clientHeight + 1;
+
+        if (isScrollable) return current;
+        current = current.parentElement;
+    }
+
+    return document.getElementById('root') || document.scrollingElement || document.documentElement;
+}
+
 function ensureNativeKeyboardBottomNavBinding() {
     if (keyboardBottomNavBindingsReady) return;
     keyboardBottomNavBindingsReady = true;
@@ -9512,9 +9559,15 @@ function ensureNativeKeyboardBottomNavBinding() {
 
     const Keyboard = window.Capacitor?.Plugins?.Keyboard;
     if (!Keyboard?.addListener) return;
+    const useManualViewportShift = isCapacitorIosPlatform();
 
-    const setKeyboardVisible = (visible) => {
+    const setKeyboardVisible = (visible, keyboardHeight = 0) => {
         document.body?.classList.toggle('app-keyboard-visible', Boolean(visible));
+        if (useManualViewportShift) {
+            setKeyboardViewportShift(visible ? keyboardHeight : 0, visible ? keyboardHeight : 0);
+        } else if (!visible || lastKnownKeyboardViewportShift) {
+            setKeyboardViewportShift(0, 0);
+        }
     };
 
     const getFocusedKeyboardControl = () => {
@@ -9532,15 +9585,29 @@ function ensureNativeKeyboardBottomNavBinding() {
             active.closest?.(
                 '.create-food-row, .supplement-sheet-editor__formula, .supplement-sheet-editor__time-row'
             ) || active;
+        const visibleTop = Math.max(12, readCssPxVar('--safe-top-fallback', 0) + 12);
+        const visibleBottom = Math.max(visibleTop + 44, getKeyboardVisibleViewportBottom() - 16);
+        const rect = target.getBoundingClientRect();
+
+        let delta = 0;
+        if (rect.bottom > visibleBottom) {
+            delta = rect.bottom - visibleBottom;
+        } else if (rect.top < visibleTop) {
+            delta = rect.top - visibleTop;
+        }
+
+        if (Math.abs(delta) < 1) return;
+
+        const scrollHost = findKeyboardScrollHost(target);
+        const nextTop = Math.max(0, (scrollHost?.scrollTop || 0) + delta);
 
         try {
-            target.scrollIntoView({
-                block: 'center',
-                inline: 'nearest',
-                behavior: 'smooth'
+            scrollHost?.scrollTo?.({
+                top: nextTop,
+                behavior: 'auto'
             });
         } catch (_) {
-            target.scrollIntoView(false);
+            if (scrollHost) scrollHost.scrollTop = nextTop;
         }
     };
 
@@ -9559,22 +9626,31 @@ function ensureNativeKeyboardBottomNavBinding() {
         } catch (_) {}
     };
 
-    const handleKeyboardShow = () => {
-        setKeyboardVisible(true);
-        scheduleFocusedKeyboardControlScroll(40, 160, 320);
+    if (useManualViewportShift && Keyboard.setResizeMode) {
+        Promise.resolve(Keyboard.setResizeMode({ mode: 'none' })).catch(() => {});
+    }
+
+    const handleKeyboardShow = (info = {}) => {
+        const keyboardHeight = Math.max(0, Math.round(Number(info?.keyboardHeight) || 0));
+        setKeyboardVisible(true, keyboardHeight);
+        scheduleFocusedKeyboardControlScroll(0, 120, 260);
     };
 
     bindKeyboardEvent('keyboardWillShow', handleKeyboardShow);
     bindKeyboardEvent('keyboardDidShow', handleKeyboardShow);
-    bindKeyboardEvent('keyboardWillHide', () => setKeyboardVisible(false));
-    bindKeyboardEvent('keyboardDidHide', () => setKeyboardVisible(false));
+    bindKeyboardEvent('keyboardWillHide', () => setKeyboardVisible(false, 0));
+    bindKeyboardEvent('keyboardDidHide', () => setKeyboardVisible(false, 0));
 
     document.addEventListener('focusin', (event) => {
         if (!event.target?.matches?.('input:not([type="hidden"]), textarea, select, [contenteditable="true"]')) return;
-        scheduleFocusedKeyboardControlScroll(120, 280, 460);
+        if (document.body?.classList.contains('app-keyboard-visible')) {
+            scheduleFocusedKeyboardControlScroll(0, 120);
+            return;
+        }
+        scheduleFocusedKeyboardControlScroll(40, 180);
     });
 
-    window.addEventListener('pagehide', () => setKeyboardVisible(false));
+    window.addEventListener('pagehide', () => setKeyboardVisible(false, 0));
 }
 
 function syncRootScrollLockState() {

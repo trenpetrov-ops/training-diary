@@ -23,6 +23,9 @@
     /* ÐŸÐ¾Ð»Ð½Ð°Ñ Ð²Ñ‹ÑÐ¾Ñ‚Ð° Ð²ÐµÑ€Ñ…Ð½ÐµÐ¹ Ð¿Ð¾Ð»Ð¾ÑÑ‹ (Ð´Ð»Ñ sticky / top: Ð² Ð´Ñ€ÑƒÐ³Ð¸Ñ… ÑÐºÑ€Ð°Ð½Ð°Ñ…) */
     --top-bar-height: calc(var(--top-bar-pad-top) + var(--top-bar-row) + var(--top-bar-pad-bottom));
     --top-bar-offset: var(--top-bar-height);
+    --keyboard-offset: 0px;
+    --keyboard-height: 0px;
+    --keyboard-transition-ms: 250ms;
     /* Ð¤Ð¸ÐºÑ. Ð½Ð¸Ð¶Ð½ÑÑ Ð½Ð°Ð²Ð¸Ð³Ð°Ñ†Ð¸Ñ: nav/bottom-nav.css â€” .navigation height 58px + margin-bottom 35px */
     --bottom-nav-occupied: 82px;
     --bottom-nav-gap: 10px;
@@ -122,6 +125,18 @@ button:focus, button:focus-visible, button:active {
     overflow: hidden;
     background-color: #eeeff3;
     box-sizing: border-box;
+}
+#top-bar,
+.container,
+#auth-screen,
+#mode-select-screen {
+    transition: transform var(--keyboard-transition-ms, 250ms) cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+body.app-keyboard-shift-active #top-bar,
+body.app-keyboard-shift-active .container,
+body.app-keyboard-shift-active #auth-screen,
+body.app-keyboard-shift-active #mode-select-screen {
+    transform: translate3d(0, calc(-1 * var(--keyboard-offset, 0px)), 0);
 }
 *::-webkit-scrollbar {
     display: none;
