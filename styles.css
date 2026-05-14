@@ -9189,7 +9189,7 @@ button#select-own-mode .mode-icon svg {
         box-sizing: border-box;
         padding-bottom: 100px;
         margin-top: 8px;
-        padding: 2px 16px 146px 16px;
+        padding: 2px 16px 140px 16px!important;
     }
     .meal-search-screen--fill .meal-search-tab-carousel .meal-search-list {
         min-height: 0;
@@ -15037,7 +15037,8 @@ button.delete-food-from-meal-btn {
     box-sizing: border-box;
     scroll-snap-align: start;
     /* ÐšÐ°Ðº Ð´Ð»Ð¸Ð½Ð½Ñ‹Ð¹ fling Ð² iOS paging: Ð½Ðµ Ñ‚Ñ€ÐµÐ±ÑƒÐµÐ¼ Ñ„Ð¸Ð·Ð¸Ñ‡ÐµÑÐºÐ¾Ð¹ Ð¾ÑÑ‚Ð°Ð½Ð¾Ð²ÐºÐ¸ Ð½Ð° ÐºÐ°Ð¶Ð´Ð¾Ð¹ ÑÑ‚Ñ€Ð°Ð½Ð¸Ñ†Ðµ Ð¿Ð¾ Ð´Ð¾Ñ€Ð¾Ð³Ðµ */
-    scroll-snap-stop: normal; padding: 0px 0px;
+    scroll-snap-stop: normal;
+    padding: 0px 0px;
     display: flex;
     flex-direction: column;
     align-items: stretch;

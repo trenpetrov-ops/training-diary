@@ -9517,6 +9517,41 @@ function ensureNativeKeyboardBottomNavBinding() {
         document.body?.classList.toggle('app-keyboard-visible', Boolean(visible));
     };
 
+    const getFocusedKeyboardControl = () => {
+        const active = document.activeElement;
+        if (!active || active === document.body || active === document.documentElement) return null;
+        if (!active.matches?.('input:not([type="hidden"]), textarea, select, [contenteditable="true"]')) return null;
+        return active;
+    };
+
+    const scrollFocusedKeyboardControlIntoView = () => {
+        const active = getFocusedKeyboardControl();
+        if (!active) return;
+
+        const target =
+            active.closest?.(
+                '.create-food-row, .supplement-sheet-editor__formula, .supplement-sheet-editor__time-row'
+            ) || active;
+
+        try {
+            target.scrollIntoView({
+                block: 'center',
+                inline: 'nearest',
+                behavior: 'smooth'
+            });
+        } catch (_) {
+            target.scrollIntoView(false);
+        }
+    };
+
+    const scheduleFocusedKeyboardControlScroll = (...delays) => {
+        delays.forEach((delay) => {
+            window.setTimeout(() => {
+                requestAnimationFrame(scrollFocusedKeyboardControlIntoView);
+            }, Math.max(0, Number(delay) || 0));
+        });
+    };
+
     const bindKeyboardEvent = (eventName, handler) => {
         try {
             const result = Keyboard.addListener(eventName, handler);
@@ -9524,10 +9559,20 @@ function ensureNativeKeyboardBottomNavBinding() {
         } catch (_) {}
     };
 
-    bindKeyboardEvent('keyboardWillShow', () => setKeyboardVisible(true));
-    bindKeyboardEvent('keyboardDidShow', () => setKeyboardVisible(true));
+    const handleKeyboardShow = () => {
+        setKeyboardVisible(true);
+        scheduleFocusedKeyboardControlScroll(40, 160, 320);
+    };
+
+    bindKeyboardEvent('keyboardWillShow', handleKeyboardShow);
+    bindKeyboardEvent('keyboardDidShow', handleKeyboardShow);
     bindKeyboardEvent('keyboardWillHide', () => setKeyboardVisible(false));
     bindKeyboardEvent('keyboardDidHide', () => setKeyboardVisible(false));
+
+    document.addEventListener('focusin', (event) => {
+        if (!event.target?.matches?.('input:not([type="hidden"]), textarea, select, [contenteditable="true"]')) return;
+        scheduleFocusedKeyboardControlScroll(120, 280, 460);
+    });
 
     window.addEventListener('pagehide', () => setKeyboardVisible(false));
 }

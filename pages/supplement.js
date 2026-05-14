@@ -3298,25 +3298,39 @@ function attachSupplementTableBounceLock(tableWrapper, signal) {
     }, { passive: false, signal });
 }
 
+function isSupplementTableRowHeightFrozen() {
+    return Boolean(
+        document.body?.classList.contains('app-keyboard-visible') ||
+        document.body?.classList.contains('supplement-table-sheet-editing') ||
+        document.documentElement?.classList.contains('supplement-table-sheet-editing')
+    );
+}
+
 function syncSupplementTableRangeLayout(tableWrapper, tableRangeMode, tableState = null) {
     if (!tableWrapper) return;
 
-    const visibleDays = SUPPLEMENT_TABLE_VISIBLE_DAYS;
     const header = tableWrapper.querySelector('thead');
     const table = tableWrapper.querySelector('.supplement-plan-table');
-    const guard = tableWrapper.querySelector('.scroll-guard');
-    const headerHeight = header?.getBoundingClientRect().height || 43;
-    const wrapperRect = tableWrapper.getBoundingClientRect();
-    const navRect = document.querySelector('.navigation')?.getBoundingClientRect?.();
-    const visibleBottom = Number.isFinite(navRect?.top) && navRect.top > 0
-        ? navRect.top
-        : wrapperRect.bottom;
-    const availableHeight = Math.max(Math.floor(visibleBottom - wrapperRect.top - headerHeight), 0);
-    const rowHeight = availableHeight > 0
-        ? Math.max(1, availableHeight / visibleDays)
-        : 24;
+    const hasFrozenRowHeight = Boolean(
+        isSupplementTableRowHeightFrozen() &&
+        String(tableWrapper.style.getPropertyValue('--supplement-table-row-height') || '').trim()
+    );
 
-    tableWrapper.style.setProperty('--supplement-table-row-height', `${rowHeight}px`);
+    if (!hasFrozenRowHeight) {
+        const visibleDays = SUPPLEMENT_TABLE_VISIBLE_DAYS;
+        const headerHeight = header?.getBoundingClientRect().height || 43;
+        const wrapperRect = tableWrapper.getBoundingClientRect();
+        const navRect = document.querySelector('.navigation')?.getBoundingClientRect?.();
+        const visibleBottom = Number.isFinite(navRect?.top) && navRect.top > 0
+            ? navRect.top
+            : wrapperRect.bottom;
+        const availableHeight = Math.max(Math.floor(visibleBottom - wrapperRect.top - headerHeight), 0);
+        const rowHeight = availableHeight > 0
+            ? Math.max(1, availableHeight / visibleDays)
+            : 24;
+
+        tableWrapper.style.setProperty('--supplement-table-row-height', `${rowHeight}px`);
+    }
 
     const displayColumns = Number(tableWrapper.dataset.displayColumns || 0);
     if (displayColumns > 0) {
