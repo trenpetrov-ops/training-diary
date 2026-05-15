@@ -41,6 +41,7 @@ import {
     renderTopBar,
     ensureCycleSelected,
     render,
+    requestAppChromeSync,
     showToast,
     uploadUserMediaFileWithProgress,
     deleteUserFirebaseStorageFileByDownloadUrl
@@ -89,6 +90,12 @@ const MEAL_NO_GOAL_SUMMARY_VIEW_KEY = 'mealNoGoalSummaryView';
 let mealNoGoalSummaryCurrentMode = localStorage.getItem(MEAL_NO_GOAL_SUMMARY_VIEW_KEY) === 'current';
 const MEAL_GOAL_SUMMARY_VIEW_KEY = 'mealGoalSummaryView';
 let mealGoalSummaryCurrentMode = localStorage.getItem(MEAL_GOAL_SUMMARY_VIEW_KEY) === 'current';
+
+function syncMealAppChrome() {
+    try {
+        requestAppChromeSync();
+    } catch (_) {}
+}
 
 
 // функция сброса
@@ -3201,6 +3208,7 @@ function openMealOverlay(content) {
     mealOverlayStack = [content];
     syncMealOverlayScrollMode();
     syncMealOverlayBottomNav();
+    syncMealAppChrome();
 }
 
 function closeMealOverlay() {
@@ -3212,6 +3220,7 @@ function closeMealOverlay() {
     mealOverlayEl.style.display = 'none';
     mealOverlayStack = [];
     syncMealOverlayBottomNav();
+    syncMealAppChrome();
 }
 
 function attachMealOverlayBottomNavSync(target, syncFn) {
@@ -3314,6 +3323,7 @@ function pushMealOverlay(content, { isSearch = false } = {}) {
     mealOverlayStack.push(content);
     syncMealOverlayScrollMode();
     syncMealOverlayBottomNav();
+    syncMealAppChrome();
 }
 
 function popMealOverlay() {
@@ -3340,6 +3350,7 @@ function popMealOverlay() {
             syncMealOverlayScrollMode();
         }
         syncMealOverlayBottomNav();
+        syncMealAppChrome();
     };
 
     if (dur > 0) {
@@ -4594,6 +4605,7 @@ export async function renderMealPage() {
         closeMealOverlay();
         setMealBaseTopBarVisible(true);
         scheduleMealRootScrollAvailabilitySync();
+        syncMealAppChrome();
         return;
     }
 

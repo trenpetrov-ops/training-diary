@@ -9471,6 +9471,18 @@ async function syncAppChrome() {
     }
 }
 
+let appChromeSyncQueued = false;
+
+export function requestAppChromeSync() {
+    if (appChromeSyncQueued) return;
+    appChromeSyncQueued = true;
+
+    requestAnimationFrame(() => {
+        appChromeSyncQueued = false;
+        void syncAppChrome();
+    });
+}
+
 function syncAppViewportHeightVar() {
     const viewportHeight = Math.round(
         window.innerHeight ||

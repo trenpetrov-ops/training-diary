@@ -9822,7 +9822,7 @@ button#select-own-mode .mode-icon svg {
         background: transparent;
         color: #1f6fff;
         font-size: 17px;
-        font-weight: 500;
+        /* font-weight: 500; */
         line-height: 1;
         padding: 4px 0;
         cursor: pointer;
@@ -14291,7 +14291,7 @@ button.action-btn.action-plan span.action-plan-text svg {
     margin-top: 13px;
     /* box-shadow: 0px 1px 3px #00000030; */
     /* border: 0.5px solid #d9d9d9; */
-    gap: 5px;
+    gap: 0px;
     display: flex;
     flex-direction: column;
 }
@@ -14300,7 +14300,7 @@ button.action-btn.action-plan span.action-plan-text svg {
     grid-template-columns: 194px 1fr;
     gap: 10px;
     align-items: center;
-    padding: 8px 12px;
+    padding: 12px 12px;
     border-bottom: 1px solid #d4d4d457;
 }
 .create-food-form-card :nth-child(3).create-food-row {
@@ -15247,8 +15247,8 @@ button.delete-food-from-meal-btn {
     margin: 0;
     /* min-height: 38px; */
     /* padding: 4px 0; */
-    font-weight: 700;
-    line-height: 1;
+    font-weight: 600;
+    /* line-height: 1; */
 }
 .meal-search-topbar--inline-actions .meal-search-meal-text {
     display: block;
@@ -15707,6 +15707,7 @@ button.delete-food-from-meal-btn {
     margin: 0;
     border-radius: 999px;
     flex-shrink: 0;
+    text-transform: capitalize;
 }
 .meal-search-topbar-action.disabled,
 .meal-search-topbar-action:disabled {
@@ -15727,7 +15728,7 @@ button.delete-food-from-meal-btn {
 .meal-search-topbar-action--text {
     /* min-height: 38px; */
     padding: 0 2px;
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 600;
     line-height: 1;
     white-space: nowrap;
@@ -15955,9 +15956,9 @@ button.delete-food-from-meal-btn {
     border: none;
     background: transparent;
     color: #3e8ce1;
-    font-size: 16px;
-    font-weight: 600;
-    line-height: 1;
+    font-size: 15px;
+    /* font-weight: 600; */
+    /* line-height: 1; */
     padding: 4px 0;
     cursor: pointer;
     /* margin-top: -2px; */
@@ -15970,7 +15971,7 @@ button.delete-food-from-meal-btn {
 }
 .meal-search-meal-text.active {
     color: #0f73df;
-    font-weight: 700;
+    font-weight: 600!important;
 }
 .meal-search-meal-arrow {
     display: inline-flex;
@@ -18676,8 +18677,8 @@ button.btn.btn-secondary.profile-copy-btn {
     /* left: 50%; */
     /* top: 50%; */
     /* transform: translate(-50%, -50%); */
-    font-size: 16px;
-    font-weight: 700;
+    font-size: 15px;
+    font-weight: 600;
     /* line-height: 1; */
     white-space: nowrap;
     pointer-events: none;
