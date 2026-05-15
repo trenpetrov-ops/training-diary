@@ -4787,6 +4787,9 @@ function getMealGoalState() {
     if (typeof goal.activeBlock === 'undefined') {
         goal.activeBlock = null; // 'daily' | 'weekday' | 'interval'
     }
+    if (typeof goal.uiTab === 'undefined') {
+        goal.uiTab = goal.activeBlock || 'daily';
+    }
 
     return goal;
 }
@@ -4868,6 +4871,74 @@ function resetIntervalDraft(interval) {
     ];
 }
 
+function getMealGoalTabTargetKey(blockKey, goalState = getMealGoalState()) {
+    if (blockKey === 'daily' && goalState.sheetTarget === 'daily') {
+        return 'daily';
+    }
+
+    if (blockKey === 'weekday' && goalState.sheetTarget === 'weekday') {
+        return 'weekday';
+    }
+
+    if (blockKey === 'interval') {
+        const currentIntervalIndex = parseIntervalTargetKey(goalState.sheetTarget);
+        if (currentIntervalIndex !== null) {
+            return getIntervalTargetKey(currentIntervalIndex);
+        }
+
+        const periods = Array.isArray(goalState.interval?.periods)
+            ? goalState.interval.periods
+            : [];
+        const filledIndex = periods.findIndex(period => !isIntervalPeriodEmpty(period));
+        return getIntervalTargetKey(filledIndex === -1 ? 0 : filledIndex);
+    }
+
+    return blockKey === 'weekday' ? 'weekday' : 'daily';
+}
+
+function getMealGoalVisibleTabKey(goalState = getMealGoalState()) {
+    if (goalState.uiTab === 'daily' || goalState.uiTab === 'weekday' || goalState.uiTab === 'interval') {
+        return goalState.uiTab;
+    }
+
+    if (goalState.sheetTarget === 'daily' || goalState.sheetTarget === 'weekday') {
+        return goalState.sheetTarget;
+    }
+
+    if (parseIntervalTargetKey(goalState.sheetTarget) !== null) {
+        return 'interval';
+    }
+
+    if (goalState.activeBlock === 'daily' || goalState.activeBlock === 'weekday' || goalState.activeBlock === 'interval') {
+        return goalState.activeBlock;
+    }
+
+    return 'daily';
+}
+
+function syncMealGoalTabUi(tabKey) {
+    const page = document.querySelector('.meal-goal-page');
+    if (!page) return;
+
+    page.querySelectorAll('.meal-goal-tab').forEach(button => {
+        button.classList.toggle('active', button.dataset.goalTab === tabKey);
+        button.classList.toggle('is-active', button.dataset.goalTab === tabKey);
+    });
+
+    page.querySelectorAll('.meal-goal-tab-panel').forEach(panel => {
+        panel.classList.toggle('is-active', panel.dataset.goalTab === tabKey);
+    });
+}
+
+function setMealGoalVisibleTab(tabKey) {
+    const goal = getMealGoalState();
+    goal.uiTab = tabKey;
+    goal.sheetTarget = getMealGoalTabTargetKey(tabKey, goal);
+
+    syncMealGoalTabUi(tabKey);
+    updateMealGoalSaveButtonState();
+}
+
 function activateMealGoalBlock(blockKey) {
     const goal = getMealGoalState();
 
@@ -4889,6 +4960,8 @@ function activateMealGoalBlock(blockKey) {
     }
 
     goal.activeBlock = blockKey;
+    goal.uiTab = blockKey;
+    goal.sheetTarget = getMealGoalTabTargetKey(blockKey, goal);
 }
 
 function updateMacrosPickerState(row, active, label, clearBtn = null) {
@@ -6302,6 +6375,378 @@ function renderMealGoalPage() {
     page.append(presets, goalSectionsWrap);
     overlayPage.append(page);
 }
+let mealGoalSaveInFlight = false;
+
+const handleMealGoalSaveAction = async () => {
+    if (mealGoalSaveInFlight || !getMealGoalSaveValidity()) return;
+
+    mealGoalSaveInFlight = true;
+    updateMealGoalSaveButtonState();
+
+    try {
+        const ok = await saveMealGoalToCycle();
+        if (!ok) return;
+
+        showToast('Пресет сохранён');
+        renderMealGoalPage();
+        renderMealMainScreen();
+    } catch (e) {
+        console.error(e);
+        showToast('Не удалось сохранить');
+    } finally {
+        mealGoalSaveInFlight = false;
+        updateMealGoalSaveButtonState();
+    }
+};
+
+updateMealGoalSaveButtonState = function () {
+    const saveBtn = document.querySelector('.meal-goal-top-btn-save');
+    const valid = getMealGoalSaveValidity();
+
+    if (saveBtn) {
+        syncMealOverlayTopbarActionButton(saveBtn, {
+            text: 'Сохранить цель',
+            label: 'Сохранить цель',
+            disabled: mealGoalSaveInFlight || !valid,
+            onClick: () => {
+                void handleMealGoalSaveAction();
+            }
+        });
+    }
+};
+
+renderMealGoalTopBar = function () {
+    const target = mealOverlayEl || document.getElementById('root');
+    if (!target) return;
+
+    const title = createElement('h3', 'meal-goal-page-title', 'Задать цель');
+    const saveBtn = createMealOverlayTopbarActionButton({
+        text: 'Сохранить цель',
+        label: 'Сохранить цель',
+        disabled: true,
+        onClick: () => {
+            void handleMealGoalSaveAction();
+        }
+    });
+    saveBtn.classList.add('meal-goal-top-btn-save');
+
+    target.querySelector('.meal-goal-sticky-header')?.remove();
+    target.querySelector('.meal-goal-page-title')?.remove();
+    target.querySelector('.meal-goal-inline-topbar')?.remove();
+
+    const stickyHeader = createElement('div', 'meal-goal-sticky-header');
+    const { topBar } = createMealOverlayInlineTopbar({
+        onBack: () => closeMealOverlayAndShowMealMain(),
+        actions: [saveBtn]
+    });
+    topBar.classList.add('meal-search-topbar--product-search-page', 'meal-goal-inline-topbar');
+
+    stickyHeader.append(topBar, title);
+    target.prepend(stickyHeader);
+    updateMealGoalSaveButtonState();
+
+    requestAnimationFrame(() => {
+        const watchEl = target.querySelector('.meal-goal-page');
+        if (watchEl) {
+            setupCreateFoodStickyTitleBorder({
+                titleEl: title,
+                watchEl
+            });
+        }
+    });
+};
+
+renderMealGoalPage = function () {
+    ensureMealShell();
+    setMealBaseTopBarVisible(false);
+
+    const overlayPage = createElement('div', 'meal-goal-overlay-wrap');
+    attachMealOverlayTopbarMode(overlayPage);
+    openMealOverlay(overlayPage);
+    renderMealGoalTopBar();
+
+    const goal = getMealGoalState();
+    const activeTab = getMealGoalVisibleTabKey(goal);
+    goal.uiTab = activeTab;
+    goal.sheetTarget = getMealGoalTabTargetKey(activeTab, goal);
+
+    const page = createElement('div', 'meal-goal-page');
+    const presets = renderSavedMealGoalPresets();
+    const dailyBlock = renderDailyGoalBlock(goal);
+    const weekdayBlock = renderWeekdayGoalBlock(goal);
+    const intervalBlock = renderIntervalGoalBlock(goal);
+
+    const goalTabsOrder = ['daily', 'weekday', 'interval'];
+    const tabsWrap = createElement('div', 'meal-goal-tabs-wrap');
+    const tabsRow = createElement('div', 'meal-goal-tabs');
+
+    const tabDaily = createElement('button', 'meal-goal-tab', 'На каждый день');
+    const tabWeekday = createElement('button', 'meal-goal-tab', 'По дням');
+    const tabInterval = createElement('button', 'meal-goal-tab', 'Чередование');
+    tabDaily.type = 'button';
+    tabWeekday.type = 'button';
+    tabInterval.type = 'button';
+    tabDaily.dataset.goalTab = 'daily';
+    tabWeekday.dataset.goalTab = 'weekday';
+    tabInterval.dataset.goalTab = 'interval';
+
+    const tabButtonsMap = {
+        daily: tabDaily,
+        weekday: tabWeekday,
+        interval: tabInterval
+    };
+
+    const tabsIndicator = createElement('div', 'meal-goal-tabs-indicator');
+    tabsIndicator.innerHTML = `
+        <svg class="meal-goal-tabs-indicator-svg" viewBox="0 0 16 7" width="16" height="7" aria-hidden="true">
+            <path d="M0 7 L8 0 L16 7 Z" fill="#f2f2f7"/>
+        </svg>
+    `;
+
+    const tabsSpacerLeft = createElement('div', 'meal-goal-tabs-spacer');
+    const tabsSpacerRight = createElement('div', 'meal-goal-tabs-spacer');
+    tabsRow.append(tabsSpacerLeft, tabDaily, tabWeekday, tabInterval, tabsSpacerRight);
+    tabsWrap.append(tabsRow, tabsIndicator);
+
+    const carousel = createElement('div', 'meal-goal-tab-carousel');
+    const panelDaily = createElement('div', 'meal-goal-tab-panel');
+    const panelWeekday = createElement('div', 'meal-goal-tab-panel');
+    const panelInterval = createElement('div', 'meal-goal-tab-panel');
+    panelDaily.dataset.goalTab = 'daily';
+    panelWeekday.dataset.goalTab = 'weekday';
+    panelInterval.dataset.goalTab = 'interval';
+    panelDaily.append(dailyBlock);
+    panelWeekday.append(weekdayBlock);
+    panelInterval.append(intervalBlock);
+    carousel.append(panelDaily, panelWeekday, panelInterval);
+
+    function blurMealGoalInputs() {
+        const activeEl = document.activeElement;
+        if (activeEl instanceof HTMLElement && page.contains(activeEl)) {
+            activeEl.blur();
+        }
+    }
+
+    function applyGoalTabActiveClasses(tabKey = goal.uiTab || activeTab) {
+        Object.values(tabButtonsMap).forEach(button => button.classList.remove('active'));
+        tabButtonsMap[tabKey]?.classList.add('active');
+    }
+
+    function syncGoalTabsIndicatorToActive(tabKey = goal.uiTab || activeTab) {
+        const btn = tabButtonsMap[tabKey];
+        if (!btn) return;
+
+        const wrapRect = tabsWrap.getBoundingClientRect();
+        const btnRect = btn.getBoundingClientRect();
+        const left = Math.round(btnRect.left - wrapRect.left);
+        const width = Math.round(btnRect.width);
+
+        tabsIndicator.style.transition =
+            'transform 220ms cubic-bezier(0.22, 1, 0.36, 1), width 220ms cubic-bezier(0.22, 1, 0.36, 1)';
+        tabsIndicator.style.transform = `translate3d(${left}px, 0, 0)`;
+        tabsIndicator.style.width = `${width}px`;
+    }
+
+    function getGoalCarouselTabT() {
+        const pageWidth = carousel.clientWidth || 0;
+        if (pageWidth <= 0) {
+            return Math.max(0, goalTabsOrder.indexOf(goal.uiTab || activeTab));
+        }
+
+        const raw = carousel.scrollLeft / pageWidth;
+        return Math.max(0, Math.min(goalTabsOrder.length - 1, raw));
+    }
+
+    function syncGoalTabsIndicatorToCarouselScroll({ animated = false } = {}) {
+        const leftIdx = Math.min(goalTabsOrder.length - 1, Math.max(0, Math.floor(getGoalCarouselTabT())));
+        const rightIdx = Math.min(goalTabsOrder.length - 1, leftIdx + 1);
+        const frac = getGoalCarouselTabT() - leftIdx;
+
+        const btnLeft = tabButtonsMap[goalTabsOrder[leftIdx]];
+        const btnRight = tabButtonsMap[goalTabsOrder[rightIdx]];
+        if (!btnLeft || !btnRight) return;
+
+        const wrapRect = tabsWrap.getBoundingClientRect();
+        const rectLeft = btnLeft.getBoundingClientRect();
+        const rectRight = btnRight.getBoundingClientRect();
+
+        const left = (rectLeft.left - wrapRect.left) + ((rectRight.left - rectLeft.left) * frac);
+        const width = Math.max(12, rectLeft.width + ((rectRight.width - rectLeft.width) * frac));
+
+        tabsIndicator.style.transition = animated
+            ? 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1), width 220ms cubic-bezier(0.22, 1, 0.36, 1)'
+            : 'none';
+        tabsIndicator.style.transform = `translate3d(${left}px, 0, 0)`;
+        tabsIndicator.style.width = `${width}px`;
+    }
+
+    function commitGoalVisibleTab(tabKey) {
+        goal.uiTab = tabKey;
+        goal.sheetTarget = getMealGoalTabTargetKey(tabKey, goal);
+        applyGoalTabActiveClasses(tabKey);
+        updateMealGoalSaveButtonState();
+    }
+
+    function applyGoalTabPreviewFromCarouselScroll() {
+        if (!goalTabsOrder.length || !carousel.clientWidth) return;
+
+        const idx = Math.min(goalTabsOrder.length - 1, Math.max(0, Math.round(getGoalCarouselTabT())));
+        const tabKey = goalTabsOrder[idx];
+        if (!tabKey) return;
+
+        applyGoalTabActiveClasses(tabKey);
+        syncGoalTabsIndicatorToCarouselScroll({ animated: false });
+    }
+
+    let goalCarouselRaf = 0;
+    function scheduleGoalCarouselFrame() {
+        if (goalCarouselRaf) return;
+        goalCarouselRaf = requestAnimationFrame(() => {
+            goalCarouselRaf = 0;
+            applyGoalTabPreviewFromCarouselScroll();
+        });
+    }
+
+    let goalCarouselScrollEndTimer = 0;
+    function onGoalCarouselScrollSettled() {
+        if (!goalTabsOrder.length || !carousel.clientWidth) {
+            commitGoalVisibleTab(goal.uiTab || activeTab);
+            syncGoalTabsIndicatorToActive(goal.uiTab || activeTab);
+            return;
+        }
+
+        const idx = Math.min(goalTabsOrder.length - 1, Math.max(0, Math.round(getGoalCarouselTabT())));
+        const tabKey = goalTabsOrder[idx];
+        if (!tabKey) return;
+
+        if (goal.uiTab !== tabKey) {
+            blurMealGoalInputs();
+        }
+
+        commitGoalVisibleTab(tabKey);
+        syncGoalTabsIndicatorToCarouselScroll({ animated: false });
+    }
+
+    function scheduleGoalCarouselScrollEndFallback() {
+        if (goalCarouselScrollEndTimer) {
+            clearTimeout(goalCarouselScrollEndTimer);
+        }
+
+        goalCarouselScrollEndTimer = setTimeout(() => {
+            goalCarouselScrollEndTimer = 0;
+            onGoalCarouselScrollSettled();
+        }, 140);
+    }
+
+    function syncGoalCarouselToState() {
+        const idx = Math.max(0, goalTabsOrder.indexOf(goal.uiTab || activeTab));
+        requestAnimationFrame(() => {
+            const pageWidth = carousel.clientWidth || 0;
+            if (pageWidth <= 0) return;
+
+            const target = idx * pageWidth;
+            if (Math.abs(carousel.scrollLeft - target) <= 2) return;
+
+            const prevSnap = carousel.style.scrollSnapType;
+            carousel.style.scrollSnapType = 'none';
+            carousel.scrollLeft = target;
+            void carousel.offsetWidth;
+            carousel.style.scrollSnapType = prevSnap || '';
+        });
+    }
+
+    function goToGoalTab(tabKey) {
+        if (!goalTabsOrder.includes(tabKey)) return;
+
+        const idx = goalTabsOrder.indexOf(tabKey);
+        const pageWidth = carousel.clientWidth || 0;
+        if (pageWidth > 0 && goal.uiTab === tabKey && Math.abs(carousel.scrollLeft - idx * pageWidth) < 6) {
+            return;
+        }
+
+        if (goal.uiTab !== tabKey) {
+            blurMealGoalInputs();
+        }
+
+        commitGoalVisibleTab(tabKey);
+        syncGoalTabsIndicatorToActive(tabKey);
+
+        if (pageWidth > 0) {
+            const target = idx * pageWidth;
+            const prevSnap = carousel.style.scrollSnapType;
+            carousel.style.scrollSnapType = 'none';
+            carousel.scrollLeft = target;
+            void carousel.offsetWidth;
+            carousel.style.scrollSnapType = prevSnap || '';
+        }
+    }
+
+    tabDaily.onclick = () => goToGoalTab('daily');
+    tabWeekday.onclick = () => goToGoalTab('weekday');
+    tabInterval.onclick = () => goToGoalTab('interval');
+
+    let goalTabGestureStartX = 0;
+    let goalTabGestureStartY = 0;
+    let goalTabPanAxis = null;
+    tabsWrap.addEventListener('touchstart', (e) => {
+        if (!e.touches?.length) return;
+        goalTabGestureStartX = e.touches[0].clientX;
+        goalTabGestureStartY = e.touches[0].clientY;
+        goalTabPanAxis = null;
+    }, { passive: true });
+    tabsWrap.addEventListener('touchmove', (e) => {
+        if (!e.touches?.length) return;
+        const dx = e.touches[0].clientX - goalTabGestureStartX;
+        const dy = e.touches[0].clientY - goalTabGestureStartY;
+        if (!goalTabPanAxis) {
+            goalTabPanAxis = resolveSwipePanAxis(dx, dy);
+            if (goalTabPanAxis == null) return;
+        }
+        if (goalTabPanAxis === 'x' && e.cancelable) {
+            e.preventDefault();
+        }
+    }, { passive: false });
+    tabsWrap.addEventListener('touchend', () => {
+        goalTabPanAxis = null;
+    });
+    tabsWrap.addEventListener('touchcancel', () => {
+        goalTabPanAxis = null;
+    });
+
+    carousel.addEventListener('scroll', () => {
+        scheduleGoalCarouselFrame();
+        scheduleGoalCarouselScrollEndFallback();
+    }, { passive: true });
+
+    if ('onscrollend' in window) {
+        carousel.addEventListener('scrollend', () => {
+            if (goalCarouselScrollEndTimer) {
+                clearTimeout(goalCarouselScrollEndTimer);
+                goalCarouselScrollEndTimer = 0;
+            }
+            onGoalCarouselScrollSettled();
+        }, { passive: true });
+    }
+
+    window.addEventListener('resize', () => {
+        syncGoalCarouselToState();
+        requestAnimationFrame(() => {
+            syncGoalTabsIndicatorToActive(goal.uiTab || activeTab);
+        });
+    }, { passive: true });
+
+    const goalSectionsWrap = createElement('div', 'meal-goal-sections-wrap');
+    goalSectionsWrap.append(carousel);
+
+    page.append(presets, tabsWrap, goalSectionsWrap);
+    overlayPage.append(page);
+
+    commitGoalVisibleTab(activeTab);
+    requestAnimationFrame(() => {
+        syncGoalCarouselToState();
+        syncGoalTabsIndicatorToActive(activeTab);
+    });
+};
 // ==============  обновляет только состояние UI страницы цели
 
 function updateMealGoalPageState() {
@@ -6837,7 +7282,7 @@ async function renderEditFood() {
         return;
     }
 
-    const container = createElement('div', 'create-food create-food-form-page');
+    const container = createElement('div', 'create-food create-food-form-page create-food-form-page--sticky-topbar');
 
     const handleBack = () => {
         const backTarget = state.editFoodBackTarget || 'foodDetails';
@@ -6862,9 +7307,10 @@ async function renderEditFood() {
     };
     let saveBtn = null;
     const topBarActionBtn = createMealOverlayTopbarActionButton({
-        text: 'Сохранить продукт',
-        label: 'Сохранить продукт',
+        text: 'Изменить продукт',
+        label: 'Изменить продукт',
         disabled: true,
+        hidden: true,
         onClick: () => saveBtn?.onclick?.()
     });
     const { topBar } = createMealOverlayInlineTopbar({
@@ -6883,14 +7329,7 @@ async function renderEditFood() {
         const row = createElement('div', `create-food-row ${extraClass}`.trim());
 
         const labelWrap = createElement('div', 'create-food-row-label-wrap');
-        const label = createElement('div', 'create-food-row-label', labelText);
-        const hint = createElement(
-            'div',
-            'create-food-row-hint',
-            required ? 'обязательно' : 'необязательно'
-        );
-
-        labelWrap.append(label, hint);
+        labelWrap.append(createCreateFoodLabelBlock(labelText, required));
 
         const controlWrap = createElement('div', 'create-food-row-control');
         controlWrap.append(controlEl);
@@ -7073,9 +7512,36 @@ async function renderEditFood() {
 
     syncPortionInputState();
 
+    function normalizeEditableNumber(value) {
+        const raw = String(value ?? '').trim();
+        if (raw === '') return '';
+        const numericValue = Number(raw);
+        return Number.isFinite(numericValue) ? String(numericValue) : raw;
+    }
+
+    function getEditFoodFormSnapshot() {
+        return JSON.stringify({
+            name: String(name.value || '').trim(),
+            description: String(description.value || '').trim(),
+            nutritionBasis: String(selectedUnit || '').trim(),
+            portionValue: selectedUnit === 'порция'
+                ? normalizeEditableNumber(portion.value)
+                : String(FOOD_LOCKED_PORTION_AMOUNT),
+            portionMeasureUnit: selectedUnit === 'порция'
+                ? String(selectedPortionMeasureUnit || '').trim()
+                : '',
+            protein: normalizeEditableNumber(protein.value),
+            fat: normalizeEditableNumber(fat.value),
+            carbs: normalizeEditableNumber(carbs.value),
+            calories: normalizeEditableNumber(calories.value)
+        });
+    }
+
+    const initialEditFoodSnapshot = getEditFoodFormSnapshot();
+
     const rows = [
         createFormRow('Название', name, true),
-        createFormRow('Описание', description, true, 'is-textarea'),
+        createFormRow('Описание', description, false, 'is-textarea'),
         createFormRow('Ед. изм.', unitWrap, true),
         createFormRow('Размер порции', portionControl, true),
         createFormRow('Белки', protein, true),
@@ -7085,14 +7551,17 @@ async function renderEditFood() {
     ];
 
     rows.forEach(row => formCard.append(row));
+    formCard.append(createCreateFoodRequiredNote());
 
     saveBtn = createElement('button', 'save-btn create-food-submit-btn', 'Сохранить');
     saveBtn.disabled = true;
 
     function syncCreateFoodTopbarAction() {
+        const hasChanges = getEditFoodFormSnapshot() !== initialEditFoodSnapshot;
         syncMealOverlayTopbarActionButton(topBarActionBtn, {
-            text: 'Сохранить продукт',
-            label: 'Сохранить продукт',
+            text: 'Изменить продукт',
+            label: 'Изменить продукт',
+            hidden: !hasChanges,
             disabled: saveBtn.disabled,
             onClick: () => saveBtn?.onclick?.()
         });
@@ -7106,7 +7575,6 @@ async function renderEditFood() {
         const isPortionMode = selectedUnit === 'порция';
         const allFilled =
             isFilled(name.value) &&
-            isFilled(description.value) &&
             isFilled(selectedUnit) &&
             isFilled(portion.value) &&
             (!isPortionMode || isFilled(selectedPortionMeasureUnit)) &&
@@ -7508,13 +7976,16 @@ async function renderFoodDetails() {
         closeMealOverlayAndShowMealMain();
     };
     let saveBtn = null;
-    const topBarActionText = isMealSource ? 'Сохранить' : (isRecipeFoodsSource ? 'В рецепт' : 'В прием');
+    const topBarActionText = isMealSource ? 'Сохранить' : 'Добавить';
+    const initialMealSourceAmount = Number(currentAmount || 0);
+    const initialMealSourceMealId = isMealSource ? String(selectedMealId || '') : '';
     const topBarCenterContent = shouldShowSearchMealLabel
         ? createElement('div', 'food-details-meal-label meal-search-meal-text', `- ${getMealSearchCurrentLabel()} -`)
         : null;
     const topBarActionBtn = createMealOverlayTopbarActionButton({
         text: topBarActionText,
         label: topBarActionText,
+        hidden: isMealSource,
         onClick: () => saveBtn?.onclick?.()
     });
     const { topBar } = createMealOverlayInlineTopbar({
@@ -7550,6 +8021,31 @@ async function renderFoodDetails() {
     const unitInput = createElement('input', 'input');
     unitInput.value = food.baseUnit || 'г';
     unitInput.disabled = true;
+
+    const getCurrentFoodDetailsAmount = () => Number(amountInput.value || 0);
+    const hasMealFoodDetailsChanges = () => {
+        if (!isMealSource) return false;
+
+        return (
+            getCurrentFoodDetailsAmount() !== initialMealSourceAmount ||
+            String(selectedMealId || '') !== initialMealSourceMealId
+        );
+    };
+    const syncMealSourceTopbarAction = () => {
+        if (!isMealSource) return;
+
+        const currentDetailsAmount = getCurrentFoodDetailsAmount();
+        const hasChanges = hasMealFoodDetailsChanges();
+        const isAmountValid = Number.isFinite(currentDetailsAmount) && currentDetailsAmount > 0;
+
+        syncMealOverlayTopbarActionButton(topBarActionBtn, {
+            text: topBarActionText,
+            label: topBarActionText,
+            hidden: !hasChanges,
+            disabled: Boolean(saveBtn?.disabled) || !isAmountValid,
+            onClick: () => saveBtn?.onclick?.()
+        });
+    };
 
     if (isMealSource) {
         saveBtn = createElement('button', 'save-btn active');
@@ -7677,9 +8173,12 @@ async function renderFoodDetails() {
 
     amountInput.addEventListener('input', () => {
         renderCurrentValuesBlock();
+        syncMealSourceTopbarAction();
     });
 
    saveBtn.onclick = async () => {
+       if (saveBtn.disabled) return;
+
        const newAmount = Number(amountInput.value || 0);
 
        if (!newAmount || newAmount <= 0) {
@@ -7688,6 +8187,7 @@ async function renderFoodDetails() {
        }
 
        saveBtn.disabled = true;
+       syncMealSourceTopbarAction();
 
         try {
             if (isFoodsSource) {
@@ -7838,6 +8338,7 @@ async function renderFoodDetails() {
            showToast('Ошибка при сохранении');
        } finally {
            saveBtn.disabled = false;
+           syncMealSourceTopbarAction();
        }
    };
 
@@ -7937,6 +8438,7 @@ async function renderFoodDetails() {
                 selectedMealId = mealId;
                 mealValueBtn.textContent = getMealLabelById(mealId, state.mealsData || {});
                 mealDropdown.style.display = 'none';
+                syncMealSourceTopbarAction();
             };
 
             mealDropdown.append(option);
@@ -8004,6 +8506,8 @@ async function renderFoodDetails() {
     } else {
         topBlockCreateFood.append(amountRow, unitRow, inlineSaveBtn);
     }
+
+    syncMealSourceTopbarAction();
 
     container.append(
         stickyHeader,
@@ -8591,7 +9095,7 @@ async function renderRecipeDetails() {
     unitInput.disabled = true;
 
     let saveBtn = null;
-    const topBarActionText = isMealSource ? 'Сохранить' : 'В прием';
+    const topBarActionText = isMealSource ? 'Сохранить' : 'Добавить';
     const topBarActionBtn = createMealOverlayTopbarActionButton({
         text: topBarActionText,
         label: topBarActionText,
@@ -10557,6 +11061,7 @@ function renderMealSearch() {
     topRow.classList.add('meal-search-topbar--inline-actions', 'meal-search-topbar--product-search-page');
 
     const handleMealSearchBack = () => {
+        blurMealTabSearchInputs();
         state.mealSearchTab = 'all';
         state.mealSearchScrollByTab = { all: 0, products: 0, recipes: 0, base: 0 };
         closeMealOverlayAndShowMealMain();
@@ -11040,6 +11545,21 @@ function renderMealSearch() {
         pager.exhausted = false;
     }
 
+    function getLocalPagerUiState(pager) {
+        const hasPrevPage = pager.pageIndex > 0;
+        const hasLoadedNextPage = Boolean(pager.pages[pager.pageIndex + 1]);
+        const canLoadNextPage = !pager.exhausted;
+        const hasNextPage = hasLoadedNextPage || canLoadNextPage;
+        const knownTotalPages = pager.exhausted ? pager.pages.length : null;
+
+        return {
+            hasPrevPage,
+            hasLoadedNextPage,
+            hasNextPage,
+            knownTotalPages
+        };
+    }
+
     function renderPagedControls(listEl, pager, requestId) {
         if (requestId !== loadRequestId) return;
         const existing = listEl.querySelector('.meal-search-pager');
@@ -11048,15 +11568,24 @@ function renderMealSearch() {
         const totalPages = pager.pages.length;
         if (!totalPages) return;
 
+        const {
+            hasPrevPage,
+            hasLoadedNextPage,
+            hasNextPage,
+            knownTotalPages
+        } = getLocalPagerUiState(pager);
+
+        if (!hasPrevPage && !hasNextPage) return;
+
         const wrap = createElement('div', 'meal-search-pager');
 
-        const prevBtn = createElement('button', 'meal-search-pager-btn', 'Предыдущая');
+        const prevBtn = createElement('button', 'meal-search-pager-btn', 'Назад');
         prevBtn.type = 'button';
-        prevBtn.disabled = pager.loading || pager.pageIndex <= 0;
+        prevBtn.disabled = pager.loading || !hasPrevPage;
 
-        const nextBtn = createElement('button', 'meal-search-pager-btn', 'Следующая');
+        const nextBtn = createElement('button', 'meal-search-pager-btn', 'Далее');
         nextBtn.type = 'button';
-        nextBtn.disabled = pager.loading || pager.exhausted;
+        nextBtn.disabled = pager.loading || !hasNextPage;
 
         prevBtn.onclick = async () => {
             if (pager.loading) return;
@@ -11066,14 +11595,30 @@ function renderMealSearch() {
 
         nextBtn.onclick = async () => {
             if (pager.loading) return;
-            pager.pageIndex += 1;
-            if (!pager.pages[pager.pageIndex]) {
+            const nextPageIndex = pager.pageIndex + 1;
+
+            if (pager.pages[nextPageIndex]) {
+                pager.pageIndex = nextPageIndex;
+                renderProductsOrRecipesPage(listEl, pager, requestId);
+                return;
+            }
+
+            if (!hasLoadedNextPage) {
                 await ensureNextPageLoaded(pager, requestId);
             }
+
+            if (requestId !== loadRequestId) return;
+            if (pager.pages[nextPageIndex]) {
+                pager.pageIndex = nextPageIndex;
+            }
+
             renderProductsOrRecipesPage(listEl, pager, requestId);
         };
 
-        const label = createElement('div', 'meal-search-pager-label', `${pager.pageIndex + 1}`);
+        const labelText = knownTotalPages
+            ? `${pager.pageIndex + 1} / ${knownTotalPages}`
+            : `${pager.pageIndex + 1}`;
+        const label = createElement('div', 'meal-search-pager-label', labelText);
         wrap.append(prevBtn, label, nextBtn);
         listEl.append(wrap);
     }
@@ -11257,9 +11802,17 @@ function renderMealSearch() {
     panelRecipes.dataset.tab = 'recipes';
     panelBase.dataset.tab = 'base';
 
-    function buildMealTabSearchRow(placeholder) {
+    function buildMealTabSearchRow(placeholder, tabKey) {
         const row = createElement('div', 'meal-search-panel-search');
-        const box = createElement('div', 'meal-search-box');
+        const clearBtn = createElement('button', 'meal-search-clear-btn meal-search-clear-btn--tab');
+        clearBtn.type = 'button';
+        clearBtn.setAttribute('aria-label', 'Очистить поиск');
+        clearBtn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="currentColor" d="M6.225 4.811a1 1 0 0 0-1.414 1.414L10.586 12l-5.775 5.775a1 1 0 1 0 1.414 1.414L12 13.414l5.775 5.775a1 1 0 0 0 1.414-1.414L13.414 12l5.775-5.775a1 1 0 0 0-1.414-1.414L12 10.586z"/>
+        </svg>
+    `;
+        const box = createElement('div', 'meal-search-box meal-search-box--tabbed');
         const icon = createElement('div', 'meal-search-icon');
         icon.innerHTML = `
         <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
@@ -11271,23 +11824,68 @@ function renderMealSearch() {
         inp.placeholder = placeholder;
         inp.autocomplete = 'off';
         inp.spellcheck = false;
+        const syncUi = () => {
+            const hasValue = String(inp.value || '').trim().length > 0;
+            const isFocused = document.activeElement === inp;
+            row.classList.toggle('meal-search-panel-search--clear-visible', hasValue || isFocused);
+        };
+
+        clearBtn.addEventListener('pointerdown', (event) => {
+            event.preventDefault();
+        });
+        clearBtn.addEventListener('mousedown', (event) => {
+            event.preventDefault();
+        });
+        clearBtn.onclick = () => {
+            clearMealSearchQueryForTab(tabKey);
+            inp.blur();
+            syncUi();
+            if ((state.mealSearchTab || 'all') === tabKey) {
+                closeTabSortDropdown();
+                void loadAndRender();
+            }
+        };
+
+        inp.addEventListener('focus', syncUi);
+        inp.addEventListener('blur', () => {
+            requestAnimationFrame(syncUi);
+        });
+        inp.addEventListener('input', syncUi);
+
         box.append(icon, inp);
-        row.append(box);
-        return { row, input: inp };
+        row.append(clearBtn, box);
+        return { row, input: inp, syncUi };
     }
 
-    const searchProducts = buildMealTabSearchRow('Поиск продуктов');
-    const searchRecipes = buildMealTabSearchRow('Поиск рецептов');
-    const searchBase = buildMealTabSearchRow('Поиск по англ. базе');
+    const searchProducts = buildMealTabSearchRow('Поиск продуктов', 'products');
+    const searchRecipes = buildMealTabSearchRow('Поиск рецептов', 'recipes');
+    const searchBase = buildMealTabSearchRow('Поиск по англ. базе', 'base');
 
     const inputProducts = searchProducts.input;
     const inputRecipes = searchRecipes.input;
     const inputBase = searchBase.input;
+    const mealTabSearchRows = {
+        products: searchProducts,
+        recipes: searchRecipes,
+        base: searchBase
+    };
+
+    function syncMealTabSearchRowsUi() {
+        Object.values(mealTabSearchRows).forEach((entry) => entry?.syncUi?.());
+    }
+
+    function blurMealTabSearchInputs() {
+        [inputProducts, inputRecipes, inputBase].forEach((input) => {
+            input?.blur?.();
+        });
+        syncMealTabSearchRowsUi();
+    }
 
     function syncMealSearchInputsFromState() {
         inputProducts.value = String(state.mealSearchQueryByTab?.products || '');
         inputRecipes.value = String(state.mealSearchQueryByTab?.recipes || '');
         inputBase.value = String(state.mealSearchQueryByTab?.base || '');
+        syncMealTabSearchRowsUi();
     }
 
     function updateBaseSearchUiFromMode() {
@@ -11320,6 +11918,8 @@ function renderMealSearch() {
             basePager.userCatalogLastDoc = null;
             state.mealSearchScrollByTab.base = 0;
         }
+
+        mealTabSearchRows[tabKey]?.syncUi?.();
     }
 
     panelAll.append(listAll);
@@ -11563,6 +12163,7 @@ function renderMealSearch() {
         const tab = mealSearchTabsOrder[idx];
         if (tab && tab !== state.mealSearchTab) {
             const prevTab = state.mealSearchTab;
+            blurMealTabSearchInputs();
             // По UX: ушли со вкладки — очистили её поиск (products/recipes/base).
             clearMealSearchQueryForTab(prevTab);
             state.mealSearchTab = tab;
@@ -11710,6 +12311,7 @@ function renderMealSearch() {
 
         if (state.mealSearchTab !== tab) {
             const prevTab = state.mealSearchTab;
+            blurMealTabSearchInputs();
             clearMealSearchQueryForTab(prevTab);
             state.mealSearchTab = tab;
             renderActionsForTab(tab);
@@ -12502,7 +13104,8 @@ async function renderRecipeFoodSearch() {
     topRow.classList.add('recipe-food-search-topbar');
 
     const searchControls = createElement('div', 'recipe-food-search-controls');
-    const searchWrap = createElement('div', 'meal-search-box recipe-food-search-input-wrap');
+    const searchRow = createElement('div', 'meal-search-panel-search recipe-food-search-panel-search');
+    const searchWrap = createElement('div', 'meal-search-box meal-search-box--tabbed recipe-food-search-input-wrap');
 
     const searchInput = createElement('input', 'meal-search-input');
     searchInput.type = 'text';
@@ -12518,8 +13121,9 @@ async function renderRecipeFoodSearch() {
         </svg>
     `;
 
-    const clearBtn = createElement('button', 'meal-search-clear-btn');
+    const clearBtn = createElement('button', 'meal-search-clear-btn meal-search-clear-btn--tab');
     clearBtn.type = 'button';
+    clearBtn.setAttribute('aria-label', 'Очистить поиск');
     clearBtn.innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24">
             <path fill="currentColor" d="M6.225 4.811a1 1 0 0 0-1.414 1.414L10.586 12l-5.775 5.775a1 1 0 1 0 1.414 1.414L12 13.414l5.775 5.775a1 1 0 0 0 1.414-1.414L13.414 12l5.775-5.775a1 1 0 0 0-1.414-1.414L12 10.586z"/>
@@ -12606,38 +13210,122 @@ async function renderRecipeFoodSearch() {
 
     function updateRecipeSearchClearBtn() {
         const hasValue = String(searchInput.value || '').trim().length > 0;
-        clearBtn.style.display = hasValue ? 'flex' : 'none';
+        const isFocused = document.activeElement === searchInput;
+        searchRow.classList.toggle('meal-search-panel-search--clear-visible', hasValue || isFocused);
     }
+
+    clearBtn.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+    });
+    clearBtn.addEventListener('mousedown', (event) => {
+        event.preventDefault();
+    });
 
     clearBtn.onclick = () => {
         searchInput.value = '';
         state.recipeFoodSearchQuery = '';
+        searchInput.blur();
         updateRecipeSearchClearBtn();
         loadAndRenderFoods();
-        searchInput.focus();
     };
 
-    searchWrap.append(searchIcon, searchInput, clearBtn);
-    searchControls.append(searchWrap, sortBtn);
+    searchInput.addEventListener('focus', updateRecipeSearchClearBtn);
+    searchInput.addEventListener('blur', () => {
+        requestAnimationFrame(updateRecipeSearchClearBtn);
+    });
+
+    searchWrap.append(searchIcon, searchInput);
+    searchRow.append(clearBtn, searchWrap);
+    searchControls.append(searchRow, sortBtn);
     updateRecipeSearchClearBtn();
 
     const list = createElement('div', 'food-list meal-search-list recipe-food-search-list');
+    const recipeFoodSearchPager = {
+        pageIndex: 0,
+        pageSize: 20,
+        totalItems: 0,
+        lastQuery: '',
+        lastSortId: ''
+    };
+    let recipeFoodSearchItems = [];
+
+    function renderRecipeFoodSearchPager() {
+        const existing = list.querySelector('.meal-search-pager');
+        if (existing) existing.remove();
+
+        const totalPages = Math.ceil(recipeFoodSearchPager.totalItems / recipeFoodSearchPager.pageSize);
+        if (totalPages <= 1) return;
+
+        const wrap = createElement('div', 'meal-search-pager');
+        const prevBtn = createElement('button', 'meal-search-pager-btn', 'Назад');
+        prevBtn.type = 'button';
+        prevBtn.disabled = recipeFoodSearchPager.pageIndex <= 0;
+
+        const nextBtn = createElement('button', 'meal-search-pager-btn', 'Далее');
+        nextBtn.type = 'button';
+        nextBtn.disabled = recipeFoodSearchPager.pageIndex >= totalPages - 1;
+
+        const label = createElement(
+            'div',
+            'meal-search-pager-label',
+            `${recipeFoodSearchPager.pageIndex + 1} / ${totalPages}`
+        );
+
+        prevBtn.onclick = () => {
+            if (recipeFoodSearchPager.pageIndex <= 0) return;
+            recipeFoodSearchPager.pageIndex -= 1;
+            renderRecipeFoodSearchPage();
+        };
+
+        nextBtn.onclick = () => {
+            if (recipeFoodSearchPager.pageIndex >= totalPages - 1) return;
+            recipeFoodSearchPager.pageIndex += 1;
+            renderRecipeFoodSearchPage();
+        };
+
+        wrap.append(prevBtn, label, nextBtn);
+        list.append(wrap);
+    }
+
+    function renderRecipeFoodSearchPage() {
+        const totalItems = recipeFoodSearchItems.length;
+        recipeFoodSearchPager.totalItems = totalItems;
+
+        const totalPages = Math.max(1, Math.ceil(totalItems / recipeFoodSearchPager.pageSize));
+        if (recipeFoodSearchPager.pageIndex > totalPages - 1) {
+            recipeFoodSearchPager.pageIndex = totalPages - 1;
+        }
+
+        const startIndex = recipeFoodSearchPager.pageIndex * recipeFoodSearchPager.pageSize;
+        const pageItems = recipeFoodSearchItems.slice(
+            startIndex,
+            startIndex + recipeFoodSearchPager.pageSize
+        );
+
+        renderRecipeFoodSearchList(list, pageItems, loadAndRenderFoods);
+        renderRecipeFoodSearchPager();
+    }
 
     async function loadAndRenderFoods() {
         const query = (state.recipeFoodSearchQuery || '').trim();
-        const foods = sortFoodsForMealSearch(await getFoods(query), {
+        const currentSort = getMealSearchSortForTab('products');
+        const shouldResetPage =
+            query !== recipeFoodSearchPager.lastQuery ||
+            currentSort !== recipeFoodSearchPager.lastSortId;
+
+        recipeFoodSearchItems = sortFoodsForMealSearch(await getFoods(query), {
             tab: 'products',
-            sort: getMealSearchSortForTab('products')
+            sort: currentSort
         });
 
-        list.innerHTML = '';
+        recipeFoodSearchPager.lastQuery = query;
+        recipeFoodSearchPager.lastSortId = currentSort;
 
-        if (!foods.length) {
-            list.append(createElement('div', 'meal-search-empty', 'Ничего не найдено'));
-            return;
+        if (shouldResetPage) {
+            recipeFoodSearchPager.pageIndex = 0;
         }
 
-        renderRecipeFoodSearchList(list, foods, loadAndRenderFoods);
+        renderRecipeFoodSearchPage();
     }
 
     let searchTimer = null;
@@ -12726,9 +13414,13 @@ async function renderRecipeFoodPreview() {
         }
         renderMealPage();
     };
+    const isEditingIngredient = editIndex >= 0 && Boolean(editingIngredient);
+    const initialPreviewAmount = Number(currentAmount || 0);
+    const topBarActionText = isEditingIngredient ? 'Сохранить' : 'Добавить';
     const topBarActionBtn = createMealOverlayTopbarActionButton({
-        text: 'В рецепт',
-        label: 'Добавить в рецепт'
+        text: topBarActionText,
+        label: topBarActionText,
+        hidden: isEditingIngredient
     });
     const { topBar } = createMealOverlayInlineTopbar({
         onBack: handleBack,
@@ -12840,11 +13532,31 @@ async function renderRecipeFoodPreview() {
 
     renderCurrentValuesBlock();
 
+    const getCurrentPreviewAmount = () => Number(amountInput.value || 0);
+    const hasRecipeFoodPreviewChanges = () => (
+        isEditingIngredient && getCurrentPreviewAmount() !== initialPreviewAmount
+    );
+    const syncRecipeFoodPreviewTopbarAction = () => {
+        const currentPreviewAmount = getCurrentPreviewAmount();
+        const isAmountValid = Number.isFinite(currentPreviewAmount) && currentPreviewAmount > 0;
+
+        syncMealOverlayTopbarActionButton(topBarActionBtn, {
+            text: topBarActionText,
+            label: topBarActionText,
+            hidden: isEditingIngredient && !hasRecipeFoodPreviewChanges(),
+            disabled: !isAmountValid,
+            onClick: () => saveBtn?.onclick?.()
+        });
+    };
+
     amountInput.addEventListener('input', () => {
         renderCurrentValuesBlock();
+        syncRecipeFoodPreviewTopbarAction();
     });
 
     saveBtn.onclick = async () => {
+        if (saveBtn.disabled) return;
+
         const newAmount = Number(amountInput.value || 0);
 
         if (!newAmount || newAmount <= 0) {
@@ -12854,12 +13566,13 @@ async function renderRecipeFoodPreview() {
 
         try {
             saveBtn.disabled = true;
+            syncRecipeFoodPreviewTopbarAction();
 
             addFoodToRecipeDraft(foodWithId, newAmount, editIndex);
             state.recipeIngredientEditIndex = null;
             state.mealView = getPreviewReturnView();
 
-            showToast(editIndex >= 0 ? 'Ингредиент обновлен' : 'Ингредиент добавлен в рецепт');
+            showToast(isEditingIngredient ? 'Ингредиент обновлен' : 'Ингредиент добавлен в рецепт');
 
             if (hasUnderlyingMealSearch()) {
                 popMealOverlay();
@@ -12868,17 +13581,13 @@ async function renderRecipeFoodPreview() {
             }
         } catch (error) {
             console.error(error);
-            showToast('Ошибка при добавлении');
+            showToast(isEditingIngredient ? 'Ошибка при сохранении' : 'Ошибка при добавлении');
         } finally {
             saveBtn.disabled = false;
+            syncRecipeFoodPreviewTopbarAction();
         }
     };
-    syncMealOverlayTopbarActionButton(topBarActionBtn, {
-        text: 'В рецепт',
-        label: 'Добавить в рецепт',
-        disabled: false,
-        onClick: () => saveBtn?.onclick?.()
-    });
+    syncRecipeFoodPreviewTopbarAction();
 
     const passportBlock = createElement('div', 'food-passport-block');
     passportBlock.innerHTML = `
@@ -12971,13 +13680,38 @@ async function renderRecipeFoodPreview() {
 }
 
 // =================================================================
+function createCreateFoodLabelBlock(labelText, required = false) {
+    const left = createElement('div', 'create-food-row-label-left');
+    const labelLine = createElement('div', 'create-food-row-label-line');
+    const label = createElement('div', 'create-food-row-label', labelText);
+
+    labelLine.append(label);
+
+    if (required) {
+        labelLine.append(createElement('span', 'create-food-row-required-mark', '*'));
+    }
+
+    left.append(labelLine);
+    return left;
+}
+
+function createCreateFoodRequiredNote() {
+    const note = createElement('div', 'create-food-form-required-note');
+    note.append(
+        document.createTextNode('Поля, отмеченные '),
+        createElement('span', 'create-food-row-required-mark', '*'),
+        document.createTextNode(', обязательны для заполнения.')
+    );
+    return note;
+}
+
 // ⚡ Быстрое добавление
 // =================================================================
 function renderQuickAddStub() {
     ensureMealShell();
     setMealBaseTopBarVisible(false);
 
-    const container = createElement('div', 'create-food create-food-form-page meal-quick-add-page');
+    const container = createElement('div', 'create-food create-food-form-page create-food-form-page--sticky-topbar meal-quick-add-page');
 
     const handleBack = () => {
         const target = state.quickAddBackTarget || (hasUnderlyingMealSearch() ? 'search' : 'main');
@@ -13022,16 +13756,7 @@ function renderQuickAddStub() {
     function createFormRow(labelText, controlEl, required = false, extraClass = '') {
         const row = createElement('div', `create-food-row ${extraClass}`.trim());
         const labelWrap = createElement('div', 'create-food-row-label-wrap');
-        const left = createElement('div', 'create-food-row-label-left');
-        const label = createElement('div', 'create-food-row-label', labelText);
-        const hint = createElement(
-            'div',
-            'create-food-row-hint',
-            required ? 'обязательно' : 'необязательно'
-        );
-
-        left.append(label, hint);
-        labelWrap.append(left);
+        labelWrap.append(createCreateFoodLabelBlock(labelText, required));
 
         const controlWrap = createElement('div', 'create-food-row-control');
         controlWrap.append(controlEl);
@@ -13074,10 +13799,11 @@ function renderQuickAddStub() {
         createFormRow('Белки', protein, false),
         createFormRow('Жиры', fat, false),
         createFormRow('Углеводы', carbs, false),
-        createFormRow('Калории', calories, false)
+        createFormRow('Калории', calories, false, 'create-food-row--quick-add-last')
     ];
 
     rows.forEach((row) => formCard.append(row));
+    formCard.append(createCreateFoodRequiredNote());
 
     saveBtn = createElement('button', 'save-btn create-food-submit-btn', 'Сохранить');
     saveBtn.disabled = true;
@@ -13172,7 +13898,7 @@ function renderQuickAddStub() {
 function renderCreateFood() {
     ensureMealShell();
 
-    const container = createElement('div', 'create-food create-food-form-page');
+    const container = createElement('div', 'create-food create-food-form-page create-food-form-page--sticky-topbar');
 
     const handleBack = () => {
         const target = state.createFoodBackTarget || 'search';
@@ -13229,18 +13955,7 @@ function renderCreateFood() {
         const row = createElement('div', `create-food-row ${extraClass}`.trim());
 
         const labelWrap = createElement('div', 'create-food-row-label-wrap');
-
-        const left = createElement('div', 'create-food-row-label-left');
-        const label = createElement('div', 'create-food-row-label', labelText);
-        const hint = createElement(
-            'div',
-            'create-food-row-hint',
-            required ? 'обязательно' : 'необязательно'
-        );
-
-        left.append(label, hint);
-
-        labelWrap.append(left);
+        labelWrap.append(createCreateFoodLabelBlock(labelText, required));
 
         // 👉 ВСТАВКА КНОПКИ СПРАВА
         if (rightActionEl) {
@@ -13423,7 +14138,7 @@ function renderCreateFood() {
 
     const rows = [
         createFormRow('Название', name, true),
-        createFormRow('Описание', description, true, 'is-textarea'),
+        createFormRow('Описание', description, false, 'is-textarea'),
         createFormRow('Ед. изм.', unitWrap, true),
         createFormRow('Размер порции', portionControl, true),
         createFormRow('Белки', protein, true),
@@ -13433,6 +14148,7 @@ function renderCreateFood() {
     ];
 
     rows.forEach(row => formCard.append(row));
+    formCard.append(createCreateFoodRequiredNote());
 
     saveBtn = createElement('button', 'save-btn create-food-submit-btn', 'Сохранить продукт');
     saveBtn.disabled = true;
@@ -13454,7 +14170,6 @@ function renderCreateFood() {
         const isPortionMode = selectedUnit === 'порция';
         const allFilled =
             isFilled(name.value) &&
-            isFilled(description.value) &&
             isFilled(selectedUnit) &&
             isFilled(portion.value) &&
             (!isPortionMode || isFilled(selectedPortionMeasureUnit)) &&
@@ -13631,7 +14346,7 @@ function renderCreateRecipe() {
 
     const draft = getRecipeDraft();
 
-    const container = createElement('div', 'create-food create-food-form-page recipe-create-page');
+    const container = createElement('div', 'create-food create-food-form-page create-food-form-page--sticky-topbar recipe-create-page');
 
     const handleBack = () => {
         state.mealView = 'search';
@@ -13671,17 +14386,7 @@ function renderCreateRecipe() {
         const row = createElement('div', `create-food-row ${extraClass}`.trim());
 
         const labelWrap = createElement('div', 'create-food-row-label-wrap');
-
-        const left = createElement('div', 'create-food-row-label-left');
-        const label = createElement('div', 'create-food-row-label', labelText);
-        const hint = createElement(
-            'div',
-            'create-food-row-hint',
-            required ? 'обязательно' : 'необязательно'
-        );
-
-        left.append(label, hint);
-        labelWrap.append(left);
+        labelWrap.append(createCreateFoodLabelBlock(labelText, required));
 
         if (rightActionEl) {
             const right = createElement('div', 'create-food-row-label-right');
@@ -13822,6 +14527,7 @@ function renderCreateRecipe() {
             addIngredientBtn
         )
     );
+    formCard.append(createCreateFoodRequiredNote());
     renderIngredientsBlock();
 
     saveBtn = createElement('button', 'save-btn create-food-submit-btn recipe-create-save-btn', 'Сохранить рецепт');
@@ -13981,7 +14687,7 @@ async function renderEditRecipe() {
         ingredients: Array.isArray(recipe.ingredients) ? recipe.ingredients.map(item => ({ ...item })) : []
     };
 
-    const container = createElement('div', 'create-food create-food-form-page recipe-create-page');
+    const container = createElement('div', 'create-food create-food-form-page create-food-form-page--sticky-topbar recipe-create-page');
 
     const handleBack = () => {
         if (hasUnderlyingMealSearch()) {
@@ -13993,9 +14699,10 @@ async function renderEditRecipe() {
     };
     let saveBtn = null;
     const topBarActionBtn = createMealOverlayTopbarActionButton({
-        text: 'Сохранить рецепт',
-        label: 'Сохранить рецепт',
+        text: 'Изменить рецепт',
+        label: 'Изменить рецепт',
         disabled: true,
+        hidden: true,
         onClick: () => saveBtn?.onclick?.()
     });
     const { topBar } = createMealOverlayInlineTopbar({
@@ -14014,17 +14721,7 @@ async function renderEditRecipe() {
         const row = createElement('div', `create-food-row ${extraClass}`.trim());
 
         const labelWrap = createElement('div', 'create-food-row-label-wrap');
-
-        const left = createElement('div', 'create-food-row-label-left');
-        const label = createElement('div', 'create-food-row-label', labelText);
-        const hint = createElement(
-            'div',
-            'create-food-row-hint',
-            required ? 'обязательно' : 'необязательно'
-        );
-
-        left.append(label, hint);
-        labelWrap.append(left);
+        labelWrap.append(createCreateFoodLabelBlock(labelText, required));
 
         if (rightActionEl) {
             const right = createElement('div', 'create-food-row-label-right');
@@ -14175,9 +14872,49 @@ async function renderEditRecipe() {
             addIngredientBtn
         )
     );
+    formCard.append(createCreateFoodRequiredNote());
 
     saveBtn = createElement('button', 'save-btn create-food-submit-btn recipe-create-save-btn', 'Сохранить рецепт');
     saveBtn.disabled = true;
+
+    function normalizeEditableNumber(value) {
+        const raw = String(value ?? '').trim();
+        if (raw === '') return '';
+        const numericValue = Number(raw);
+        return Number.isFinite(numericValue) ? String(numericValue) : raw;
+    }
+
+    function normalizeRecipeIngredientSnapshot(item = {}) {
+        return {
+            foodId: String(item.foodId || '').trim(),
+            name: String(item.name || '').trim(),
+            amount: String(item.amount || '').trim(),
+            grams: normalizeEditableNumber(item.grams),
+            baseUnit: String(item.baseUnit || '').trim(),
+            protein: normalizeEditableNumber(item.protein),
+            fat: normalizeEditableNumber(item.fat),
+            carbs: normalizeEditableNumber(item.carbs),
+            calories: normalizeEditableNumber(item.calories)
+        };
+    }
+
+    function getEditRecipeSnapshot(sourceDraft) {
+        return JSON.stringify({
+            title: String(sourceDraft?.title || '').trim(),
+            description: String(sourceDraft?.description || '').trim(),
+            servings: normalizeEditableNumber(sourceDraft?.servings),
+            ingredients: Array.isArray(sourceDraft?.ingredients)
+                ? sourceDraft.ingredients.map((item) => normalizeRecipeIngredientSnapshot(item))
+                : []
+        });
+    }
+
+    const initialEditRecipeSnapshot = getEditRecipeSnapshot({
+        title: recipe.title,
+        description: recipe.description,
+        servings: recipe.servings,
+        ingredients: recipe.ingredients
+    });
 
     function isFilled(value) {
         return String(value ?? '').trim() !== '';
@@ -14187,6 +14924,7 @@ async function renderEditRecipe() {
         const hasRequiredTitle = isFilled(draft.title);
         const hasRequiredServings = isFilled(draft.servings);
         const hasEnoughIngredients = Array.isArray(draft.ingredients) && draft.ingredients.length >= 3;
+        const hasChanges = getEditRecipeSnapshot(draft) !== initialEditRecipeSnapshot;
 
         const isValid =
             hasRequiredTitle &&
@@ -14197,8 +14935,9 @@ async function renderEditRecipe() {
         saveBtn.classList.toggle('active', isValid);
         saveBtn.classList.toggle('disabled', !isValid);
         syncMealOverlayTopbarActionButton(topBarActionBtn, {
-            text: 'Сохранить рецепт',
-            label: 'Сохранить рецепт',
+            text: 'Изменить рецепт',
+            label: 'Изменить рецепт',
+            hidden: !hasChanges,
             disabled: saveBtn.disabled,
             onClick: () => saveBtn?.onclick?.()
         });

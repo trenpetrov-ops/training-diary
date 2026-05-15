@@ -9351,6 +9351,27 @@ function isMealOverlaySubpageActive() {
     return state.currentPage === 'meal' && Boolean(state.mealView && state.mealView !== 'main');
 }
 
+const MEAL_VIEWS_WITH_HIDDEN_NATIVE_STATUSBAR = new Set([
+    'search',
+    'quickAdd',
+    'create',
+    'recipe',
+    'editFood',
+    'editRecipe',
+    'foodDetails',
+    'recipeDetails',
+    'recipeFoodSearch',
+    'recipeFoodPreview',
+    'monthSummary',
+    'burnedSummary',
+    'goal'
+]);
+
+function shouldHideNativeStatusBarForMealView() {
+    if (state.currentPage !== 'meal') return false;
+    return MEAL_VIEWS_WITH_HIDDEN_NATIVE_STATUSBAR.has(String(state.mealView || ''));
+}
+
 function isSupplementsDetailSubpageActive() {
     return state.currentPage === 'supplements' && Boolean(state.supplementCalendarDetailDate);
 }
@@ -9360,7 +9381,10 @@ function shouldShowNativeStatusBarForCurrentView() {
 
     if (state.currentPage === 'auth' || state.currentPage === 'modeSelect') return false;
     if (state.currentPage === 'profile' || state.currentPage === 'journalRecordDetails') return false;
-    if (state.currentPage === 'meal') return !isMealOverlaySubpageActive();
+    if (state.currentPage === 'meal') {
+        if (shouldHideNativeStatusBarForMealView()) return false;
+        return !isMealOverlaySubpageActive();
+    }
     if (state.currentPage === 'supplements') return !isSupplementsDetailSubpageActive();
 
     return ['programs', 'programsInCycle', 'programDetails', 'journal', 'reports', 'cycleReport', 'mealsReport'].includes(state.currentPage);
@@ -9369,6 +9393,7 @@ function shouldShowNativeStatusBarForCurrentView() {
 function shouldApplyStandaloneTopGapForCurrentView() {
     if (state.currentPage === 'auth' || state.currentPage === 'modeSelect') return true;
     if (state.currentPage === 'journalRecordDetails') return true;
+    if (shouldHideNativeStatusBarForMealView()) return true;
     if (isMealOverlaySubpageActive()) return true;
     if (isSupplementsDetailSubpageActive()) return true;
     return false;
