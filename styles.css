@@ -22416,24 +22416,27 @@ html.program-reorder-lock #root {
     overscroll-behavior-y: contain;
 }
 
-/* Bottom-sheet keyboard modals for cycles / programs / training */
+/* Keyboard-aware centered modals for cycles / programs / training */
 .keyboard-docked-modal-overlay {
-    align-items: flex-end !important;
+    align-items: center !important;
     justify-content: center;
-    padding: 18px 16px calc(18px + var(--safe-bottom, 0px)) !important;
+    padding:
+        max(18px, calc(var(--safe-top, 0px) + 12px))
+        16px
+        calc(18px + var(--safe-bottom, 0px)) !important;
     box-sizing: border-box;
 }
 .keyboard-docked-modal-host {
     margin: 0 !important;
     width: min(100%, 420px);
     max-width: min(100%, 420px);
-    transform: translate3d(0, 24px, 0);
+    transform: translate3d(0, -28px, 0);
     opacity: 0;
     transition:
         transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
         opacity 180ms ease;
     will-change: transform, opacity;
-    transform-origin: center bottom;
+    transform-origin: center center;
 }
 .keyboard-docked-modal-host.keyboard-docked-modal-host--visible {
     opacity: 1;
@@ -22444,7 +22447,7 @@ html.program-reorder-lock #root {
     transform: translate3d(0, calc(-1 * var(--keyboard-local-shift, 0px)), 0);
 }
 .keyboard-docked-modal-host.keyboard-scroll-space-host {
-    max-height: calc(var(--app-height, 100dvh) - var(--keyboard-height, 0px) - 18px);
+    max-height: calc(var(--app-height, 100dvh) - var(--keyboard-height, 0px) - 32px);
 }
 .keyboard-docked-modal-host.modal-cicle--add-client,
 .keyboard-docked-modal-host.modal-cicle--add-program {
