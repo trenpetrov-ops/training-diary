@@ -41,6 +41,7 @@ import {
     renderTopBar,
     ensureCycleSelected,
     render,
+    resolveServerApiUrl,
     requestAppChromeSync,
     showToast,
     uploadUserMediaFileWithProgress,
@@ -3456,7 +3457,7 @@ function setupCreateFoodStickyTitleBorder({ titleEl, watchEl }) {
 function getMealOverlayBackIconMarkup() {
     return `
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
-            <path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"></path>
+            <path fill="currentColor" d="m3.55 12l7.35 7.35q.375.375.363.875t-.388.875t-.875.375t-.875-.375l-7.7-7.675q-.3-.3-.45-.675T.825 12t.15-.75t.45-.675l7.7-7.7q.375-.375.888-.363t.887.388t.375.875t-.375.875z"></path>
         </svg>
     `;
 }
@@ -7294,7 +7295,10 @@ async function renderEditFood() {
         return;
     }
 
-    const container = createElement('div', 'create-food create-food-form-page create-food-form-page--sticky-topbar');
+    const container = createElement(
+        'div',
+        'create-food create-food-form-page create-food-form-page--sticky-topbar create-food-form-page--keyboard-padding-only'
+    );
 
     const handleBack = () => {
         const backTarget = state.editFoodBackTarget || 'foodDetails';
@@ -7843,7 +7847,7 @@ async function renderFoodDetails() {
         let fatFood = state.fatsecretDetailsCache[fatId]?.food || null;
         if (!fatFood) {
             try {
-                const resp = await fetch('/api/fatsecret/food', {
+                const resp = await fetch(resolveServerApiUrl('/api/fatsecret/food'), {
                     method: 'POST',
                     headers: { 'content-type': 'application/json' },
                     body: JSON.stringify({ foodId: fatId })
@@ -10633,6 +10637,36 @@ function getMealSearchCurrentLabel() {
     return options.find(opt => opt.id === state.currentMealId)?.label || options[0].label;
 }
 
+function getMealSearchCurrentDateLabel(dateStr = state.selectedDate) {
+    if (!dateStr || typeof dateStr !== 'string') return '';
+
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+    let date = null;
+
+    if (match) {
+        const year = Number(match[1]);
+        const monthIndex = Number(match[2]) - 1;
+        const day = Number(match[3]);
+        date = new Date(year, monthIndex, day);
+    } else {
+        const parsed = new Date(dateStr);
+        if (!Number.isNaN(parsed.getTime())) {
+            date = parsed;
+        }
+    }
+
+    if (!date || Number.isNaN(date.getTime())) return '';
+
+    const weekdays = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
+    const months = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
+    const weekday = weekdays[date.getDay()] || '';
+    const month = months[date.getMonth()] || '';
+    const day = date.getDate();
+
+    if (!weekday || !month || !day) return '';
+    return `${weekday}, ${month} ${day}`;
+}
+
 
 function getMealLabelById(mealId, mealsData = {}) {
     const mealKeys = getMealKeysFromData(mealsData);
@@ -11085,7 +11119,7 @@ function renderMealSearch() {
     backBtn.setAttribute('aria-label', 'Назад');
     backBtn.innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
-            <path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"></path>
+            <path fill="currentColor" d="m3.55 12l7.35 7.35q.375.375.363.875t-.388.875t-.875.375t-.875-.375l-7.7-7.675q-.3-.3-.45-.675T.825 12t.15-.75t.45-.675l7.7-7.7q.375-.375.888-.363t.887.388t.375.875t-.375.875z"></path>
         </svg>
     `;
     backBtn.onclick = handleMealSearchBack;
@@ -11098,15 +11132,20 @@ function renderMealSearch() {
     titleBtn.setAttribute('aria-haspopup', 'true');
     titleBtn.setAttribute('aria-expanded', 'false');
 
+    const titleCopy = createElement('span', 'meal-search-meal-copy');
+    const titlePrimary = createElement('span', 'meal-search-meal-copy__primary');
     const titleText = createElement('span', 'meal-search-meal-text', getMealSearchCurrentLabel());
     const titleArrow = createElement('span', 'meal-search-meal-arrow');
     titleArrow.innerHTML = `
-        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-            <path d="m6 9 6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="currentColor" d="m12.37 15.835l6.43-6.63C19.201 8.79 18.958 8 18.43 8H5.57c-.528 0-.771.79-.37 1.205l6.43 6.63c.213.22.527.22.74 0"/>
         </svg>
     `;
+    const titleSubtitle = createElement('span', 'meal-search-meal-subtitle', getMealSearchCurrentDateLabel());
 
-    titleBtn.append(titleText, titleArrow);
+    titlePrimary.append(titleText, titleArrow);
+    titleCopy.append(titlePrimary, titleSubtitle);
+    titleBtn.append(titleCopy);
     titleWrap.append(titleBtn);
     centerWrap.append(titleWrap);
 
@@ -11236,12 +11275,14 @@ function renderMealSearch() {
         html = '',
         label = '',
         icon = false,
+        hidden = false,
         onClick = null
     } = {}) {
         const btn = createElement(
             'button',
             `meal-search-topbar-action${icon ? ' meal-search-topbar-action--icon' : ' meal-search-topbar-action--text'}`
         );
+        btn.classList.toggle('meal-search-topbar-action--hidden', Boolean(hidden));
         btn.type = 'button';
         if (html) {
             btn.innerHTML = html;
@@ -11257,21 +11298,55 @@ function renderMealSearch() {
         return btn;
     }
 
+    function getMealSearchBaseModeLabel() {
+        return state.mealSearchBaseMode === 'user' ? 'База пользователей' : 'Англ. база';
+    }
+
+    function createMealSearchBaseModeActionButton() {
+        const btn = createElement('button', 'meal-search-topbar-action meal-search-base-mode-action');
+        btn.type = 'button';
+        btn.setAttribute('aria-label', 'Сменить поиск');
+
+        const arrow = createElement('span', 'meal-search-base-mode-action__arrow meal-search-meal-arrow');
+        arrow.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+                <path fill="currentColor" d="m12.37 15.835l6.43-6.63C19.201 8.79 18.958 8 18.43 8H5.57c-.528 0-.771.79-.37 1.205l6.43 6.63c.213.22.527.22.74 0"/>
+            </svg>
+        `;
+
+        const textWrap = createElement('span', 'meal-search-base-mode-action__text');
+        const title = createElement('span', 'meal-search-base-mode-action__title', 'Сменить поиск');
+        const value = createElement('span', 'meal-search-base-mode-action__value', getMealSearchBaseModeLabel());
+        textWrap.append(title, value);
+
+        btn.append(arrow, textWrap);
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            if (activeTabSortOwner === btn) {
+                closeTabSortDropdown();
+            } else {
+                openMealSearchBaseSourceDropdown(btn, btn);
+            }
+        };
+
+        return btn;
+    }
+
     function buildMealSearchTopbarActions(tab) {
         const currentTab = tab || state.mealSearchTab || 'all';
 
         if (currentTab === 'all') {
             return [
                 {
-                    html: getMealQuickAddIconMarkup(),
+                    text: 'Быстрое добавление',
                     label: 'Быстрое добавление',
-                    icon: true,
                     onClick: () => openQuickAddForm('search')
                 },
                 {
                     html: getMealCameraIconMarkup(),
                     label: 'Сделать фото',
                     icon: true,
+                    hidden: true,
                     onClick: () => openMealPhotoCaptureFlow(state.currentMealId)
                 }
             ];
@@ -11280,7 +11355,7 @@ function renderMealSearch() {
         if (currentTab === 'products') {
             return [
                 {
-                    text: '+ продукт',
+                    text: 'Новый продукт',
                     label: 'Новый продукт',
                     onClick: () => {
                         state.mealSearchReturnTab = state.mealSearchTab || 'products';
@@ -11295,7 +11370,7 @@ function renderMealSearch() {
         if (currentTab === 'recipes') {
             return [
                 {
-                    text: '+ рецепт',
+                    text: 'Новый рецепт',
                     label: 'Новый рецепт',
                     onClick: () => {
                         saveMealPageScroll();
@@ -11309,13 +11384,17 @@ function renderMealSearch() {
             ];
         }
 
+        if (currentTab === 'base') {
+            return [createMealSearchBaseModeActionButton()];
+        }
+
         return [];
     }
 
     function renderTopbarActionsForTab(tab) {
         actionsWrap.innerHTML = '';
         buildMealSearchTopbarActions(tab).forEach((action) => {
-            actionsWrap.append(createMealSearchTopbarActionButton(action));
+            actionsWrap.append(action instanceof Node ? action : createMealSearchTopbarActionButton(action));
         });
     }
 
@@ -11358,9 +11437,9 @@ function renderMealSearch() {
     }
 
     /** Центр под вкладкой + clamp по краям экрана (история слева, база справа). */
-    function positionMealSearchTabSortDropdown(dropdown, tabBtn) {
+    function positionMealSearchTabSortDropdown(dropdown, anchorBtn) {
         const pad = 12;
-        const rect = tabBtn.getBoundingClientRect();
+        const rect = anchorBtn.getBoundingClientRect();
         dropdown.style.position = 'fixed';
         dropdown.style.top = `${rect.bottom + 8}px`;
         dropdown.style.zIndex = '90';
@@ -11417,8 +11496,8 @@ function renderMealSearch() {
         const dropdown = createElement('div', 'meal-search-tab-sort-menu');
         const current = state.mealSearchBaseMode === 'user' ? 'user' : 'english';
         const options = [
-            { id: 'english', label: 'англ.база' },
-            { id: 'user', label: 'база пользователей' }
+            { id: 'english', label: 'Англ. база' },
+            { id: 'user', label: 'База пользователей' }
         ];
 
         options.forEach(option => {
@@ -11438,6 +11517,7 @@ function renderMealSearch() {
                 // Мгновенно обновляем placeholder/подпись, не дожидаясь async loadAndRender().
                 updateBaseSearchUiFromMode();
                 closeTabSortDropdown();
+                renderTopbarActionsForTab(state.mealSearchTab || 'all');
                 updateActiveTabSortUI();
                 await loadAndRender();
             };
@@ -11448,17 +11528,16 @@ function renderMealSearch() {
         return dropdown;
     }
 
-    function openMealSearchBaseSourceDropdown() {
+    function openMealSearchBaseSourceDropdown(anchorBtn = tabBase, ownerBtn = anchorBtn) {
         closeTabSortDropdown();
 
-        const tabBtn = tabBase;
         const dropdown = buildMealSearchBaseSourceDropdown();
 
-        tabBtn.classList.add('open');
-        positionMealSearchTabSortDropdown(dropdown, tabBtn);
+        ownerBtn.classList.add('open');
+        positionMealSearchTabSortDropdown(dropdown, anchorBtn);
 
         activeTabSortDropdown = dropdown;
-        activeTabSortOwner = tabBtn;
+        activeTabSortOwner = ownerBtn;
 
         screen.append(tabSortBackdrop);
     }
@@ -11493,7 +11572,7 @@ function renderMealSearch() {
         });
 
         const activeTabKey = state.mealSearchTab || 'all';
-        if (activeTabKey === 'all') return;
+        if (activeTabKey === 'all' || activeTabKey === 'base') return;
 
         const activeBtn = tabButtonsMap[activeTabKey];
         if (!activeBtn) return;
@@ -12222,8 +12301,7 @@ function renderMealSearch() {
         }
 
         if (tabKey === 'base') {
-            if (activeTabSortOwner === tabBase) closeTabSortDropdown();
-            else openMealSearchBaseSourceDropdown();
+            return;
         }
     }
 
@@ -12782,7 +12860,7 @@ function renderMealSearch() {
 
         let data = null;
         try {
-            const resp = await fetch('/api/fatsecret/search', {
+            const resp = await fetch(resolveServerApiUrl('/api/fatsecret/search'), {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
                 body: JSON.stringify({ q: query, page: basePager.page, maxResults: basePager.maxResults })
@@ -13000,7 +13078,7 @@ function renderMealSearch() {
                 externalId: fatId
             };
         } else {
-            const resp = await fetch('/api/fatsecret/food', {
+            const resp = await fetch(resolveServerApiUrl('/api/fatsecret/food'), {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
                 body: JSON.stringify({ foodId: fatId })

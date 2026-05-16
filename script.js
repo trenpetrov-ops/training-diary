@@ -804,6 +804,28 @@ export function isCapacitorNativePlatform() {
     );
 }
 
+export function resolveServerApiUrl(path = '') {
+    const normalizedPath = String(path || '').startsWith('/')
+        ? String(path || '')
+        : `/${String(path || '')}`;
+
+    if (!isCapacitorNativePlatform()) {
+        return normalizedPath;
+    }
+
+    const authDomain = String(firebaseConfig?.authDomain || '').trim();
+    const projectId = String(firebaseConfig?.projectId || '').trim();
+    const hostingOrigin = authDomain
+        ? `https://${authDomain}`
+        : (projectId ? `https://${projectId}.web.app` : '');
+
+    if (!hostingOrigin) {
+        return normalizedPath;
+    }
+
+    return new URL(normalizedPath, hostingOrigin).toString();
+}
+
 export function isStandalonePwaDisplayMode() {
     try {
         return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
@@ -9587,6 +9609,10 @@ function resolveKeyboardViewportTarget(node) {
     return node?.closest?.(KEYBOARD_VIEWPORT_TARGET_SELECTOR) || node || null;
 }
 
+function shouldUseKeyboardPaddingOnlyHost(host) {
+    return Boolean(host?.classList?.contains('create-food-form-page--keyboard-padding-only'));
+}
+
 function clearKeyboardScrollHost(host) {
     if (!host) return;
     try {
@@ -9747,6 +9773,7 @@ function ensureNativeKeyboardBottomNavBinding() {
         const target = resolveKeyboardViewportTarget(active);
         const host = resolveKeyboardShiftHost(active);
         const scrollHost = resolveKeyboardScrollHost(active, host);
+        const usePaddingOnlyHost = shouldUseKeyboardPaddingOnlyHost(host);
         if (!target || !host) {
             setKeyboardViewportShift(null, 0, keyboardHeight);
             setKeyboardScrollHost(null, 0);
@@ -9771,6 +9798,28 @@ function ensureNativeKeyboardBottomNavBinding() {
 
         const keyboardClearance = 14;
         const visibleBottom = Math.max(0, viewportHeight - safeKeyboardHeight - keyboardClearance);
+
+        if (usePaddingOnlyHost) {
+            const paddingHost = scrollHost || host;
+            const overlap = Math.max(0, Math.round(rect.bottom - visibleBottom));
+
+            setKeyboardViewportShift(null, 0, safeKeyboardHeight);
+            setKeyboardScrollHost(paddingHost, safeKeyboardHeight);
+
+            if (paddingHost && overlap > 0) {
+                const currentScrollTop = Math.max(0, Number(paddingHost.scrollTop || 0));
+                const maxScrollTop = Math.max(
+                    0,
+                    Number((paddingHost.scrollHeight || 0) - (paddingHost.clientHeight || 0))
+                );
+                const nextScrollTop = Math.min(maxScrollTop, currentScrollTop + overlap);
+                if (Math.abs(nextScrollTop - currentScrollTop) > 1) {
+                    paddingHost.scrollTop = nextScrollTop;
+                }
+            }
+            return;
+        }
+
         const desiredShift = Math.max(0, baseBottom - visibleBottom);
         const nextShift = Math.min(safeKeyboardHeight, Math.round(desiredShift));
 

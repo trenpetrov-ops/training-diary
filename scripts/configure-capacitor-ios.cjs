@@ -4,6 +4,11 @@ const path = require('path');
 const CALLBACK_SCHEME = 'App';
 const root = path.join(__dirname, '..');
 const infoPlistPath = path.join(root, 'ios', 'App', 'App', 'Info.plist');
+const IOS_PRIVACY_MESSAGES = {
+  NSCameraUsageDescription: 'Камера используется для фото и видео в тренировках и приемах пищи.',
+  NSPhotoLibraryUsageDescription: 'Доступ к фото нужен, чтобы выбирать изображения и видео для тренировок и приемов пищи.',
+  NSMicrophoneUsageDescription: 'Микрофон используется при записи видео в тренировках.'
+};
 
 function ensureCustomUrlScheme(plistContent, scheme) {
   const escapedScheme = scheme.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -123,16 +128,22 @@ function main() {
   content = styleResult.content;
   changed = changed || styleResult.changed;
 
+  for (const [key, value] of Object.entries(IOS_PRIVACY_MESSAGES)) {
+    const result = ensurePlistStringValue(content, key, value);
+    content = result.content;
+    changed = changed || result.changed;
+  }
+
   if (!changed) {
     console.log(
-      `[configure-capacitor-ios] already configured with URL scheme "${CALLBACK_SCHEME}" and dark-content status bar defaults`
+      `[configure-capacitor-ios] already configured with URL scheme "${CALLBACK_SCHEME}", dark-content status bar defaults, and iOS privacy usage descriptions`
     );
     return;
   }
 
   fs.writeFileSync(infoPlistPath, content, 'utf8');
   console.log(
-    `[configure-capacitor-ios] updated ${infoPlistPath} with URL scheme "${CALLBACK_SCHEME}" and dark-content status bar defaults`
+    `[configure-capacitor-ios] updated ${infoPlistPath} with URL scheme "${CALLBACK_SCHEME}", dark-content status bar defaults, and iOS privacy usage descriptions`
   );
 }
 
