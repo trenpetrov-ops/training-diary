@@ -2460,6 +2460,7 @@ function openEditCycleModal(cycle) {
 
     const modalContent = document.createElement('div');
     modalContent.className = 'modal-edit';
+    prepareKeyboardDockedModal(modal, modalContent);
 
     const title = document.createElement('h3');
     title.textContent = 'Редактировать цикл';
@@ -2492,14 +2493,16 @@ function openEditCycleModal(cycle) {
     btnGroup.append(saveBtn);
     modalContent.append( input, btnGroup);
     modal.append(modalContent);
-    document.body.appendChild(modal);
+    presentKeyboardDockedModal(modal, modalContent, {
+        focusTarget: input,
+        focusDelayMs: KEYBOARD_DOCKED_MODAL_FOCUS_DELAY_MS,
+        selectText: true
+    });
 
     // Закрытие при клике вне модалки
     modal.addEventListener('click', (e) => {
         if (e.target === modal) document.body.removeChild(modal);
     });
-
-    input.focus();
 }
 
 
@@ -2513,6 +2516,7 @@ function openAddCycleModal(onConfirm) {
 
     const modalContent = document.createElement('div');
     modalContent.className = 'modal-cicle';
+    prepareKeyboardDockedModal(modal, modalContent);
 
     const title = document.createElement('h3');
     title.textContent = 'Создание нового цикла';
@@ -2542,15 +2546,16 @@ function openAddCycleModal(onConfirm) {
     btnGroup.append( confirmBtn);
     modalContent.append( input, btnGroup);
     modal.append(modalContent);
-    document.body.appendChild(modal);
+    presentKeyboardDockedModal(modal, modalContent, {
+        focusTarget: input,
+        focusDelayMs: KEYBOARD_DOCKED_MODAL_FOCUS_DELAY_MS
+    });
 
 
     // Закрытие при клике вне модалки
     modal.addEventListener('click', (e) => {
         if (e.target === modal) document.body.removeChild(modal);
     });
-
-    input.focus();
 }
 
 
@@ -2721,6 +2726,7 @@ function openEditProgramModal(program) {
 
     const modalContent = document.createElement('div');
     modalContent.className = 'modal-edit';
+    prepareKeyboardDockedModal(modal, modalContent);
 
     const title = document.createElement('h3');
     title.textContent = 'Редактировать программу';
@@ -2753,13 +2759,15 @@ function openEditProgramModal(program) {
     btnGroup.append(saveBtn);
     modalContent.append( input, btnGroup);
     modal.append(modalContent);
-    document.body.appendChild(modal);
+    presentKeyboardDockedModal(modal, modalContent, {
+        focusTarget: input,
+        focusDelayMs: KEYBOARD_DOCKED_MODAL_FOCUS_DELAY_MS,
+        selectText: true
+    });
 
     modal.addEventListener('click', (e) => {
         if (e.target === modal) document.body.removeChild(modal);
     });
-
-    input.focus();
 }
 
 // =================================================================
@@ -2771,6 +2779,7 @@ function openAddProgramModal(onConfirmNew, onConfirmCopy) {
 
     const modalContent = document.createElement('div');
     modalContent.className = 'modal-cicle modal-cicle--add-program';
+    prepareKeyboardDockedModal(modal, modalContent);
 
     const title = createElement('h3', 'modal-cicle__title', 'Добавить новую программу');
 
@@ -2993,14 +3002,15 @@ function openAddProgramModal(onConfirmNew, onConfirmCopy) {
 
     modalContent.append(title, nameInput, divider, cycleWrap, programWrap, btnGroup);
     modal.append(modalContent);
-    document.body.appendChild(modal);
+    presentKeyboardDockedModal(modal, modalContent, {
+        focusTarget: nameInput,
+        focusDelayMs: KEYBOARD_DOCKED_MODAL_FOCUS_DELAY_MS
+    });
 
     modal.addEventListener('click', (e) => {
         if (e.target === modal) modal.remove();
         else if (!e.target.closest('.add-program-dropdown-wrap')) closeAllDropdowns();
     });
-
-    nameInput.focus();
 }
 
 
@@ -3054,12 +3064,44 @@ function __formatSetDisplayKgReps(displayWeight, displayReps) {
     return `${displayWeight} <small>кг</small> <small>x</small> ${displayReps} <small>пов</small>`;
 }
 
+const KEYBOARD_DOCKED_MODAL_FOCUS_DELAY_MS = 170;
+
+function prepareKeyboardDockedModal(overlay, host) {
+    if (!overlay || !host) return;
+    host.classList.add('keyboard-docked-modal-host');
+}
+
+function presentKeyboardDockedModal(overlay, host, options = {}) {
+    if (!overlay || !host) return;
+
+    const focusTarget = options.focusTarget || null;
+    const focusDelayMs = Math.max(0, Number(options.focusDelayMs) || 0);
+    const selectText = Boolean(options.selectText);
+
+    if (!overlay.isConnected) {
+        document.body.appendChild(overlay);
+    }
+
+    if (focusTarget) {
+        window.setTimeout(() => {
+            if (!focusTarget.isConnected) return;
+            try {
+                focusTarget.focus();
+                if (selectText && typeof focusTarget.select === 'function') {
+                    focusTarget.select();
+                }
+            } catch (_) {}
+        }, focusDelayMs);
+    }
+}
+
 function openEditSetModal(programId, exerciseId, setIndex, currentSet) {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
 
     const modal = document.createElement('div');
     modal.className = 'modal-set';
+    prepareKeyboardDockedModal(overlay, modal);
 
     const program = state.programs.find(p => p.id === programId);
     const exercise = program?.exercises?.find(ex => ex.id === exerciseId);
@@ -3214,7 +3256,7 @@ function openEditSetModal(programId, exerciseId, setIndex, currentSet) {
 
     modal.append(headerRow, fieldsWrap, addPartBtn);
     overlay.append(modal);
-    document.body.append(overlay);
+    presentKeyboardDockedModal(overlay, modal);
 
     overlay.addEventListener('click', (e) => {
         if (e.target === overlay) {
@@ -3230,6 +3272,7 @@ function openEditSetModal(programId, exerciseId, setIndex, currentSet) {
 function openCommentModal(exerciseId, currentNote, titleText, onSave) {
     const overlay = createElement('div', 'modal-overlay');
     const modal = createElement('div', 'modal-content modal-compact comExer');
+    prepareKeyboardDockedModal(overlay, modal);
 
     // Заголовок
     const title = createElement('h3');
@@ -3339,7 +3382,7 @@ saveBtn.addEventListener('click', () => {
 
     modal.append(title, textarea, mediaContainer, addMediaBtn, fileInput, controls);
     overlay.append(modal);
-    document.body.append(overlay);
+    presentKeyboardDockedModal(overlay, modal);
 }
 
 
@@ -5918,6 +5961,7 @@ export function openMediaFullScreen(url, type = 'photo') {
 function openAddExerciseModal(program) {
     const modal = createElement('div', 'modal-overlay program-details');
     const modalContent = createElement('div', 'modal-content');
+    prepareKeyboardDockedModal(modal, modalContent);
 
     const title = createElement('h3', null);
     const input = createElement('input', 'modal-input');
@@ -5944,8 +5988,10 @@ function openAddExerciseModal(program) {
     btnGroup.append(saveBtn);
     modalContent.append(title, input, btnGroup);
     modal.append(modalContent);
-    document.body.append(modal);
-    input.focus();
+    presentKeyboardDockedModal(modal, modalContent, {
+        focusTarget: input,
+        focusDelayMs: KEYBOARD_DOCKED_MODAL_FOCUS_DELAY_MS
+    });
 
     // Закрытие при клике вне модалки
     modal.addEventListener('click', (e) => {
@@ -6029,6 +6075,7 @@ function openExerciseMenuModal(program, exercise) {
       });
 
       const modal = createElement('div', 'modal-content modal-compact');
+      prepareKeyboardDockedModal(overlay, modal);
       const title = createElement('h3', null, 'Редактировать название');
 
       const nameInput = createElement('input', 'modal-input');
@@ -6057,10 +6104,11 @@ function openExerciseMenuModal(program, exercise) {
       controls.append(save);
       modal.append(title, nameInput, controls);
       overlay.appendChild(modal);
-      document.body.appendChild(overlay);
-
-      nameInput.focus();
-      nameInput.select?.();
+      presentKeyboardDockedModal(overlay, modal, {
+          focusTarget: nameInput,
+          focusDelayMs: KEYBOARD_DOCKED_MODAL_FOCUS_DELAY_MS,
+          selectText: true
+      });
   }
 
 
@@ -9629,6 +9677,10 @@ function isKeyboardModalHost(host) {
     return Boolean(host?.matches?.(KEYBOARD_MODAL_HOST_SELECTOR));
 }
 
+function isKeyboardDockedModalHost(host) {
+    return Boolean(host?.classList?.contains('keyboard-docked-modal-host'));
+}
+
 function clearKeyboardScrollHost(host) {
     if (!host) return;
     try {
@@ -9863,6 +9915,9 @@ function ensureNativeKeyboardBottomNavBinding() {
                 modalScrollHost,
                 shouldExposeExtraScroll ? safeKeyboardHeight + keyboardClearance : 0
             );
+            if (host === activeKeyboardShiftHost && Math.abs(nextShift - currentShift) < 4) {
+                return;
+            }
             setKeyboardViewportShift(host, nextShift, safeKeyboardHeight);
 
             const projectedTargetBottom = Math.max(0, rect.bottom - nextShift);
@@ -9929,9 +9984,14 @@ function ensureNativeKeyboardBottomNavBinding() {
 
     const handleKeyboardShow = (info = {}) => {
         const keyboardHeight = Math.max(0, Math.round(Number(info?.keyboardHeight) || 0));
+        const active = getFocusedKeyboardControl();
+        const activeHost = resolveKeyboardShiftHost(active);
+        const useDockedModalHost = isKeyboardDockedModalHost(activeHost);
         setKeyboardVisible(true, keyboardHeight);
         requestFocusedKeyboardControlViewportSync(keyboardHeight);
-        scheduleFocusedKeyboardControlViewportSync(120, 260);
+        if (!useDockedModalHost) {
+            scheduleFocusedKeyboardControlViewportSync(120, 260);
+        }
     };
 
     bindKeyboardEvent('keyboardWillShow', handleKeyboardShow);
@@ -9941,11 +10001,16 @@ function ensureNativeKeyboardBottomNavBinding() {
 
     document.addEventListener('focusin', (event) => {
         if (!event.target?.matches?.('input:not([type="hidden"]), textarea, select, [contenteditable="true"]')) return;
+        const host = resolveKeyboardShiftHost(event.target);
+        const useDockedModalHost = isKeyboardDockedModalHost(host);
         if (document.body?.classList.contains('app-keyboard-visible')) {
             requestFocusedKeyboardControlViewportSync();
-            scheduleFocusedKeyboardControlViewportSync(120);
+            if (!useDockedModalHost) {
+                scheduleFocusedKeyboardControlViewportSync(120);
+            }
             return;
         }
+        if (useDockedModalHost) return;
         scheduleFocusedKeyboardControlViewportSync(40, 180);
     });
 
