@@ -1318,6 +1318,10 @@ function removeSupplementTableSheetEditorShell() {
     supplementTableEditorDeferredScrollTimer = null;
     supplementTableSheetViewportAbortController?.abort?.();
     supplementTableSheetViewportAbortController = null;
+    const activeWrapper = supplementTableSheetState.selectedCell?.tableWrapper || null;
+    if (activeWrapper) {
+        setSupplementTableAddWeeksExtraPadding(activeWrapper, 0);
+    }
     supplementTableSheetElements?.shell?.remove();
     supplementTableSheetElements = null;
     document.querySelectorAll('.supplement-table-wrapper--editor-locked').forEach((wrapper) => {
@@ -1331,6 +1335,9 @@ function clearSupplementTableCellSelection({ preserveMenu = false, revertPreview
     const selectedCell = supplementTableSheetState.selectedCell;
     if (selectedCell?.buttonEl && revertPreview) {
         updateSupplementDoseCellButton(selectedCell.buttonEl, selectedCell.originalRawDose);
+    }
+    if (selectedCell?.tableWrapper) {
+        setSupplementTableAddWeeksExtraPadding(selectedCell.tableWrapper, 0);
     }
     clearSupplementTableCellSelectionVisual();
     supplementTableSheetState.selectedCell = null;
@@ -1536,7 +1543,53 @@ function addSupplementTableEditorTimeRow(container, value = '') {
 }
 
 function syncSupplementTableEditorViewportOffset() {
-    return;
+    const shell = supplementTableSheetElements?.shell;
+    if (!shell?.isConnected) return;
+
+    const keyboardHeight = getSupplementTableEditorKeyboardOffset();
+    shell.style.setProperty('--supplement-editor-bottom-offset', `${keyboardHeight}px`);
+    shell.style.bottom = `${keyboardHeight}px`;
+}
+
+function getSupplementTableKeyboardHeight() {
+    if (!document.body?.classList.contains('app-keyboard-visible')) return 0;
+    const cssHeight = parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue('--keyboard-height') || '0'
+    );
+    return Math.max(0, Math.round(Number.isFinite(cssHeight) ? cssHeight : 0));
+}
+
+function isSupplementTableEditorInputFocused() {
+    const shell = supplementTableSheetElements?.shell;
+    const active = document.activeElement;
+    if (!shell?.isConnected || !active || active === document.body || active === document.documentElement) {
+        return false;
+    }
+    if (!shell.contains(active)) return false;
+    return Boolean(active.matches?.('input:not([type="hidden"]), textarea, select, [contenteditable="true"]'));
+}
+
+function getSupplementTableEditorKeyboardOffset() {
+    if (!isSupplementTableEditorInputFocused()) return 0;
+    return getSupplementTableKeyboardHeight();
+}
+
+function getSupplementTableAddWeeksSection(wrapper) {
+    return wrapper?.querySelector?.('.supplement-table-add-weeks') || null;
+}
+
+function getSupplementTableAddWeeksExtraPadding(wrapper) {
+    const section = getSupplementTableAddWeeksSection(wrapper);
+    if (!section) return 0;
+    const raw = parseFloat(section.style.getPropertyValue('--supplement-editor-extra-space') || '0');
+    return Math.max(0, Math.round(Number.isFinite(raw) ? raw : 0));
+}
+
+function setSupplementTableAddWeeksExtraPadding(wrapper, paddingPx = 0) {
+    const section = getSupplementTableAddWeeksSection(wrapper);
+    if (!section) return;
+    const nextPadding = Math.max(0, Math.round(Number(paddingPx) || 0));
+    section.style.setProperty('--supplement-editor-extra-space', `${nextPadding}px`);
 }
 
 function scrollSupplementTableSelectedCellIntoView() {
@@ -1547,6 +1600,11 @@ function scrollSupplementTableSelectedCellIntoView() {
     const wrapper = selectedCell.tableWrapper;
     if (!wrapper?.isConnected) return;
 
+    const keyboardOffset = getSupplementTableEditorKeyboardOffset();
+    if (!keyboardOffset && getSupplementTableAddWeeksExtraPadding(wrapper) > 0) {
+        setSupplementTableAddWeeksExtraPadding(wrapper, 0);
+    }
+
     const buttonRect = selectedCell.buttonEl.getBoundingClientRect();
     const wrapperRect = wrapper.getBoundingClientRect();
     const shellRect = shell.getBoundingClientRect();
@@ -1555,9 +1613,27 @@ function scrollSupplementTableSelectedCellIntoView() {
     const bottomLimit = Math.min(wrapperRect.bottom, shellRect.top) - 12;
 
     if (buttonRect.bottom > bottomLimit) {
-        wrapper.scrollTop += buttonRect.bottom - bottomLimit;
+        const overflowBottom = Math.max(0, Math.ceil(buttonRect.bottom - bottomLimit));
+        const currentExtraPadding = getSupplementTableAddWeeksExtraPadding(wrapper);
+        const naturalMaxScrollTop = Math.max(
+            0,
+            Math.round((wrapper.scrollHeight - currentExtraPadding) - wrapper.clientHeight)
+        );
+        const naturalAvailableDown = Math.max(0, naturalMaxScrollTop - wrapper.scrollTop);
+        const desiredExtraPadding = keyboardOffset
+            ? Math.max(0, overflowBottom - naturalAvailableDown)
+            : 0;
+
+        if (desiredExtraPadding !== currentExtraPadding) {
+            setSupplementTableAddWeeksExtraPadding(wrapper, desiredExtraPadding);
+            requestAnimationFrame(scrollSupplementTableSelectedCellIntoView);
+            return;
+        }
+
+        const maxScrollTop = Math.max(0, Math.round(wrapper.scrollHeight - wrapper.clientHeight));
+        wrapper.scrollTop = Math.min(maxScrollTop, wrapper.scrollTop + overflowBottom);
     } else if (buttonRect.top < topLimit) {
-        wrapper.scrollTop -= topLimit - buttonRect.top;
+        wrapper.scrollTop = Math.max(0, wrapper.scrollTop - Math.ceil(topLimit - buttonRect.top));
     }
 }
 

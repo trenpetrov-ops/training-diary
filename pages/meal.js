@@ -7975,7 +7975,10 @@ async function renderFoodDetails() {
         selectedMealId = mealId;
     }
 
-    const container = createElement('div', 'create-food');
+    const container = createElement(
+        'div',
+        'create-food create-food-form-page create-food-form-page--sticky-topbar create-food-form-page--keyboard-padding-only'
+    );
     const handleBack = () => {
         const source = state.foodDetailsSource;
 
@@ -8021,6 +8024,10 @@ async function renderFoodDetails() {
 
     const stickyHeader = createElement('div', 'create-food-sticky-header');
     stickyHeader.append(topBar, title);
+    const contentScrollHost = createElement(
+        'div',
+        'create-food-form-scroll-host create-food-form-scroll-host--keyboard-padding-only'
+    );
 
     const titleDesc = food.description?.trim()
         ? createElement('div', 'food-title-description', food.description)
@@ -8532,8 +8539,7 @@ async function renderFoodDetails() {
 
     syncMealSourceTopbarAction();
 
-    container.append(
-        stickyHeader,
+    contentScrollHost.append(
         ...(titleDesc ? [titleDesc] : []),
         topBlockCreateFood,
         currentValuesWrap,
@@ -8556,7 +8562,7 @@ async function renderFoodDetails() {
 
         const actionsBlock = createElement('div', 'food-details-actions-block food-details-actions-block--meal-food-delete');
         actionsBlock.append(deleteMealFoodBtn);
-        container.append(actionsBlock);
+        contentScrollHost.append(actionsBlock);
     }
 
     if (showEditButton) {
@@ -8777,7 +8783,7 @@ async function renderFoodDetails() {
         }
         mainActionsRow.classList.toggle('food-details-main-actions-row--single', mainActionsRow.children.length === 1);
         actionsBlock.append(mainActionsRow);
-        container.append(actionsBlock);
+        contentScrollHost.append(actionsBlock);
 
         const sharedStatus = createElement('div', 'meal-share-status meal-share-status--global');
         if (isGlobalImportedFood) {
@@ -8935,7 +8941,7 @@ async function renderFoodDetails() {
     }
 
     if (isGlobalCatalogSource) {
-        container.append(
+        contentScrollHost.append(
             createElement('div', 'meal-share-status meal-share-status--global', 'Продукт находится в общей базе')
         );
     }
@@ -8979,11 +8985,12 @@ async function renderFoodDetails() {
             };
             const globalActionsBlock = createElement('div', 'food-details-actions-block');
             globalActionsBlock.append(delGlobalBtn);
-            container.append(globalActionsBlock);
+            contentScrollHost.append(globalActionsBlock);
         }
     }
 
     attachMealOverlayTopbarMode(container);
+    container.append(stickyHeader, contentScrollHost);
     pushMealOverlay(container);
 
     requestAnimationFrame(() => {
@@ -9067,7 +9074,10 @@ async function renderRecipeDetails() {
         currentAmount = Number(recipe.defaultServings || recipe.servings || 1) || 1;
     }
 
-    const container = createElement('div', 'create-food');
+    const container = createElement(
+        'div',
+        'create-food create-food-form-page create-food-form-page--sticky-topbar create-food-form-page--keyboard-padding-only'
+    );
     const handleBack = () => {
         state.recipeServingsDraft = null;
         state.recipeDetailsSource = null;
@@ -9131,6 +9141,10 @@ async function renderRecipeDetails() {
     });
     const stickyHeader = createElement('div', 'create-food-sticky-header');
     stickyHeader.append(topBar, title);
+    const contentScrollHost = createElement(
+        'div',
+        'create-food-form-scroll-host create-food-form-scroll-host--keyboard-padding-only'
+    );
 
     if (!isMealSource) {
         saveBtn = createElement('button', 'food-add-btn meal-search-add-btn');
@@ -9557,8 +9571,7 @@ async function renderRecipeDetails() {
     renderCurrentValuesBlock();
     renderPassportBlock();
 
-    container.append(
-        stickyHeader,
+    contentScrollHost.append(
         ...(titleDesc ? [titleDesc] : []),
         topBlockCreateFood,
         currentValuesWrap,
@@ -9607,7 +9620,7 @@ async function renderRecipeDetails() {
 
         const actionsBlock = createElement('div', 'food-details-actions-block food-details-actions-block--meal-recipe-delete');
         actionsBlock.append(deleteMealRecipeBtn);
-        container.append(actionsBlock);
+        contentScrollHost.append(actionsBlock);
     } else {
         const editBtn = createElement('button', 'edit-meal-search-main-action recipe-details-action-edit');
         editBtn.type = 'button';
@@ -9658,10 +9671,11 @@ async function renderRecipeDetails() {
 
         const actionsBlock = createElement('div', 'food-details-actions-block food-details-actions-block--recipe-search');
         actionsBlock.append(deleteRecipeBtn, editBtn);
-        container.append(actionsBlock);
+        contentScrollHost.append(actionsBlock);
     }
 
     attachMealOverlayTopbarMode(container);
+    container.append(stickyHeader, contentScrollHost);
     pushMealOverlay(container);
 
     requestAnimationFrame(() => {
@@ -13808,7 +13822,10 @@ function renderQuickAddStub() {
     ensureMealShell();
     setMealBaseTopBarVisible(false);
 
-    const container = createElement('div', 'create-food create-food-form-page create-food-form-page--sticky-topbar meal-quick-add-page');
+    const container = createElement(
+        'div',
+        'create-food create-food-form-page create-food-form-page--sticky-topbar create-food-form-page--keyboard-padding-only meal-quick-add-page'
+    );
 
     const handleBack = () => {
         const target = state.quickAddBackTarget || (hasUnderlyingMealSearch() ? 'search' : 'main');
@@ -13848,6 +13865,10 @@ function renderQuickAddStub() {
     const stickyHeader = createElement('div', 'create-food-sticky-header');
     stickyHeader.append(topBar, pageTitle);
 
+    const formScrollHost = createElement(
+        'div',
+        'create-food-form-scroll-host create-food-form-scroll-host--keyboard-padding-only'
+    );
     const formCard = createElement('div', 'create-food-form-card meal-quick-add-form-card');
 
     function createFormRow(labelText, controlEl, required = false, extraClass = '') {
@@ -13975,8 +13996,10 @@ function renderQuickAddStub() {
         }
     };
 
+    formScrollHost.append(formCard);
+
     attachMealOverlayTopbarMode(container);
-    container.append(stickyHeader, formCard);
+    container.append(stickyHeader, formScrollHost);
     pushMealOverlay(container);
 
     requestAnimationFrame(() => {
@@ -13995,7 +14018,10 @@ function renderQuickAddStub() {
 function renderCreateFood() {
     ensureMealShell();
 
-    const container = createElement('div', 'create-food create-food-form-page create-food-form-page--sticky-topbar');
+    const container = createElement(
+        'div',
+        'create-food create-food-form-page create-food-form-page--sticky-topbar create-food-form-page--keyboard-padding-only'
+    );
 
     const handleBack = () => {
         const target = state.createFoodBackTarget || 'search';
@@ -14046,6 +14072,10 @@ function renderCreateFood() {
     const stickyHeader = createElement('div', 'create-food-sticky-header');
     stickyHeader.append(topBar, pageTitle);
 
+    const formScrollHost = createElement(
+        'div',
+        'create-food-form-scroll-host create-food-form-scroll-host--keyboard-padding-only'
+    );
     const formCard = createElement('div', 'create-food-form-card');
 
     function createFormRow(labelText, controlEl, required = true, extraClass = '', rightActionEl = null) {
@@ -14375,8 +14405,10 @@ function renderCreateFood() {
         }
     };
 
+    formScrollHost.append(formCard);
+
     attachMealOverlayTopbarMode(container);
-    container.append(stickyHeader, formCard);
+    container.append(stickyHeader, formScrollHost);
     pushMealOverlay(container);
 
     requestAnimationFrame(() => {
@@ -14443,7 +14475,10 @@ function renderCreateRecipe() {
 
     const draft = getRecipeDraft();
 
-    const container = createElement('div', 'create-food create-food-form-page create-food-form-page--sticky-topbar recipe-create-page');
+    const container = createElement(
+        'div',
+        'create-food create-food-form-page create-food-form-page--sticky-topbar create-food-form-page--keyboard-padding-only recipe-create-page'
+    );
 
     const handleBack = () => {
         state.mealView = 'search';
@@ -14476,6 +14511,10 @@ function renderCreateRecipe() {
 
     const stickyHeader = createElement('div', 'create-food-sticky-header');
     stickyHeader.append(topBar, pageTitle);
+    const formScrollHost = createElement(
+        'div',
+        'create-food-form-scroll-host create-food-form-scroll-host--keyboard-padding-only'
+    );
 
     const formCard = createElement('div', 'create-food-form-card create-food-form-card--new-recipe');
 
@@ -14729,8 +14768,10 @@ function renderCreateRecipe() {
         }
     };
 
+    formScrollHost.append(formCard);
+
     attachMealOverlayTopbarMode(container);
-    container.append(stickyHeader, formCard);
+    container.append(stickyHeader, formScrollHost);
     pushMealOverlay(container);
 
     requestAnimationFrame(() => {
@@ -14812,6 +14853,10 @@ async function renderEditRecipe() {
     const stickyHeader = createElement('div', 'create-food-sticky-header');
     stickyHeader.append(topBar, pageTitle);
 
+    const formScrollHost = createElement(
+        'div',
+        'create-food-form-scroll-host create-food-form-scroll-host--keyboard-padding-only'
+    );
     const formCard = createElement('div', 'create-food-form-card');
 
     function createFormRow(labelText, controlEl, required = true, extraClass = '', rightActionEl = null) {
@@ -15099,8 +15144,10 @@ async function renderEditRecipe() {
         window.removeEventListener('recipeDraftIngredientsChanged', syncRecipeDraftIngredients);
     };
 
+    formScrollHost.append(formCard);
+
     attachMealOverlayTopbarMode(container);
-    container.append(stickyHeader, formCard);
+    container.append(stickyHeader, formScrollHost);
     pushMealOverlay(container);
 
     requestAnimationFrame(() => {

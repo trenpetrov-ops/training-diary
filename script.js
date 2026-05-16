@@ -9573,9 +9573,18 @@ function isCapacitorIosPlatform() {
     return isCapacitorNativePlatform() && /iPhone|iPad|iPod/i.test(window.navigator?.userAgent || '');
 }
 
+const KEYBOARD_MODAL_HOST_SELECTOR = [
+    '.modal-set',
+    '.modal-content',
+    '.modal-cicle',
+    '.modal-edit',
+    '.supplement-edit-modal',
+    '.supplement-delete-modal'
+].join(', ');
+
 const KEYBOARD_SHIFT_HOST_SELECTOR = [
+    KEYBOARD_MODAL_HOST_SELECTOR,
     '.create-food-form-scroll-host--keyboard-padding-only',
-    '.supplement-sheet-editor',
     '.meal-overlay-subpage',
     '.meal-overlay-layer',
     '.modal-overlay-remove-edit',
@@ -9589,9 +9598,8 @@ const KEYBOARD_SHIFT_HOST_SELECTOR = [
 ].join(', ');
 
 const KEYBOARD_VIEWPORT_TARGET_SELECTOR = [
+    '.modal-set-row',
     '.create-food-row',
-    '.supplement-sheet-editor__formula',
-    '.supplement-sheet-editor__time-row'
 ].join(', ');
 
 function clearKeyboardShiftHost(host) {
@@ -9615,6 +9623,10 @@ function shouldUseKeyboardPaddingOnlyHost(host) {
         host?.classList?.contains('create-food-form-page--keyboard-padding-only')
         || host?.classList?.contains('create-food-form-scroll-host--keyboard-padding-only')
     );
+}
+
+function isKeyboardModalHost(host) {
+    return Boolean(host?.matches?.(KEYBOARD_MODAL_HOST_SELECTOR));
 }
 
 function clearKeyboardScrollHost(host) {
@@ -9665,6 +9677,10 @@ function setKeyboardScrollHost(host, extraScrollSpacePx = 0) {
 
 function resolveKeyboardScrollHost(node, shiftHost = null) {
     if (shouldUseKeyboardPaddingOnlyHost(shiftHost)) {
+        return shiftHost;
+    }
+
+    if (isKeyboardModalHost(shiftHost)) {
         return shiftHost;
     }
 
@@ -9782,6 +9798,7 @@ function ensureNativeKeyboardBottomNavBinding() {
         const host = resolveKeyboardShiftHost(active);
         const scrollHost = resolveKeyboardScrollHost(active, host);
         const usePaddingOnlyHost = shouldUseKeyboardPaddingOnlyHost(host);
+        const useModalHost = isKeyboardModalHost(host);
         if (!target || !host) {
             setKeyboardViewportShift(null, 0, keyboardHeight);
             setKeyboardScrollHost(null, 0);
@@ -9823,6 +9840,43 @@ function ensureNativeKeyboardBottomNavBinding() {
                 const nextScrollTop = Math.min(maxScrollTop, currentScrollTop + overlap);
                 if (Math.abs(nextScrollTop - currentScrollTop) > 1) {
                     paddingHost.scrollTop = nextScrollTop;
+                }
+            }
+            return;
+        }
+
+        if (useModalHost) {
+            const hostRect = host.getBoundingClientRect();
+            const hostBaseBottom = Math.max(
+                0,
+                (Number.isFinite(hostRect?.bottom) ? hostRect.bottom : 0) + currentShift
+            );
+            const desiredShift = Math.max(0, Math.max(baseBottom, hostBaseBottom) - visibleBottom);
+            const nextShift = Math.min(safeKeyboardHeight, Math.round(desiredShift));
+            const modalScrollHost = scrollHost || host;
+            const contentBottom = getKeyboardScrollHostContentBottom(modalScrollHost);
+            const projectedContentBottom = Math.max(0, contentBottom - nextShift);
+            const contentHiddenByKeyboard = Math.max(0, projectedContentBottom - visibleBottom);
+            const shouldExposeExtraScroll = contentHiddenByKeyboard > 24;
+
+            setKeyboardScrollHost(
+                modalScrollHost,
+                shouldExposeExtraScroll ? safeKeyboardHeight + keyboardClearance : 0
+            );
+            setKeyboardViewportShift(host, nextShift, safeKeyboardHeight);
+
+            const projectedTargetBottom = Math.max(0, rect.bottom - nextShift);
+            const overlap = Math.max(0, Math.round(projectedTargetBottom - visibleBottom));
+
+            if (modalScrollHost && shouldExposeExtraScroll && overlap > 0) {
+                const currentScrollTop = Math.max(0, Number(modalScrollHost.scrollTop || 0));
+                const maxScrollTop = Math.max(
+                    0,
+                    Number((modalScrollHost.scrollHeight || 0) - (modalScrollHost.clientHeight || 0))
+                );
+                const nextScrollTop = Math.min(maxScrollTop, currentScrollTop + overlap);
+                if (Math.abs(nextScrollTop - currentScrollTop) > 1) {
+                    modalScrollHost.scrollTop = nextScrollTop;
                 }
             }
             return;

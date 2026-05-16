@@ -135,6 +135,26 @@ button:focus, button:focus-visible, button:active {
     padding-bottom: calc(var(--keyboard-scroll-space-base, 0px) + var(--keyboard-extra-scroll-space, 0px)) !important;
     scroll-padding-bottom: calc(var(--keyboard-extra-scroll-space, 0px) + 16px) !important;
 }
+.modal-set.keyboard-viewport-shift-host,
+.modal-content.keyboard-viewport-shift-host,
+.modal-cicle.keyboard-viewport-shift-host,
+.modal-edit.keyboard-viewport-shift-host,
+.supplement-edit-modal.keyboard-viewport-shift-host,
+.supplement-delete-modal.keyboard-viewport-shift-host {
+    transform: translate3d(0, calc(-1 * var(--keyboard-local-shift, 0px)), 0) scale(0.9);
+}
+.modal-set.keyboard-scroll-space-host,
+.modal-content.keyboard-scroll-space-host,
+.modal-cicle.keyboard-scroll-space-host,
+.modal-edit.keyboard-scroll-space-host,
+.supplement-edit-modal.keyboard-scroll-space-host,
+.supplement-delete-modal.keyboard-scroll-space-host {
+    max-height: calc(var(--app-height, 100dvh) - var(--keyboard-height, 0px) - 20px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    box-sizing: border-box;
+}
 *::-webkit-scrollbar {
     display: none;
 }
@@ -1571,9 +1591,10 @@ div#supplements-content {
     position: relative;
 }
 .supplement-table-add-weeks {
-    padding: 14px 10px calc(var(--bottom-nav-clearance, 100px) + 10px);
+    padding: 14px 10px calc(var(--bottom-nav-clearance, 100px) + 10px + var(--supplement-editor-extra-space, 0px));
     border-top: 1px solid var(--color-border-light, #e8e8e8);
     background: #fafafa;
+    transition: padding-bottom var(--keyboard-transition-ms, 250ms) cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 .supplement-table-add-weeks-row {
     display: flex;
@@ -8379,6 +8400,7 @@ button#select-own-mode .mode-icon svg {
 .create-food-form-page--keyboard-padding-only {
     height: 100%;
     overflow: hidden;
+    padding-bottom: 0;
 }
 .create-food-form-scroll-host--keyboard-padding-only {
     flex: 1 1 auto;
@@ -8386,6 +8408,8 @@ button#select-own-mode .mode-icon svg {
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: none;
+    box-sizing: border-box;
+    padding-bottom: 100px;
 }
     .create-food-topbar {
         width: 100%;
@@ -14274,6 +14298,7 @@ button.action-btn.action-plan span.action-plan-text svg {
 .create-food-form-page--keyboard-padding-only {
     height: 100%;
     overflow: hidden;
+    padding-bottom: 0;
 }
 .create-food-form-scroll-host--keyboard-padding-only {
     flex: 1 1 auto;
@@ -14281,6 +14306,8 @@ button.action-btn.action-plan span.action-plan-text svg {
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: none;
+    box-sizing: border-box;
+    padding-bottom: 100px;
 }
 .create-food-topbar {
     width: 100%;
@@ -16059,7 +16086,7 @@ button.delete-food-from-meal-btn {
     font-size: 14px;
     /* font-weight: 600; */
     /* line-height: 1; */
-    padding: 4px 0;
+    padding: 0px 0;
     cursor: pointer;
     /* margin-top: -2px; */
 }
@@ -17692,6 +17719,9 @@ button.meal-goal-interval-delete-btn {
     padding-top: 0;
     box-sizing: border-box;
     background: #eeeff3;
+}
+.meal-overlay-layer--search .meal-overlay-subpage.create-food-form-page--keyboard-padding-only {
+    overflow: hidden;
 }
 .add-meal-wrap {
     width: calc(100% - 16px);
@@ -20019,7 +20049,7 @@ div#supplements-content.supplements-page--day-details > h3 {
     position: fixed;
     left: 0;
     right: 0;
-    bottom: 0;
+    bottom: var(--supplement-editor-bottom-offset, 0px);
     z-index: 1200;
     display: grid;
     gap: 0;
@@ -20030,6 +20060,7 @@ div#supplements-content.supplements-page--day-details > h3 {
     /* box-shadow: 0 -8px 28px rgba(15, 23, 42, 0.14); */
     border-top: 1px solid #c5c7cc;
     overflow: hidden;
+    transition: bottom var(--keyboard-transition-ms, 250ms) cubic-bezier(0.22, 0.61, 0.36, 1);
     /* transition: box-shadow 0.22s ease, transform 0.22s ease; */
     /* padding-top: 5px; */
 }
