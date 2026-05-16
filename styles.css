@@ -8370,12 +8370,18 @@ button#select-own-mode .mode-icon svg {
         box-shadow: none;
     }
     /* === PAGE ADD PRODUCT  === */
-    .create-food-form-page {
-        min-height: 100%;
-        /* background: #f6f7fb; */
-        box-sizing: border-box;
-        padding-bottom: 100px;
-    }
+.create-food-form-page {
+    min-height: 100%;
+    /* background: #f6f7fb; */
+    box-sizing: border-box;
+    padding-bottom: 100px;
+}
+.create-food-form-page--keyboard-padding-only {
+    height: 100%;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: none;
+}
     .create-food-topbar {
         width: 100%;
         display: flex;
@@ -14259,6 +14265,12 @@ button.action-btn.action-plan span.action-plan-text svg {
     min-height: 100%;
     box-sizing: border-box;
     padding-bottom: 100px;
+}
+.create-food-form-page--keyboard-padding-only {
+    height: 100%;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: none;
 }
 .create-food-topbar {
     width: 100%;

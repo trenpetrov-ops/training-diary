@@ -9660,6 +9660,10 @@ function setKeyboardScrollHost(host, extraScrollSpacePx = 0) {
 }
 
 function resolveKeyboardScrollHost(node, shiftHost = null) {
+    if (shouldUseKeyboardPaddingOnlyHost(shiftHost)) {
+        return shiftHost;
+    }
+
     let current = node?.parentElement || null;
 
     while (current && current !== document.body) {
