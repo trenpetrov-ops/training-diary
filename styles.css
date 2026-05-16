@@ -8378,6 +8378,11 @@ button#select-own-mode .mode-icon svg {
 }
 .create-food-form-page--keyboard-padding-only {
     height: 100%;
+    overflow: hidden;
+}
+.create-food-form-scroll-host--keyboard-padding-only {
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: none;
@@ -14268,6 +14273,11 @@ button.action-btn.action-plan span.action-plan-text svg {
 }
 .create-food-form-page--keyboard-padding-only {
     height: 100%;
+    overflow: hidden;
+}
+.create-food-form-scroll-host--keyboard-padding-only {
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: none;

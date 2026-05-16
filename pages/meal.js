@@ -3408,7 +3408,8 @@ function closeMealOverlayAndShowMealMain() {
 }
 
 function setupCreateFoodStickyTitleBorder({ titleEl, watchEl }) {
-    let scrollRoot = titleEl.closest('.meal-overlay-subpage')
+    let scrollRoot = watchEl?.closest?.('.create-food-form-scroll-host')
+        || titleEl.closest('.meal-overlay-subpage')
         || titleEl.closest('.meal-overlay-layer')
         || titleEl.closest('.meal-goal-overlay-wrap')?.parentElement
         || document.getElementById('root');
@@ -7339,6 +7340,10 @@ async function renderEditFood() {
     const stickyHeader = createElement('div', 'create-food-sticky-header');
     stickyHeader.append(topBar, pageTitle);
 
+    const formScrollHost = createElement(
+        'div',
+        'create-food-form-scroll-host create-food-form-scroll-host--keyboard-padding-only'
+    );
     const formCard = createElement('div', 'create-food-form-card');
 
     function createFormRow(labelText, controlEl, required = true, extraClass = '') {
@@ -7677,8 +7682,10 @@ async function renderEditFood() {
         renderMealPage();
     };
 
+    formScrollHost.append(formCard);
+
     attachMealOverlayTopbarMode(container);
-    container.append(stickyHeader, formCard);
+    container.append(stickyHeader, formScrollHost);
     pushMealOverlay(container);
 
     requestAnimationFrame(() => {

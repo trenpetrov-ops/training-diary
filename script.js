@@ -9574,6 +9574,7 @@ function isCapacitorIosPlatform() {
 }
 
 const KEYBOARD_SHIFT_HOST_SELECTOR = [
+    '.create-food-form-scroll-host--keyboard-padding-only',
     '.supplement-sheet-editor',
     '.meal-overlay-subpage',
     '.meal-overlay-layer',
@@ -9610,7 +9611,10 @@ function resolveKeyboardViewportTarget(node) {
 }
 
 function shouldUseKeyboardPaddingOnlyHost(host) {
-    return Boolean(host?.classList?.contains('create-food-form-page--keyboard-padding-only'));
+    return Boolean(
+        host?.classList?.contains('create-food-form-page--keyboard-padding-only')
+        || host?.classList?.contains('create-food-form-scroll-host--keyboard-padding-only')
+    );
 }
 
 function clearKeyboardScrollHost(host) {
