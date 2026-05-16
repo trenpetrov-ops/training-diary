@@ -13995,7 +13995,10 @@ function renderQuickAddStub() {
 function renderCreateFood() {
     ensureMealShell();
 
-    const container = createElement('div', 'create-food create-food-form-page create-food-form-page--sticky-topbar');
+    const container = createElement(
+        'div',
+        'create-food create-food-form-page create-food-form-page--sticky-topbar create-food-form-page--keyboard-padding-only'
+    );
 
     const handleBack = () => {
         const target = state.createFoodBackTarget || 'search';
@@ -14046,6 +14049,10 @@ function renderCreateFood() {
     const stickyHeader = createElement('div', 'create-food-sticky-header');
     stickyHeader.append(topBar, pageTitle);
 
+    const formScrollHost = createElement(
+        'div',
+        'create-food-form-scroll-host create-food-form-scroll-host--keyboard-padding-only'
+    );
     const formCard = createElement('div', 'create-food-form-card');
 
     function createFormRow(labelText, controlEl, required = true, extraClass = '', rightActionEl = null) {
@@ -14375,8 +14382,10 @@ function renderCreateFood() {
         }
     };
 
+    formScrollHost.append(formCard);
+
     attachMealOverlayTopbarMode(container);
-    container.append(stickyHeader, formCard);
+    container.append(stickyHeader, formScrollHost);
     pushMealOverlay(container);
 
     requestAnimationFrame(() => {
