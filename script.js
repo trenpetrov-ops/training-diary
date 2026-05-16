@@ -9850,6 +9850,7 @@ function ensureNativeKeyboardBottomNavBinding() {
         const scrollHost = resolveKeyboardScrollHost(active, host);
         const usePaddingOnlyHost = shouldUseKeyboardPaddingOnlyHost(host);
         const useModalHost = isKeyboardModalHost(host);
+        const useDockedModalHost = isKeyboardDockedModalHost(host);
         if (!target || !host) {
             setKeyboardViewportShift(null, 0, keyboardHeight);
             setKeyboardScrollHost(null, 0);
@@ -9904,6 +9905,16 @@ function ensureNativeKeyboardBottomNavBinding() {
             );
             const desiredShift = Math.max(0, Math.max(baseBottom, hostBaseBottom) - visibleBottom);
             const nextShift = Math.min(safeKeyboardHeight, Math.round(desiredShift));
+
+            if (useDockedModalHost) {
+                setKeyboardScrollHost(null, 0);
+                if (host === activeKeyboardShiftHost && Math.abs(nextShift - currentShift) < 4) {
+                    return;
+                }
+                setKeyboardViewportShift(host, nextShift, safeKeyboardHeight);
+                return;
+            }
+
             const modalScrollHost = scrollHost || host;
             const contentBottom = getKeyboardScrollHostContentBottom(modalScrollHost);
             const projectedContentBottom = Math.max(0, contentBottom - nextShift);
