@@ -2493,11 +2493,7 @@ function openEditCycleModal(cycle) {
     btnGroup.append(saveBtn);
     modalContent.append( input, btnGroup);
     modal.append(modalContent);
-    presentKeyboardDockedModal(modal, modalContent, {
-        focusTarget: input,
-        focusDelayMs: KEYBOARD_DOCKED_MODAL_FOCUS_DELAY_MS,
-        selectText: true
-    });
+    presentKeyboardDockedModal(modal, modalContent);
 
     // Закрытие при клике вне модалки
     modal.addEventListener('click', (e) => {
@@ -2546,10 +2542,7 @@ function openAddCycleModal(onConfirm) {
     btnGroup.append( confirmBtn);
     modalContent.append( input, btnGroup);
     modal.append(modalContent);
-    presentKeyboardDockedModal(modal, modalContent, {
-        focusTarget: input,
-        focusDelayMs: KEYBOARD_DOCKED_MODAL_FOCUS_DELAY_MS
-    });
+    presentKeyboardDockedModal(modal, modalContent);
 
 
     // Закрытие при клике вне модалки
@@ -2759,11 +2752,7 @@ function openEditProgramModal(program) {
     btnGroup.append(saveBtn);
     modalContent.append( input, btnGroup);
     modal.append(modalContent);
-    presentKeyboardDockedModal(modal, modalContent, {
-        focusTarget: input,
-        focusDelayMs: KEYBOARD_DOCKED_MODAL_FOCUS_DELAY_MS,
-        selectText: true
-    });
+    presentKeyboardDockedModal(modal, modalContent);
 
     modal.addEventListener('click', (e) => {
         if (e.target === modal) document.body.removeChild(modal);
@@ -3002,10 +2991,7 @@ function openAddProgramModal(onConfirmNew, onConfirmCopy) {
 
     modalContent.append(title, nameInput, divider, cycleWrap, programWrap, btnGroup);
     modal.append(modalContent);
-    presentKeyboardDockedModal(modal, modalContent, {
-        focusTarget: nameInput,
-        focusDelayMs: KEYBOARD_DOCKED_MODAL_FOCUS_DELAY_MS
-    });
+    presentKeyboardDockedModal(modal, modalContent);
 
     modal.addEventListener('click', (e) => {
         if (e.target === modal) modal.remove();
@@ -3064,14 +3050,68 @@ function __formatSetDisplayKgReps(displayWeight, displayReps) {
     return `${displayWeight} <small>кг</small> <small>x</small> ${displayReps} <small>пов</small>`;
 }
 
-const KEYBOARD_DOCKED_MODAL_FOCUS_DELAY_MS = 170;
+const KEYBOARD_DOCKED_MODAL_CARET_SETTLE_MS = 180;
 
-function prepareKeyboardDockedModal(overlay, host) {
+let keyboardDockedCaretRefreshTimeoutId = 0;
+let activeKeyboardDockedCaretHost = null;
+
+export function prepareKeyboardDockedModal(overlay, host) {
     if (!overlay || !host) return;
     host.classList.add('keyboard-docked-modal-host');
 }
 
-function presentKeyboardDockedModal(overlay, host, options = {}) {
+function clearKeyboardDockedCaretRefresh(host = activeKeyboardDockedCaretHost) {
+    if (keyboardDockedCaretRefreshTimeoutId) {
+        clearTimeout(keyboardDockedCaretRefreshTimeoutId);
+        keyboardDockedCaretRefreshTimeoutId = 0;
+    }
+    if (host?.classList) {
+        host.classList.remove('keyboard-docked-modal-host--caret-settling');
+    }
+    if (!host || host === activeKeyboardDockedCaretHost) {
+        activeKeyboardDockedCaretHost = null;
+    }
+}
+
+function refreshKeyboardDockedModalCaret(control, host) {
+    if (!control?.isConnected || !host?.isConnected) return;
+
+    clearKeyboardDockedCaretRefresh();
+    activeKeyboardDockedCaretHost = host;
+    host.classList.add('keyboard-docked-modal-host--caret-settling');
+
+    const canRestoreSelection =
+        typeof control.selectionStart === 'number' &&
+        typeof control.selectionEnd === 'number' &&
+        typeof control.setSelectionRange === 'function';
+    const selectionStart = canRestoreSelection ? control.selectionStart : null;
+    const selectionEnd = canRestoreSelection ? control.selectionEnd : null;
+    const selectionDirection = canRestoreSelection ? control.selectionDirection : 'none';
+
+    keyboardDockedCaretRefreshTimeoutId = window.setTimeout(() => {
+        keyboardDockedCaretRefreshTimeoutId = 0;
+
+        if (control.isConnected) {
+            try {
+                control.focus({ preventScroll: true });
+            } catch (_) {
+                try {
+                    control.focus();
+                } catch (_) {}
+            }
+
+            if (canRestoreSelection && control === document.activeElement) {
+                try {
+                    control.setSelectionRange(selectionStart, selectionEnd, selectionDirection || 'none');
+                } catch (_) {}
+            }
+        }
+
+        clearKeyboardDockedCaretRefresh(host);
+    }, KEYBOARD_DOCKED_MODAL_CARET_SETTLE_MS);
+}
+
+export function presentKeyboardDockedModal(overlay, host, options = {}) {
     if (!overlay || !host) return;
 
     const focusTarget = options.focusTarget || null;
@@ -5987,10 +6027,7 @@ function openAddExerciseModal(program) {
     btnGroup.append(saveBtn);
     modalContent.append(title, input, btnGroup);
     modal.append(modalContent);
-    presentKeyboardDockedModal(modal, modalContent, {
-        focusTarget: input,
-        focusDelayMs: KEYBOARD_DOCKED_MODAL_FOCUS_DELAY_MS
-    });
+    presentKeyboardDockedModal(modal, modalContent);
 
     // Закрытие при клике вне модалки
     modal.addEventListener('click', (e) => {
@@ -6103,11 +6140,7 @@ function openExerciseMenuModal(program, exercise) {
       controls.append(save);
       modal.append(title, nameInput, controls);
       overlay.appendChild(modal);
-      presentKeyboardDockedModal(overlay, modal, {
-          focusTarget: nameInput,
-          focusDelayMs: KEYBOARD_DOCKED_MODAL_FOCUS_DELAY_MS,
-          selectText: true
-      });
+      presentKeyboardDockedModal(overlay, modal);
   }
 
 
@@ -9796,6 +9829,17 @@ function setKeyboardViewportShift(host, offsetPx, overlayHeightPx = lastKnownKey
     document.body?.classList.toggle('app-keyboard-shift-active', nextOffset > 0);
 }
 
+function dispatchAppKeyboardViewportChange(visible, keyboardHeight = lastKnownKeyboardInsetHeight) {
+    try {
+        window.dispatchEvent(new CustomEvent('app-keyboardviewportchange', {
+            detail: {
+                visible: Boolean(visible),
+                keyboardHeight: Math.max(0, Math.round(Number(keyboardHeight) || 0))
+            }
+        }));
+    } catch (_) {}
+}
+
 function ensureNativeKeyboardBottomNavBinding() {
     if (keyboardBottomNavBindingsReady) return;
     keyboardBottomNavBindingsReady = true;
@@ -9813,6 +9857,7 @@ function ensureNativeKeyboardBottomNavBinding() {
             const nextKeyboardHeight = Math.max(0, Math.round(Number(keyboardHeight) || 0));
             lastKnownKeyboardInsetHeight = nextKeyboardHeight;
             document.documentElement.style.setProperty('--keyboard-height', `${nextKeyboardHeight}px`);
+            dispatchAppKeyboardViewportChange(true, nextKeyboardHeight);
             return;
         }
 
@@ -9822,6 +9867,7 @@ function ensureNativeKeyboardBottomNavBinding() {
         if (!visible || activeKeyboardScrollHost) {
             setKeyboardScrollHost(null, 0);
         }
+        dispatchAppKeyboardViewportChange(Boolean(visible), visible ? keyboardHeight : 0);
     };
 
     const getFocusedKeyboardControl = () => {
@@ -9850,6 +9896,7 @@ function ensureNativeKeyboardBottomNavBinding() {
         const scrollHost = resolveKeyboardScrollHost(active, host);
         const usePaddingOnlyHost = shouldUseKeyboardPaddingOnlyHost(host);
         const useModalHost = isKeyboardModalHost(host);
+        const useDockedModalHost = isKeyboardDockedModalHost(host);
         if (!target || !host) {
             setKeyboardViewportShift(null, 0, keyboardHeight);
             setKeyboardScrollHost(null, 0);
@@ -9904,6 +9951,17 @@ function ensureNativeKeyboardBottomNavBinding() {
             );
             const desiredShift = Math.max(0, Math.max(baseBottom, hostBaseBottom) - visibleBottom);
             const nextShift = Math.min(safeKeyboardHeight, Math.round(desiredShift));
+
+            if (useDockedModalHost) {
+                setKeyboardScrollHost(null, 0);
+                if (host === activeKeyboardShiftHost && Math.abs(nextShift - currentShift) < 4) {
+                    return;
+                }
+                setKeyboardViewportShift(host, nextShift, safeKeyboardHeight);
+                refreshKeyboardDockedModalCaret(active, host);
+                return;
+            }
+
             const modalScrollHost = scrollHost || host;
             const contentBottom = getKeyboardScrollHostContentBottom(modalScrollHost);
             const projectedContentBottom = Math.max(0, contentBottom - nextShift);
@@ -9995,8 +10053,14 @@ function ensureNativeKeyboardBottomNavBinding() {
 
     bindKeyboardEvent('keyboardWillShow', handleKeyboardShow);
     bindKeyboardEvent('keyboardDidShow', handleKeyboardShow);
-    bindKeyboardEvent('keyboardWillHide', () => setKeyboardVisible(false, 0));
-    bindKeyboardEvent('keyboardDidHide', () => setKeyboardVisible(false, 0));
+    bindKeyboardEvent('keyboardWillHide', () => {
+        clearKeyboardDockedCaretRefresh();
+        setKeyboardVisible(false, 0);
+    });
+    bindKeyboardEvent('keyboardDidHide', () => {
+        clearKeyboardDockedCaretRefresh();
+        setKeyboardVisible(false, 0);
+    });
 
     document.addEventListener('focusin', (event) => {
         if (!event.target?.matches?.('input:not([type="hidden"]), textarea, select, [contenteditable="true"]')) return;

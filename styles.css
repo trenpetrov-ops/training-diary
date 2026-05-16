@@ -143,6 +143,11 @@ button:focus, button:focus-visible, button:active {
 .supplement-delete-modal.keyboard-viewport-shift-host {
     transform: translate3d(0, calc(-1 * var(--keyboard-local-shift, 0px)), 0) scale(0.9);
 }
+.keyboard-docked-modal-host--caret-settling input:focus,
+.keyboard-docked-modal-host--caret-settling textarea:focus,
+.keyboard-docked-modal-host--caret-settling [contenteditable="true"]:focus {
+    caret-color: transparent !important;
+}
 .modal-set.keyboard-scroll-space-host,
 .modal-content.keyboard-scroll-space-host,
 .modal-cicle.keyboard-scroll-space-host,

@@ -21,6 +21,8 @@ import { getCycleDocRef } from '../script.js';
 import { showToast } from '../script.js';
 import { openConfirmModal } from '../script.js';
 import { ensureCycleSelected } from '../script.js';
+import { prepareKeyboardDockedModal } from '../script.js';
+import { presentKeyboardDockedModal } from '../script.js';
 import { renderTopBar } from '../script.js';
 import { render } from '../script.js';
 import { attachMonthCarouselSwipe } from '../calendar-month-carousel.js';
@@ -1642,8 +1644,7 @@ function syncSupplementTableInteractionLock() {
     const shouldLock = Boolean(
         activeWrapper &&
         (supplementTableSheetState.formatPanelOpen ||
-            supplementTableSheetState.timePanelOpen ||
-            supplementTableSheetState.textInputFocused)
+            supplementTableSheetState.timePanelOpen)
     );
 
     document.querySelectorAll('.supplement-table-wrapper--editor-locked').forEach((wrapper) => {
@@ -1927,6 +1928,11 @@ function ensureSupplementTableSheetEditorShell() {
         if (!target) return;
         if (shell.contains(target)) return;
 
+        const activeWrapper = supplementTableSheetState.selectedCell?.tableWrapper || null;
+        if (activeWrapper?.contains?.(target) && !target.closest?.('.supplement-dose-cell-btn')) {
+            return;
+        }
+
         const clickedCell = target.closest?.('.supplement-dose-cell-btn');
         if (clickedCell) {
             const tableWrapper = clickedCell.closest('.supplement-table-wrapper');
@@ -1939,6 +1945,9 @@ function ensureSupplementTableSheetEditorShell() {
     };
     window.addEventListener('resize', syncViewport, { signal: supplementTableSheetViewportAbortController.signal });
     window.addEventListener('orientationchange', syncViewport, { signal: supplementTableSheetViewportAbortController.signal });
+    window.addEventListener('app-keyboardviewportchange', syncViewport, {
+        signal: supplementTableSheetViewportAbortController.signal
+    });
     document.addEventListener('pointerdown', handleDismissPointerDown, {
         signal: supplementTableSheetViewportAbortController.signal,
         capture: true
@@ -7072,6 +7081,7 @@ function openSupplementEditModal(planIndexOrOptions, currentName = '') {
 
   const modal = document.createElement('div');
   modal.className = 'modal-window supplement-edit-modal';
+  prepareKeyboardDockedModal(backdrop, modal);
 
   const title = createElement('h3', null, isExisting ? 'Редактировать препарат' : 'Добавить препарат');
 
@@ -7175,9 +7185,7 @@ function openSupplementEditModal(planIndexOrOptions, currentName = '') {
   buttons.append(cancelBtn, saveBtn);
   modal.append(buttons);
   backdrop.append(modal);
-  document.body.append(backdrop);
-
-  setTimeout(() => fullNameInput.focus(), 0);
+  presentKeyboardDockedModal(backdrop, modal);
 
   backdrop.addEventListener('click', e => {
     if (e.target === backdrop) backdrop.remove();
@@ -7215,6 +7223,7 @@ function openSupplementDeleteOptionsModal({ planIndex, entry }) {
 
   const modal = document.createElement('div');
   modal.className = 'modal-window supplement-delete-modal';
+  prepareKeyboardDockedModal(backdrop, modal);
   modal.append(
     createElement('h3', null, 'Как удалить препарат?'),
     createElement('div', 'supplement-delete-modal-text', 'Можно убрать препарат из шапки и сохранить его историю в таблице, или удалить его полностью вместе со всеми старыми записями.')
@@ -7242,7 +7251,7 @@ function openSupplementDeleteOptionsModal({ planIndex, entry }) {
   buttons.append(keepHistoryBtn, deleteAllBtn, cancelBtn);
   modal.append(buttons);
   backdrop.append(modal);
-  document.body.append(backdrop);
+  presentKeyboardDockedModal(backdrop, modal);
 
   backdrop.addEventListener('click', e => {
     if (e.target === backdrop) backdrop.remove();
