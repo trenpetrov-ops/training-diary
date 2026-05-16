@@ -3081,7 +3081,6 @@ function presentKeyboardDockedModal(overlay, host, options = {}) {
     if (!overlay.isConnected) {
         document.body.appendChild(overlay);
     }
-
     if (focusTarget) {
         window.setTimeout(() => {
             if (!focusTarget.isConnected) return;
