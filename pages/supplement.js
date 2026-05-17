@@ -21,6 +21,7 @@ import { getCycleDocRef } from '../script.js';
 import { showToast } from '../script.js';
 import { openConfirmModal } from '../script.js';
 import { ensureCycleSelected } from '../script.js';
+import { MODAL_TEXT_INPUT_CLASS } from '../script.js';
 import { prepareKeyboardDockedModal } from '../script.js';
 import { presentKeyboardDockedModal } from '../script.js';
 import { renderTopBar } from '../script.js';
@@ -1359,6 +1360,15 @@ function clearSupplementTableCellSelection({ preserveMenu = false, revertPreview
     syncSupplementTableTopBarMenu();
 }
 
+function resetSupplementTableSheetSelectionDraftState() {
+    if (!supplementTableSheetState.selectedCell) return;
+    const nextDraft = cloneSupplementTableCellDraft(supplementTableSheetState.draft);
+    supplementTableSheetState.draft = nextDraft;
+    supplementTableSheetState.initialDraft = cloneSupplementTableCellDraft(nextDraft);
+    supplementTableSheetState.history = [cloneSupplementTableCellDraft(nextDraft)];
+    supplementTableSheetState.historyIndex = 0;
+}
+
 function pushSupplementTableSheetHistorySnapshot(snapshot) {
     const normalizedSnapshot = cloneSupplementTableCellDraft(snapshot);
     const history = supplementTableSheetState.history || [];
@@ -1548,9 +1558,9 @@ function syncSupplementTableEditorViewportOffset() {
     const shell = supplementTableSheetElements?.shell;
     if (!shell?.isConnected) return;
 
-    const keyboardHeight = getSupplementTableEditorKeyboardOffset();
-    shell.style.setProperty('--supplement-editor-bottom-offset', `${keyboardHeight}px`);
-    shell.style.bottom = `${keyboardHeight}px`;
+    const dockOffset = getSupplementTableEditorDockOffset();
+    shell.style.setProperty('--supplement-editor-bottom-offset', `${dockOffset}px`);
+    shell.style.bottom = `${dockOffset}px`;
 }
 
 function getSupplementTableKeyboardHeight() {
@@ -1574,6 +1584,23 @@ function isSupplementTableEditorInputFocused() {
 function getSupplementTableEditorKeyboardOffset() {
     if (!isSupplementTableEditorInputFocused()) return 0;
     return getSupplementTableKeyboardHeight();
+}
+
+function getSupplementTableBottomNavOffset() {
+    const nav = document.querySelector('.navigation');
+    if (!nav) return 0;
+
+    const navRect = nav.getBoundingClientRect();
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+    if (!viewportHeight || !navRect.height || navRect.top >= viewportHeight) return 0;
+
+    return Math.max(0, Math.round(viewportHeight - navRect.top));
+}
+
+function getSupplementTableEditorDockOffset() {
+    const keyboardOffset = getSupplementTableEditorKeyboardOffset();
+    if (keyboardOffset > 0) return keyboardOffset;
+    return getSupplementTableBottomNavOffset();
 }
 
 function getSupplementTableAddWeeksSection(wrapper) {
@@ -1679,6 +1706,9 @@ function ensureSupplementTableSheetEditorShell() {
         commitSupplementTableSheetDraftPatch({ text: textInput.value });
     });
     textInput.addEventListener('focus', () => {
+        supplementTableSheetState.formatPanelOpen = false;
+        supplementTableSheetState.formatColorPaletteOpen = false;
+        supplementTableSheetState.timePanelOpen = false;
         supplementTableSheetState.textInputFocused = true;
         syncSupplementTableEditorViewportOffset();
         syncSupplementTableEditorShell();
@@ -1697,10 +1727,17 @@ function ensureSupplementTableSheetEditorShell() {
     blurBtn.innerHTML = '✓';
     blurBtn.addEventListener('click', async () => {
         if (isSupplementTableSheetDraftDirty()) {
-            await saveSupplementTableSheetSelection();
+            supplementTableSheetState.textInputFocused = false;
+            supplementTableSheetState.formatPanelOpen = false;
+            supplementTableSheetState.formatColorPaletteOpen = false;
+            supplementTableSheetState.timePanelOpen = false;
+            textInput.blur();
+            await saveSupplementTableSheetSelection({ preserveSelection: true });
             return;
         }
-        clearSupplementTableCellSelection({ preserveMenu: false, revertPreview: true });
+        supplementTableSheetState.textInputFocused = false;
+        textInput.blur();
+        syncSupplementTableEditorShell();
     });
 
     formulaRow.append(textInput, formulaIcon, blurBtn);
@@ -1913,7 +1950,11 @@ function ensureSupplementTableSheetEditorShell() {
     });
     timesPanel.append(timesHeader, timesList);
 
-    shell.append(formulaRow, toolbar, formatPanel, timesPanel);
+    const initialDockOffset = getSupplementTableEditorDockOffset();
+    shell.style.setProperty('--supplement-editor-bottom-offset', `${initialDockOffset}px`);
+    shell.style.bottom = `${initialDockOffset}px`;
+
+    shell.append(formatPanel, timesPanel, formulaRow);
     document.body.append(shell);
 
     supplementTableSheetViewportAbortController?.abort?.();
@@ -1927,21 +1968,25 @@ function ensureSupplementTableSheetEditorShell() {
         const target = event.target;
         if (!target) return;
         if (shell.contains(target)) return;
+        if (document.querySelector('.top-bar.top-bar--supplements-table')?.contains?.(target)) return;
 
-        const activeWrapper = supplementTableSheetState.selectedCell?.tableWrapper || null;
-        if (activeWrapper?.contains?.(target) && !target.closest?.('.supplement-dose-cell-btn')) {
+        const currentTableWrapper = supplementTableSheetState.selectedCell?.tableWrapper || null;
+        const blockedCellTarget = target.closest?.('.supplement-dose-cell-btn');
+        if (currentTableWrapper?.contains?.(target) && !blockedCellTarget) {
             return;
         }
 
-        const clickedCell = target.closest?.('.supplement-dose-cell-btn');
-        if (clickedCell) {
-            const tableWrapper = clickedCell.closest('.supplement-table-wrapper');
-            clearSupplementTableCellSelection({ preserveMenu: false, revertPreview: true });
-            suppressNextSupplementTableDoseCellClick(tableWrapper);
+        if (blockedCellTarget) {
+            event.preventDefault();
+            event.stopPropagation();
+            showToast('Сохраните данные');
+            suppressNextSupplementTableDoseCellClick(blockedCellTarget.closest('.supplement-table-wrapper'));
             return;
         }
 
-        clearSupplementTableCellSelection({ preserveMenu: false, revertPreview: true });
+        event.preventDefault();
+        event.stopPropagation();
+        showToast('Сохраните данные');
     };
     window.addEventListener('resize', syncViewport, { signal: supplementTableSheetViewportAbortController.signal });
     window.addEventListener('orientationchange', syncViewport, { signal: supplementTableSheetViewportAbortController.signal });
@@ -1958,9 +2003,6 @@ function ensureSupplementTableSheetEditorShell() {
         formulaIcon,
         textInput,
         blurBtn,
-        toolbar,
-        colorBtn,
-        timeBtn,
         formatPanel,
         textStyleRow,
         formatQuickRow,
@@ -2009,16 +2051,10 @@ function syncSupplementTableEditorShell() {
 
     refs.textInput.value = draft.text;
     refs.textInput.inputMode = 'text';
-    const hasInputValue = refs.textInput.value.trim().length > 0;
+    const draftDirty = isSupplementTableSheetDraftDirty();
     refs.formulaIcon.classList.toggle('is-hidden', supplementTableSheetState.textInputFocused);
     refs.blurBtn.classList.toggle('is-visible', supplementTableSheetState.textInputFocused);
-    refs.blurBtn.classList.toggle('is-ready', supplementTableSheetState.textInputFocused && hasInputValue);
-
-    refs.colorBtn.style.setProperty('--supplement-editor-accent', style.color || '#111827');
-    refs.colorBtn.classList.toggle('is-active', supplementTableSheetState.formatPanelOpen);
-    refs.timeBtn.classList.toggle('is-active', supplementTableSheetState.timePanelOpen);
-    refs.colorBtn.setAttribute('aria-pressed', supplementTableSheetState.formatPanelOpen ? 'true' : 'false');
-    refs.timeBtn.setAttribute('aria-pressed', supplementTableSheetState.timePanelOpen ? 'true' : 'false');
+    refs.blurBtn.classList.toggle('is-ready', supplementTableSheetState.textInputFocused && draftDirty);
     refs.formatBoldBtn.classList.toggle('is-active', style.bold);
     refs.formatItalicBtn.classList.toggle('is-active', style.italic);
     refs.formatUnderlineBtn.classList.toggle('is-active', style.underline);
@@ -2068,21 +2104,27 @@ function syncSupplementTableTopBarMenu() {
 
     const selectionActive = isSupplementTableSheetSelectionActive();
     const historyVisible = hasSupplementPlanHistoryChanges();
-
+    const editorTopBarVisible = selectionActive && !supplementTableSheetState.textInputFocused;
     const historyActionsVisible = historyVisible && !selectionActive;
-    const menuVisible = historyActionsVisible;
+    const menuVisible = historyActionsVisible || editorTopBarVisible;
+
+    topBar.classList.toggle(
+        'supplements-topbar--editor-hidden',
+        Boolean(selectionActive && supplementTableSheetState.textInputFocused)
+    );
 
     if (calendarBtn) {
-        calendarBtn.style.display = '';
+        calendarBtn.style.display = selectionActive ? 'none' : '';
         calendarBtn.classList.toggle('supplements-topbar-calendar-btn--history-visible', historyActionsVisible);
     }
     if (addBtn) {
-        addBtn.style.display = '';
+        addBtn.style.display = selectionActive ? 'none' : '';
     }
 
     menu.replaceChildren();
     menu.classList.toggle('is-open', menuVisible);
     menu.classList.toggle('supplements-topbar-inline-menu--history-visible', historyActionsVisible);
+    menu.classList.toggle('supplements-topbar-inline-menu--editor-visible', editorTopBarVisible);
     if (!menuVisible) return;
 
     const createIconBtn = (className, label, html, onClick, disabled = false) => {
@@ -2098,6 +2140,59 @@ function syncSupplementTableTopBarMenu() {
     const draftDirty = isSupplementTableSheetDraftDirty();
     const canUndo = canUndoSupplementPlanHistory() && !draftDirty;
     const canRedo = canRedoSupplementPlanHistory() && !draftDirty;
+
+    if (editorTopBarVisible) {
+        const style = cloneSupplementDoseStyle(supplementTableSheetState.draft?.style);
+
+        const colorBtn = createIconBtn(
+            `supplements-topbar-inline-menu-btn--editor supplements-topbar-inline-menu-btn--format ${supplementTableSheetState.formatPanelOpen ? 'is-active' : ''}`,
+            'Формат',
+            `<span class="supplements-topbar-inline-menu-btn__letter">A</span>`,
+            () => toggleSupplementTableFormatPanel()
+        );
+        colorBtn.style.setProperty('--supplement-editor-accent', style.color || '#111827');
+        colorBtn.setAttribute('aria-pressed', supplementTableSheetState.formatPanelOpen ? 'true' : 'false');
+
+        const timeBtn = createIconBtn(
+            `supplements-topbar-inline-menu-btn--editor supplements-topbar-inline-menu-btn--time ${supplementTableSheetState.timePanelOpen ? 'is-active' : ''}`,
+            'Время',
+            `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><title>Round-more-time SVG Icon</title><path fill="currentColor" d="M10.75 8c-.41 0-.75.34-.75.75v4.69c0 .35.18.67.47.85l3.64 2.24a.713.713 0 1 0 .74-1.22L11.5 13.3V8.75c0-.41-.34-.75-.75-.75"></path><path fill="currentColor" d="M17.92 12A6.957 6.957 0 0 1 11 20c-3.9 0-7-3.1-7-7s3.1-7 7-7c.7 0 1.37.1 2 .29V4.23c-.64-.15-1.31-.23-2-.23c-5 0-9 4-9 9s4 9 9 9a8.963 8.963 0 0 0 8.94-10z"></path><path fill="currentColor" d="M22 5h-2V3c0-.55-.45-1-1-1s-1 .45-1 1v2h-2c-.55 0-1 .45-1 1s.45 1 1 1h2v2c0 .55.45 1 1 1s1-.45 1-1V7h2c.55 0 1-.45 1-1s-.45-1-1-1"></path></svg>`,
+            () => toggleSupplementTableTimePanel()
+        );
+        timeBtn.setAttribute('aria-pressed', supplementTableSheetState.timePanelOpen ? 'true' : 'false');
+
+        const undoBtn = createIconBtn(
+            'supplements-topbar-inline-menu-btn--editor supplements-topbar-inline-menu-btn--undo',
+            'Отменить',
+            `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><title>Undo SVG Icon</title><path fill="currentColor" d="M7.825 13H15q1.25 0 2.125.875T18 16t-.875 2.125T15 19H8q-.425 0-.712-.288T7 18t.288-.712T8 17h7q.425 0 .713-.288T16 16t-.288-.712T15 15H7.825l1.6 1.6q.275.275.275.7t-.275.7t-.7.275t-.7-.275l-3.3-3.3q-.15-.15-.213-.325T4.45 14t.063-.375t.212-.325l3.3-3.3q.275-.275.7-.275t.7.275t.275.7t-.275.7z"/></svg>`,
+            () => applySupplementPlanHistoryIndex(supplementPlanHistoryState.index - 1),
+            !canUndo
+        );
+
+        const redoBtn = createIconBtn(
+            'supplements-topbar-inline-menu-btn--editor supplements-topbar-inline-menu-btn--redo',
+            'Повторить',
+            `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><title>Redo SVG Icon</title><path fill="currentColor" d="M16.175 13H9q-1.25 0-2.125.875T6 16t.875 2.125T9 19h7q.425 0 .713-.288T17 18t-.288-.712T16 17H9q-.425 0-.712-.288T8 16t.288-.712T9 15h7.175l-1.6 1.6q-.275.275-.275.7t.275.7t.7.275t.7-.275l3.3-3.3q.15-.15.213-.325T19.55 14t-.062-.375t-.213-.325l-3.3-3.3q-.275-.275-.7-.275t-.7.275t-.275.7t.275.7z"/></svg>`,
+            () => applySupplementPlanHistoryIndex(supplementPlanHistoryState.index + 1),
+            !canRedo
+        );
+
+        const doneBtn = createIconBtn(
+            'supplements-topbar-inline-menu-btn--editor supplements-topbar-inline-menu-btn--done',
+            'Готово',
+            `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><title>Check SVG Icon</title><path fill="currentColor" d="M9.55 18q-.3 0-.575-.125t-.475-.35l-3.9-3.9q-.3-.3-.287-.712t.287-.713q.3-.3.713-.3t.712.3l3.525 3.525l8.525-8.525q.3-.3.713-.3t.712.3q.3.3.3.713t-.3.712l-8.9 8.9q-.2.2-.475.325T9.55 18"/></svg>`,
+            () => {
+                if (isSupplementTableSheetDraftDirty()) {
+                    showToast('Сохраните данные');
+                    return;
+                }
+                clearSupplementTableCellSelection({ preserveMenu: false, revertPreview: false });
+            }
+        );
+
+        menu.append(undoBtn, redoBtn, colorBtn, timeBtn, doneBtn);
+        return;
+    }
 
     if (historyVisible && !selectionActive) {
         menu.append(
@@ -2118,6 +2213,22 @@ function syncSupplementTableTopBarMenu() {
     );
     }
 
+    if (selectionActive) {
+        const cancelBtn = createElement('button', 'supplements-topbar-inline-menu-text-btn supplements-topbar-inline-menu-text-btn--cancel', 'Отмена');
+        cancelBtn.type = 'button';
+        cancelBtn.addEventListener('click', () => {
+            clearSupplementTableCellSelection({ preserveMenu: false, revertPreview: true });
+        });
+
+        const saveBtn = createElement('button', 'supplements-topbar-inline-menu-text-btn supplements-topbar-inline-menu-text-btn--save', 'Сохранить');
+        saveBtn.type = 'button';
+        saveBtn.disabled = !isSupplementTableSheetDraftDirty();
+        saveBtn.addEventListener('click', async () => {
+            await saveSupplementTableSheetSelection();
+        });
+
+        menu.append(cancelBtn, saveBtn);
+    }
 }
 
 function handleSupplementTableCellSelection(button, mergeRange = null) {
@@ -2136,7 +2247,7 @@ function handleSupplementTableCellSelection(button, mergeRange = null) {
     }
 
     if (isSupplementTableSheetSelectionActive() && isSupplementTableSheetDraftDirty()) {
-        clearSupplementTableCellSelection({ preserveMenu: false, revertPreview: true });
+        showToast('Сохраните данные');
         return;
     }
 
@@ -2169,7 +2280,7 @@ function handleSupplementTableCellSelection(button, mergeRange = null) {
     syncSupplementTableEditorShell();
 }
 
-async function saveSupplementTableSheetSelection() {
+async function saveSupplementTableSheetSelection({ preserveSelection = false } = {}) {
     const selectedCell = supplementTableSheetState.selectedCell;
     if (!selectedCell) return;
 
@@ -2231,6 +2342,18 @@ async function saveSupplementTableSheetSelection() {
     const nextSignature = getSupplementPlanSnapshotSignature(plan);
     if (previousSignature !== nextSignature && !hasSupplementPlanHistoryChanges()) {
         commitSupplementPlanHistoryEntry(previousPlan, plan);
+    }
+
+    if (preserveSelection && scope === 'single' && selectedCell.buttonEl?.isConnected) {
+        selectedCell.originalRawDose = cloneSupplementDoseValue(nextRawDose);
+        supplementTableSheetState.formatPanelOpen = false;
+        supplementTableSheetState.formatColorPaletteOpen = false;
+        supplementTableSheetState.timePanelOpen = false;
+        supplementTableSheetState.textInputFocused = false;
+        resetSupplementTableSheetSelectionDraftState();
+        applySupplementTableCellSelectionVisual(selectedCell.buttonEl);
+        syncSupplementTableEditorShell();
+        return;
     }
 
     clearSupplementTableCellSelection({ preserveMenu: false, revertPreview: false });
@@ -4636,40 +4759,76 @@ function syncSupplementTableTopBarMenuLegacy_DoNotUse() {
     const canUndo = canUndoSupplementPlanHistory() && !draftDirty;
     const canRedo = canRedoSupplementPlanHistory() && !draftDirty;
 
+    if (editorTopBarVisible) {
+        const style = cloneSupplementDoseStyle(supplementTableSheetState.draft?.style);
+
+        const colorBtn = createIconBtn(
+            `supplements-topbar-inline-menu-btn--editor supplements-topbar-inline-menu-btn--format ${supplementTableSheetState.formatPanelOpen ? 'is-active' : ''}`,
+            'Формат',
+            `<span class="supplements-topbar-inline-menu-btn__letter">A</span>`,
+            () => toggleSupplementTableFormatPanel()
+        );
+        colorBtn.style.setProperty('--supplement-editor-accent', style.color || '#111827');
+        colorBtn.setAttribute('aria-pressed', supplementTableSheetState.formatPanelOpen ? 'true' : 'false');
+
+        const timeBtn = createIconBtn(
+            `supplements-topbar-inline-menu-btn--editor supplements-topbar-inline-menu-btn--time ${supplementTableSheetState.timePanelOpen ? 'is-active' : ''}`,
+            'Время',
+            `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><title>Round-more-time SVG Icon</title><path fill="currentColor" d="M10.75 8c-.41 0-.75.34-.75.75v4.69c0 .35.18.67.47.85l3.64 2.24a.713.713 0 1 0 .74-1.22L11.5 13.3V8.75c0-.41-.34-.75-.75-.75"></path><path fill="currentColor" d="M17.92 12A6.957 6.957 0 0 1 11 20c-3.9 0-7-3.1-7-7s3.1-7 7-7c.7 0 1.37.1 2 .29V4.23c-.64-.15-1.31-.23-2-.23c-5 0-9 4-9 9s4 9 9 9a8.963 8.963 0 0 0 8.94-10z"></path><path fill="currentColor" d="M22 5h-2V3c0-.55-.45-1-1-1s-1 .45-1 1v2h-2c-.55 0-1 .45-1 1s.45 1 1 1h2v2c0 .55.45 1 1 1s1-.45 1-1V7h2c.55 0 1-.45 1-1s-.45-1-1-1"></path></svg>`,
+            () => toggleSupplementTableTimePanel()
+        );
+        timeBtn.setAttribute('aria-pressed', supplementTableSheetState.timePanelOpen ? 'true' : 'false');
+
+        const undoBtn = createIconBtn(
+            'supplements-topbar-inline-menu-btn--editor supplements-topbar-inline-menu-btn--undo',
+            'Отменить',
+            `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><title>Undo SVG Icon</title><path fill="currentColor" d="M7.825 13H15q1.25 0 2.125.875T18 16t-.875 2.125T15 19H8q-.425 0-.712-.288T7 18t.288-.712T8 17h7q.425 0 .713-.288T16 16t-.288-.712T15 15H7.825l1.6 1.6q.275.275.275.7t-.275.7t-.7.275t-.7-.275l-3.3-3.3q-.15-.15-.213-.325T4.45 14t.063-.375t.212-.325l3.3-3.3q.275-.275.7-.275t.7.275t.275.7t-.275.7z"/></svg>`,
+            () => applySupplementPlanHistoryIndex(supplementPlanHistoryState.index - 1),
+            !canUndo
+        );
+
+        const redoBtn = createIconBtn(
+            'supplements-topbar-inline-menu-btn--editor supplements-topbar-inline-menu-btn--redo',
+            'Повторить',
+            `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><title>Redo SVG Icon</title><path fill="currentColor" d="M16.175 13H9q-1.25 0-2.125.875T6 16t.875 2.125T9 19h7q.425 0 .713-.288T17 18t-.288-.712T16 17H9q-.425 0-.712-.288T8 16t.288-.712T9 15h7.175l-1.6 1.6q-.275.275-.275.7t.275.7t.7.275t.7-.275l3.3-3.3q.15-.15.213-.325T19.55 14t-.062-.375t-.213-.325l-3.3-3.3q-.275-.275-.7-.275t-.7.275t-.275.7t.275.7z"/></svg>`,
+            () => applySupplementPlanHistoryIndex(supplementPlanHistoryState.index + 1),
+            !canRedo
+        );
+
+        const doneBtn = createIconBtn(
+            'supplements-topbar-inline-menu-btn--editor supplements-topbar-inline-menu-btn--done',
+            'Готово',
+            `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><title>Check SVG Icon</title><path fill="currentColor" d="M9.55 18q-.3 0-.575-.125t-.475-.35l-3.9-3.9q-.3-.3-.287-.712t.287-.713q.3-.3.713-.3t.712.3l3.525 3.525l8.525-8.525q.3-.3.713-.3t.712.3q.3.3.3.713t-.3.712l-8.9 8.9q-.2.2-.475.325T9.55 18"/></svg>`,
+            () => {
+                if (isSupplementTableSheetDraftDirty()) {
+                    showToast('Сохраните данные');
+                    return;
+                }
+                clearSupplementTableCellSelection({ preserveMenu: false, revertPreview: false });
+            }
+        );
+
+        menu.append(undoBtn, redoBtn, colorBtn, timeBtn, doneBtn);
+        return;
+    }
+
     if (historyVisible && !selectionActive) {
         menu.append(
             createIconBtn(
                 'supplements-topbar-inline-menu-btn--undo',
-                'РћС‚РјРµРЅРёС‚СЊ',
+                'Отменить',
                 `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><title>Undo SVG Icon</title><path fill="currentColor" d="M7.825 13H15q1.25 0 2.125.875T18 16t-.875 2.125T15 19H8q-.425 0-.712-.288T7 18t.288-.712T8 17h7q.425 0 .713-.288T16 16t-.288-.712T15 15H7.825l1.6 1.6q.275.275.275.7t-.275.7t-.7.275t-.7-.275l-3.3-3.3q-.15-.15-.213-.325T4.45 14t.063-.375t.212-.325l3.3-3.3q.275-.275.7-.275t.7.275t.275.7t-.275.7z"/></svg>`,
                 () => applySupplementPlanHistoryIndex(supplementPlanHistoryState.index - 1),
                 !canUndo
             ),
             createIconBtn(
                 'supplements-topbar-inline-menu-btn--redo',
-                'РџРѕРІС‚РѕСЂРёС‚СЊ',
+                'Повторить',
                 `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><title>Redo SVG Icon</title><path fill="currentColor" d="M16.175 13H9q-1.25 0-2.125.875T6 16t.875 2.125T9 19h7q.425 0 .713-.288T17 18t-.288-.712T16 17H9q-.425 0-.712-.288T8 16t.288-.712T9 15h7.175l-1.6 1.6q-.275.275-.275.7t.275.7t.7.275t.7-.275l3.3-3.3q.15-.15.213-.325T19.55 14t-.062-.375t-.213-.325l-3.3-3.3q-.275-.275-.7-.275t-.7.275t-.275.7t.275.7z"/></svg>`,
                 () => applySupplementPlanHistoryIndex(supplementPlanHistoryState.index + 1),
                 !canRedo
             )
         );
-    }
-
-    if (selectionActive) {
-        const cancelBtn = createElement('button', 'supplements-topbar-inline-menu-text-btn supplements-topbar-inline-menu-text-btn--cancel', 'РћС‚РјРµРЅР°');
-        cancelBtn.type = 'button';
-        cancelBtn.addEventListener('click', () => {
-            clearSupplementTableCellSelection({ preserveMenu: false, revertPreview: true });
-        });
-
-        const saveBtn = createElement('button', 'supplements-topbar-inline-menu-text-btn supplements-topbar-inline-menu-text-btn--save', 'РЎРѕС…СЂР°РЅРёС‚СЊ');
-        saveBtn.type = 'button';
-        saveBtn.disabled = !isSupplementTableSheetDraftDirty();
-        saveBtn.addEventListener('click', async () => {
-            await saveSupplementTableSheetSelection();
-        });
-
-        menu.append(cancelBtn, saveBtn);
     }
 }
 
@@ -7080,7 +7239,7 @@ function openSupplementEditModal(planIndexOrOptions, currentName = '') {
   backdrop.className = 'modal-backdrop';
 
   const modal = document.createElement('div');
-  modal.className = 'modal-window supplement-edit-modal';
+  modal.className = `modal-window supplement-edit-modal ${MODAL_TEXT_INPUT_CLASS}`;
   prepareKeyboardDockedModal(backdrop, modal);
 
   const title = createElement('h3', null, isExisting ? 'Редактировать препарат' : 'Добавить препарат');

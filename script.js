@@ -2459,7 +2459,7 @@ function openEditCycleModal(cycle) {
     modal.className = 'modal-overlay-edit';
 
     const modalContent = document.createElement('div');
-    modalContent.className = 'modal-edit';
+    modalContent.className = `modal-edit ${MODAL_TEXT_INPUT_CLASS}`;
     prepareKeyboardDockedModal(modal, modalContent);
 
     const title = document.createElement('h3');
@@ -2511,7 +2511,7 @@ function openAddCycleModal(onConfirm) {
     modal.className = 'modal-overlay-cicle';
 
     const modalContent = document.createElement('div');
-    modalContent.className = 'modal-cicle';
+    modalContent.className = `modal-cicle ${MODAL_TEXT_INPUT_CLASS}`;
     prepareKeyboardDockedModal(modal, modalContent);
 
     const title = document.createElement('h3');
@@ -2718,7 +2718,7 @@ function openEditProgramModal(program) {
     modal.className = 'modal-overlay-edit';
 
     const modalContent = document.createElement('div');
-    modalContent.className = 'modal-edit';
+    modalContent.className = `modal-edit ${MODAL_TEXT_INPUT_CLASS}`;
     prepareKeyboardDockedModal(modal, modalContent);
 
     const title = document.createElement('h3');
@@ -2767,7 +2767,7 @@ function openAddProgramModal(onConfirmNew, onConfirmCopy) {
     modal.className = 'modal-overlay-cicle modal-overlay-cicle--sheet';
 
     const modalContent = document.createElement('div');
-    modalContent.className = 'modal-cicle modal-cicle--add-program';
+    modalContent.className = `modal-cicle modal-cicle--add-program ${MODAL_TEXT_INPUT_CLASS}`;
     prepareKeyboardDockedModal(modal, modalContent);
 
     const title = createElement('h3', 'modal-cicle__title', 'Добавить новую программу');
@@ -3055,6 +3055,9 @@ const KEYBOARD_DOCKED_MODAL_CARET_SETTLE_MS = 180;
 let keyboardDockedCaretRefreshTimeoutId = 0;
 let activeKeyboardDockedCaretHost = null;
 
+/** Модалки с вводом текста: циклы, программы, упражнения, подход, комментарии. */
+export const MODAL_TEXT_INPUT_CLASS = 'modal-text-input';
+
 export function prepareKeyboardDockedModal(overlay, host) {
     if (!overlay || !host) return;
     host.classList.add('keyboard-docked-modal-host');
@@ -3139,7 +3142,7 @@ function openEditSetModal(programId, exerciseId, setIndex, currentSet) {
     overlay.className = 'modal-overlay';
 
     const modal = document.createElement('div');
-    modal.className = 'modal-set';
+    modal.className = `modal-set ${MODAL_TEXT_INPUT_CLASS}`;
     prepareKeyboardDockedModal(overlay, modal);
 
     const program = state.programs.find(p => p.id === programId);
@@ -3310,7 +3313,7 @@ function openEditSetModal(programId, exerciseId, setIndex, currentSet) {
 // =================================================================
 function openCommentModal(exerciseId, currentNote, titleText, onSave) {
     const overlay = createElement('div', 'modal-overlay');
-    const modal = createElement('div', 'modal-content modal-compact comExer');
+    const modal = createElement('div', `modal-content modal-compact comExer ${MODAL_TEXT_INPUT_CLASS}`);
     prepareKeyboardDockedModal(overlay, modal);
 
     // Заголовок
@@ -5999,7 +6002,7 @@ export function openMediaFullScreen(url, type = 'photo') {
 // =================================================================
 function openAddExerciseModal(program) {
     const modal = createElement('div', 'modal-overlay program-details');
-    const modalContent = createElement('div', 'modal-content');
+    const modalContent = createElement('div', `modal-content ${MODAL_TEXT_INPUT_CLASS}`);
     prepareKeyboardDockedModal(modal, modalContent);
 
     const title = createElement('h3', null);
@@ -6110,7 +6113,7 @@ function openExerciseMenuModal(program, exercise) {
           if (e.target === overlay) document.body.removeChild(overlay);
       });
 
-      const modal = createElement('div', 'modal-content modal-compact');
+      const modal = createElement('div', `modal-content modal-compact ${MODAL_TEXT_INPUT_CLASS}`);
       prepareKeyboardDockedModal(overlay, modal);
       const title = createElement('h3', null, 'Редактировать название');
 

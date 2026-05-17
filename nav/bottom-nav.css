@@ -48,11 +48,23 @@
     /* transition: transform 0.2s ease, opacity 0.16s ease, color 0.3s ease; */
 }
 
+body.supplement-table-sheet-editing .navigation,
+body.supplement-table-sheet-editing .navigation-fon {
+    border-radius: 0 !important;
+}
+
 body.app-keyboard-visible .navigation,
 body.app-keyboard-visible .navigation-fon {
     transform: translate3d(0, calc(100% + 24px), 0) !important;
     opacity: 0;
     pointer-events: none;
+}
+
+body.app-keyboard-visible.supplement-table-sheet-editing .navigation,
+body.app-keyboard-visible.supplement-table-sheet-editing .navigation-fon {
+    transform: none !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
 }
 
 .navigation.navigation--suppressed,

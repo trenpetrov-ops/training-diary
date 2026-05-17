@@ -618,6 +618,9 @@ button.btn.btn-primary.add-cycle-btn {
     transform: scale(1.1);
     transition: transform 0.2s ease;
 }
+.modal-text-input {
+    margin-bottom: 280px;
+}
 button.btn.btn-primary {
     margin-left: 10px;
     padding: 9px 23px;
@@ -19111,6 +19114,11 @@ button.btn.btn-secondary.profile-copy-btn {
     justify-content: flex-start;
     width: 15px;
 }
+.supplements-topbar-inline-menu.supplements-topbar-inline-menu--editor-visible {
+    justify-content: flex-start;
+    gap: 8px;
+    width: 100%;
+}
 .supplements-topbar-inline-menu-btn,
 .supplements-topbar-inline-menu-text-btn {
     min-height: 30px;
@@ -19135,6 +19143,27 @@ button.btn.btn-secondary.profile-copy-btn {
     font-size: 16px;
     font-weight: 700;
     line-height: 1;
+}
+.supplements-topbar-inline-menu-btn--editor {
+    width: 30px;
+    min-width: 30px;
+}
+.supplements-topbar-inline-menu-btn--editor.is-active {
+    border-color: #bfd4ff;
+    background: #eef5ff;
+    color: #3e8ce1;
+}
+.supplements-topbar-inline-menu-btn--format {
+    color: var(--supplement-editor-accent, #111827);
+}
+.supplements-topbar-inline-menu-btn--done {
+    margin-left: auto;
+    background: #24a25b;
+    border-color: #1f8c4f;
+    color: #fff;
+}
+.supplements-topbar--editor-hidden {
+    display: none !important;
 }
 .supplements-topbar-inline-menu-btn:disabled,
 .supplements-topbar-inline-menu-text-btn:disabled {
@@ -20045,11 +20074,6 @@ div#supplements-content.supplements-page--day-details > h3 {
     white-space: pre-line;
     word-break: break-word;
 }
-.supplement-table-sheet-editing .navigation {
-    transform: translateY(120%);
-    opacity: 0;
-    pointer-events: none;
-}
 .supplement-sheet-editor {
     position: fixed;
     left: 0;
@@ -20059,7 +20083,7 @@ div#supplements-content.supplements-page--day-details > h3 {
     display: grid;
     gap: 0;
     background: #e5e7ec;
-    padding-bottom: var(--safe-bottom, 0px);
+    padding-bottom: 0;
     /* border-top-left-radius: 18px; */
     /* border-top-right-radius: 18px; */
     /* box-shadow: 0 -8px 28px rgba(15, 23, 42, 0.14); */
@@ -20079,7 +20103,7 @@ div#supplements-content.supplements-page--day-details > h3 {
     grid-template-columns: minmax(0, 1fr) 42px;
     align-items: center;
     min-height: 52px;
-    border-bottom: 1px solid #dddddf;
+    border-top: 1px solid #dddddf;
     background: #eeeff3;
     padding: 0 30px 0 30px;
 }
