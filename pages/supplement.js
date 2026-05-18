@@ -770,9 +770,7 @@ export async function renderSupplementsPage() {
     supplementTableViewportSyncController?.abort?.();
     supplementTableViewportSyncController = null;
     supplementTableVirtualState = null;
-    clearSupplementTableCellSelection({ preserveMenu: false, revertPreview: true });
-    clearSupplementDoseLongPressPopover();
-    endSupplementDoseMergeMode();
+    cleanupSupplementTransientUi();
     if (!ensureCycleSelected(render)) return;
     const isDayDetailsPage = Boolean(state.supplementCalendarDetailDate);
 
@@ -1307,6 +1305,12 @@ function isSupplementTableSheetDraftDirty() {
     );
 }
 
+export function shouldBlockSupplementTablePageNavigation() {
+    if (!isSupplementTableSheetDraftDirty()) return false;
+    showToast('Сохраните данные');
+    return true;
+}
+
 function clearSupplementTableCellSelectionVisual() {
     const prevButton = supplementTableSheetState.selectedCell?.buttonEl;
     prevButton?.classList.remove('supplement-dose-cell-btn--selected');
@@ -1358,6 +1362,12 @@ function clearSupplementTableCellSelection({ preserveMenu = false, revertPreview
     }
     removeSupplementTableSheetEditorShell();
     syncSupplementTableTopBarMenu();
+}
+
+export function cleanupSupplementTransientUi() {
+    clearSupplementTableCellSelection({ preserveMenu: false, revertPreview: true });
+    clearSupplementDoseLongPressPopover();
+    endSupplementDoseMergeMode();
 }
 
 function resetSupplementTableSheetSelectionDraftState() {
@@ -1607,6 +1617,10 @@ function getSupplementTableAddWeeksSection(wrapper) {
     return wrapper?.querySelector?.('.supplement-table-add-weeks') || null;
 }
 
+const SUPPLEMENT_TABLE_FORMAT_PANEL_EXTRA_PADDING = 83;
+const SUPPLEMENT_TABLE_TIME_PANEL_EXTRA_PADDING = 7;
+const SUPPLEMENT_TABLE_FORMULA_ROW_HEIGHT = 52;
+
 function getSupplementTableAddWeeksExtraPadding(wrapper) {
     const section = getSupplementTableAddWeeksSection(wrapper);
     if (!section) return 0;
@@ -1621,6 +1635,16 @@ function setSupplementTableAddWeeksExtraPadding(wrapper, paddingPx = 0) {
     section.style.setProperty('--supplement-editor-extra-space', `${nextPadding}px`);
 }
 
+function getSupplementTableDesiredExtraPadding() {
+    if (supplementTableSheetState.formatPanelOpen) {
+        return Math.max(0, SUPPLEMENT_TABLE_FORMAT_PANEL_EXTRA_PADDING - SUPPLEMENT_TABLE_FORMULA_ROW_HEIGHT);
+    }
+    if (supplementTableSheetState.timePanelOpen) {
+        return Math.max(0, SUPPLEMENT_TABLE_TIME_PANEL_EXTRA_PADDING - SUPPLEMENT_TABLE_FORMULA_ROW_HEIGHT);
+    }
+    return 0;
+}
+
 function scrollSupplementTableSelectedCellIntoView() {
     const selectedCell = supplementTableSheetState.selectedCell;
     const shell = supplementTableSheetElements?.shell;
@@ -1629,9 +1653,12 @@ function scrollSupplementTableSelectedCellIntoView() {
     const wrapper = selectedCell.tableWrapper;
     if (!wrapper?.isConnected) return;
 
-    const keyboardOffset = getSupplementTableEditorKeyboardOffset();
-    if (!keyboardOffset && getSupplementTableAddWeeksExtraPadding(wrapper) > 0) {
-        setSupplementTableAddWeeksExtraPadding(wrapper, 0);
+    const desiredExtraPadding = getSupplementTableDesiredExtraPadding();
+    const currentExtraPadding = getSupplementTableAddWeeksExtraPadding(wrapper);
+    if (currentExtraPadding !== desiredExtraPadding) {
+        setSupplementTableAddWeeksExtraPadding(wrapper, desiredExtraPadding);
+        requestAnimationFrame(scrollSupplementTableSelectedCellIntoView);
+        return;
     }
 
     const buttonRect = selectedCell.buttonEl.getBoundingClientRect();
@@ -1643,22 +1670,6 @@ function scrollSupplementTableSelectedCellIntoView() {
 
     if (buttonRect.bottom > bottomLimit) {
         const overflowBottom = Math.max(0, Math.ceil(buttonRect.bottom - bottomLimit));
-        const currentExtraPadding = getSupplementTableAddWeeksExtraPadding(wrapper);
-        const naturalMaxScrollTop = Math.max(
-            0,
-            Math.round((wrapper.scrollHeight - currentExtraPadding) - wrapper.clientHeight)
-        );
-        const naturalAvailableDown = Math.max(0, naturalMaxScrollTop - wrapper.scrollTop);
-        const desiredExtraPadding = keyboardOffset
-            ? Math.max(0, overflowBottom - naturalAvailableDown)
-            : 0;
-
-        if (desiredExtraPadding !== currentExtraPadding) {
-            setSupplementTableAddWeeksExtraPadding(wrapper, desiredExtraPadding);
-            requestAnimationFrame(scrollSupplementTableSelectedCellIntoView);
-            return;
-        }
-
         const maxScrollTop = Math.max(0, Math.round(wrapper.scrollHeight - wrapper.clientHeight));
         wrapper.scrollTop = Math.min(maxScrollTop, wrapper.scrollTop + overflowBottom);
     } else if (buttonRect.top < topLimit) {
@@ -1724,7 +1735,7 @@ function ensureSupplementTableSheetEditorShell() {
 
     const blurBtn = createElement('button', 'supplement-sheet-editor__formula-commit');
     blurBtn.type = 'button';
-    blurBtn.innerHTML = '✓';
+    blurBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 512 512" aria-hidden="true"><title>Checkmark-sharp SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="44" d="M416 128L192 384l-96-96"></path></svg>`;
     blurBtn.addEventListener('click', async () => {
         if (isSupplementTableSheetDraftDirty()) {
             supplementTableSheetState.textInputFocused = false;
@@ -1969,6 +1980,17 @@ function ensureSupplementTableSheetEditorShell() {
         if (!target) return;
         if (shell.contains(target)) return;
         if (document.querySelector('.top-bar.top-bar--supplements-table')?.contains?.(target)) return;
+        if (target.closest?.('.navigation') || target.closest?.('.navigation-fon')) {
+            event.preventDefault();
+            event.stopPropagation();
+            showToast('Сохраните данные');
+            if (supplementTableSheetState.textInputFocused) {
+                requestAnimationFrame(() => {
+                    supplementTableSheetElements?.textInput?.focus?.({ preventScroll: true });
+                });
+            }
+            return;
+        }
 
         const currentTableWrapper = supplementTableSheetState.selectedCell?.tableWrapper || null;
         const blockedCellTarget = target.closest?.('.supplement-dose-cell-btn');
@@ -2054,7 +2076,7 @@ function syncSupplementTableEditorShell() {
     const draftDirty = isSupplementTableSheetDraftDirty();
     refs.formulaIcon.classList.toggle('is-hidden', supplementTableSheetState.textInputFocused);
     refs.blurBtn.classList.toggle('is-visible', supplementTableSheetState.textInputFocused);
-    refs.blurBtn.classList.toggle('is-ready', supplementTableSheetState.textInputFocused && draftDirty);
+    refs.blurBtn.classList.toggle('is-ready', draftDirty);
     refs.formatBoldBtn.classList.toggle('is-active', style.bold);
     refs.formatItalicBtn.classList.toggle('is-active', style.italic);
     refs.formatUnderlineBtn.classList.toggle('is-active', style.underline);
@@ -4565,6 +4587,15 @@ function cloneSupplementTableCellDraft(draft) {
     };
 }
 
+function normalizeSupplementTableCellDraftForComparison(draft) {
+    return {
+        text: String(draft?.text || '').trim(),
+        times: normalizeSupplementTableDraftTimes(draft?.times || []),
+        taken: Boolean(draft?.taken),
+        style: cloneSupplementDoseStyle(draft?.style)
+    };
+}
+
 function buildSupplementDoseValueFromDraft(draft, previousRawDose = '') {
     const previousDose = parseSupplementDoseValue(previousRawDose);
     return buildSupplementDoseValue({
@@ -4578,8 +4609,8 @@ function buildSupplementDoseValueFromDraft(draft, previousRawDose = '') {
 }
 
 function areSupplementTableCellDraftsEqual(left, right) {
-    const a = cloneSupplementTableCellDraft(left);
-    const b = cloneSupplementTableCellDraft(right);
+    const a = normalizeSupplementTableCellDraftForComparison(left);
+    const b = normalizeSupplementTableCellDraftForComparison(right);
     return JSON.stringify(a) === JSON.stringify(b);
 }
 

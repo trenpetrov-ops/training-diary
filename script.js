@@ -3,6 +3,7 @@ import { renderMealPage } from './pages/meal.js';
 import { renderReportsPage } from './pages/reports.js';
 import { renderProfilePage } from './pages/profile.js';
 import { renderSupplementsPage } from './pages/supplement.js';
+import { cleanupSupplementTransientUi } from './pages/supplement.js';
 import { openPdfDateModal } from './pages/supplement.js';
 
 import { openMealsPdfModal } from './pages/meal.js';
@@ -516,17 +517,16 @@ document.addEventListener('gesturestart', function (e) {
     function setFloatingEnabled(v) {
       localStorage.setItem(TIMER_FLOAT_KEY, v ? '1' : '0');
     }
-
-
-
-
-
+let activeToastElement = null;
 
 export function showToast(message) {
+    if (activeToastElement?.isConnected) return;
+
     const toast = document.createElement('div');
     toast.className = 'toast-message';
     toast.innerText = message;
     document.body.append(toast);
+    activeToastElement = toast;
 
     setTimeout(() => {
         toast.classList.add('show');
@@ -534,10 +534,17 @@ export function showToast(message) {
 
     setTimeout(() => {
         toast.classList.remove('show');
-        setTimeout(() => toast.remove(), 500);
+        setTimeout(() => {
+            toast.remove();
+            if (activeToastElement === toast) {
+                activeToastElement = null;
+            }
+        }, 500);
     }, 3000);
 }
 window.showToast = showToast;
+
+const TOPBAR_BACK_ARROW_MARKUP = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="m3.55 12l7.35 7.35q.375.375.363.875t-.388.875t-.875.375t-.875-.375l-7.7-7.675q-.3-.3-.45-.675T.825 12t.15-.75t.45-.675l7.7-7.7q.375-.375.888-.363t.887.388t.375.875t-.375.875z"></path></svg>`;
 
 
 
@@ -6002,10 +6009,9 @@ export function openMediaFullScreen(url, type = 'photo') {
 // =================================================================
 function openAddExerciseModal(program) {
     const modal = createElement('div', 'modal-overlay program-details');
-    const modalContent = createElement('div', `modal-content ${MODAL_TEXT_INPUT_CLASS}`);
+    const modalContent = createElement('div', `modal-content modal-add-exercise ${MODAL_TEXT_INPUT_CLASS}`);
     prepareKeyboardDockedModal(modal, modalContent);
 
-    const title = createElement('h3', null);
     const input = createElement('input', 'modal-input');
     input.placeholder = 'Название упражнения';
 
@@ -6028,7 +6034,7 @@ function openAddExerciseModal(program) {
     });
 
     btnGroup.append(saveBtn);
-    modalContent.append(title, input, btnGroup);
+    modalContent.append(input, btnGroup);
     modal.append(modalContent);
     presentKeyboardDockedModal(modal, modalContent);
 
@@ -6113,16 +6119,15 @@ function openExerciseMenuModal(program, exercise) {
           if (e.target === overlay) document.body.removeChild(overlay);
       });
 
-      const modal = createElement('div', `modal-content modal-compact ${MODAL_TEXT_INPUT_CLASS}`);
+      const modal = createElement('div', `modal-content modal-compact modal-edit-exercise-name ${MODAL_TEXT_INPUT_CLASS}`);
       prepareKeyboardDockedModal(overlay, modal);
-      const title = createElement('h3', null, 'Редактировать название');
 
       const nameInput = createElement('input', 'modal-input');
       nameInput.type = 'text';
       nameInput.value = exercise.name;
 
       const controls = createElement('div', 'modal-controls');
-      const save = createElement('button', 'btn btn-primary', 'Сохранить');
+      const save = createElement('button', 'btn btn-primary', 'Изменить');
 
       save.addEventListener('click', async () => {
           const nextName = nameInput.value.trim();
@@ -6141,7 +6146,7 @@ function openExerciseMenuModal(program, exercise) {
       });
 
       controls.append(save);
-      modal.append(title, nameInput, controls);
+      modal.append(nameInput, controls);
       overlay.appendChild(modal);
       presentKeyboardDockedModal(overlay, modal);
   }
@@ -9274,13 +9279,13 @@ export function renderTopBar() {
     }
 
     if (state.currentPage === 'programsInCycle') {
-        backBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><title>Ios-arrow-ltr-24-filled SVG Icon</title><path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"></path></svg>';
+        backBtn.innerHTML = TOPBAR_BACK_ARROW_MARKUP;
         backBtn.onclick = () => { state.currentPage = 'programs'; render(); };
         showBack = true;
     }
 
     if (state.currentPage === 'programDetails') {
-        backBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><title>Ios-arrow-ltr-24-filled SVG Icon</title><path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"></path></svg>';
+        backBtn.innerHTML = TOPBAR_BACK_ARROW_MARKUP;
         backBtn.onclick = () => {
             const origin = state.programDetailsOrigin;
             state.programDetailsOrigin = null;
@@ -9298,7 +9303,7 @@ export function renderTopBar() {
 
 
     if (state.currentPage === 'journal' && state.selectedJournalRecord) {
-        backBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><title>Ios-arrow-ltr-24-filled SVG Icon</title><path fill="currentColor" d="M12.727 3.687a1 1 0 1 0-1.454-1.374l-8.5 9a1 1 0 0 0 0 1.374l8.5 9.001a1 1 0 1 0 1.454-1.373L4.875 12z"></path></svg>';
+        backBtn.innerHTML = TOPBAR_BACK_ARROW_MARKUP;
         backBtn.onclick = closeSelectedJournalRecordDetails;
         showBack = true;
     }
@@ -9325,7 +9330,7 @@ export function renderTopBar() {
     if (state.currentPage === 'journal' && state.selectedJournalRecord) {
         const deleteBtn = document.createElement('button');
         deleteBtn.className = 'top-menu-btn top-delete-btn';
-        deleteBtn.innerHTML = ' <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Trash-24 SVG Icon</title><path fill="currentColor" d="M16 1.75V3h5.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H8V1.75C8 .784 8.784 0 9.75 0h4.5C15.216 0 16 .784 16 1.75m-6.5 0V3h5V1.75a.25.25 0 0 0-.25-.25h-4.5a.25.25 0 0 0-.25.25M4.997 6.178a.75.75 0 1 0-1.493.144L4.916 20.92a1.75 1.75 0 0 0 1.742 1.58h10.684a1.75 1.75 0 0 0 1.742-1.581l1.413-14.597a.75.75 0 0 0-1.494-.144l-1.412 14.596a.25.25 0 0 1-.249.226H6.658a.25.25 0 0 1-.249-.226z"></path><path fill="currentColor" d="M9.206 7.501a.75.75 0 0 1 .793.705l.5 8.5A.75.75 0 1 1 9 16.794l-.5-8.5a.75.75 0 0 1 .705-.793Zm6.293.793A.75.75 0 1 0 14 8.206l-.5 8.5a.75.75 0 0 0 1.498.088l.5-8.5Z"></path></svg> ';
+        deleteBtn.textContent = 'Удалить';
         deleteBtn.onclick = deleteSelectedJournalRecordFromDetails;
         topBar.appendChild(deleteBtn);
         root.prepend(topBar);
@@ -10218,6 +10223,7 @@ export function render() {
     ensureAppViewportHeightBinding();
     ensureNativeKeyboardBottomNavBinding();
     ensureRootScrollLockBinding();
+    cleanupSupplementTransientUi();
 
     // Сохраняем scrollTop текущего экрана перед перерисовкой.
     if (__lastViewKeyForScrollMemory) {

@@ -3414,13 +3414,14 @@ function setupCreateFoodStickyTitleBorder({ titleEl, watchEl }) {
         || titleEl.closest('.meal-goal-overlay-wrap')?.parentElement
         || document.getElementById('root');
     if (!scrollRoot || !titleEl || !watchEl) return;
+    const stickyHeader = titleEl.closest('.create-food-sticky-header');
 
     if (titleEl._cleanupStickyBorder) {
         titleEl._cleanupStickyBorder();
     }
 
     let ticking = false;
-    const MIN_SCALE = 0.88;
+    const EPS = 0.5;
 
     const update = () => {
         ticking = false;
@@ -3428,11 +3429,13 @@ function setupCreateFoodStickyTitleBorder({ titleEl, watchEl }) {
         const titleRect = titleEl.getBoundingClientRect();
         const watchRect = watchEl.getBoundingClientRect();
 
-        // Сколько px верх следующего блока уже «под» нижней границей заголовка (полоска).
+        // Сколько px верх следующего блока уже «под» нижней границей sticky-заголовка.
         const overlapPx = titleRect.bottom - watchRect.top;
-        const progress = overlapPx > 0 ? 1 : MIN_SCALE;
+        const isStuck = overlapPx > EPS;
+        const progress = isStuck ? 1 : 0;
 
         titleEl.style.setProperty('--sticky-border-progress', String(progress));
+        stickyHeader?.classList.toggle('create-food-sticky-header--stuck', isStuck);
     };
 
     const onScroll = () => {
@@ -3452,6 +3455,7 @@ function setupCreateFoodStickyTitleBorder({ titleEl, watchEl }) {
         scrollRoot.removeEventListener('scroll', onScroll);
         window.removeEventListener('resize', onResize);
         titleEl.style.removeProperty('--sticky-border-progress');
+        stickyHeader?.classList.remove('create-food-sticky-header--stuck');
     };
 }
 

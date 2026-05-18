@@ -6,6 +6,7 @@
  */
 
 import { bottomNavMarkup } from './bottom-nav-markup.js';
+import { shouldBlockSupplementTablePageNavigation } from '../pages/supplement.js';
 
 let bottomNavStylesInjected = false;
 
@@ -312,6 +313,12 @@ function renderApp() {
     if (typeof fn === 'function') fn();
 }
 
+function shouldBlockBottomNavPageSwitch(targetPage, state) {
+    if (!state) return false;
+    if (state.currentPage === targetPage) return false;
+    return shouldBlockSupplementTablePageNavigation();
+}
+
 function toast(msg) {
     const fn = window.showToast;
     if (typeof fn === 'function') fn(msg);
@@ -585,6 +592,7 @@ function wireRouteHandlers() {
         }
 
         if (['programs', 'programsInCycle', 'programDetails'].includes(state.currentPage)) return;
+        if (shouldBlockBottomNavPageSwitch('programs', state)) return;
 
         if (state.lastProgramsPage === 'programDetails' && state.selectedProgramIdForDetails) {
             state.currentPage = 'programDetails';
@@ -604,6 +612,7 @@ function wireRouteHandlers() {
             toast(bottomNavLockedMessage());
             return;
         }
+        if (shouldBlockBottomNavPageSwitch('journal', state)) return;
         state.currentPage = 'journal';
         renderApp();
     });
@@ -615,6 +624,7 @@ function wireRouteHandlers() {
             toast(bottomNavLockedMessage());
             return;
         }
+        if (shouldBlockBottomNavPageSwitch('supplements', state)) return;
         // Вход через кнопку меню: хотим дефолтное состояние (таблица, Пн текущей недели, верх таблицы),
         // а не "последний сохранённый скролл" после редактирований.
         state._supplementsForceDefaultOpen = true;
@@ -629,6 +639,7 @@ function wireRouteHandlers() {
             toast(bottomNavLockedMessage());
             return;
         }
+        if (shouldBlockBottomNavPageSwitch('meal', state)) return;
         state.currentPage = 'meal';
         renderApp();
     });
@@ -640,6 +651,7 @@ function wireRouteHandlers() {
             toast(bottomNavLockedMessage());
             return;
         }
+        if (shouldBlockBottomNavPageSwitch('reports', state)) return;
         state.currentPage = 'reports';
         renderApp();
     });
