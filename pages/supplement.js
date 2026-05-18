@@ -77,6 +77,7 @@ function createSupplementTableSheetDefaultState() {
         formatColorPaletteOpen: false,
         timePanelOpen: false,
         textInputFocused: false,
+        commitUiPinned: false,
         numericPadMode: false
     };
 }
@@ -1092,6 +1093,10 @@ function getSupplementsViewMode() {
     return supplementsCurrentViewMode === 'table' ? 'table' : 'calendar';
 }
 
+export function isSupplementsTableViewActive() {
+    return getSupplementsViewMode() === 'table' && !window.state?.supplementCalendarDetailDate;
+}
+
 function setSupplementsViewMode(mode) {
     supplementsCurrentViewMode = mode === 'table' ? 'table' : 'calendar';
 }
@@ -1356,6 +1361,7 @@ function clearSupplementTableCellSelection({ preserveMenu = false, revertPreview
     supplementTableSheetState.formatColorPaletteOpen = false;
     supplementTableSheetState.timePanelOpen = false;
     supplementTableSheetState.textInputFocused = false;
+    supplementTableSheetState.commitUiPinned = false;
     supplementTableSheetState.numericPadMode = false;
     if (!preserveMenu) {
         supplementTableSheetState.menuOpen = false;
@@ -1377,6 +1383,7 @@ function resetSupplementTableSheetSelectionDraftState() {
     supplementTableSheetState.initialDraft = cloneSupplementTableCellDraft(nextDraft);
     supplementTableSheetState.history = [cloneSupplementTableCellDraft(nextDraft)];
     supplementTableSheetState.historyIndex = 0;
+    supplementTableSheetState.commitUiPinned = false;
 }
 
 function pushSupplementTableSheetHistorySnapshot(snapshot) {
@@ -1500,6 +1507,7 @@ function toggleSupplementTableFormatPanel(forceValue = null) {
         typeof forceValue === 'boolean'
             ? forceValue
             : !supplementTableSheetState.formatPanelOpen;
+    supplementTableSheetState.commitUiPinned = false;
     supplementTableSheetState.formatPanelOpen = nextValue;
     if (!nextValue) {
         supplementTableSheetState.formatColorPaletteOpen = false;
@@ -1517,6 +1525,7 @@ function toggleSupplementTableTimePanel(forceValue = null) {
         typeof forceValue === 'boolean'
             ? forceValue
             : !supplementTableSheetState.timePanelOpen;
+    supplementTableSheetState.commitUiPinned = false;
     supplementTableSheetState.timePanelOpen = nextValue;
     if (nextValue) {
         supplementTableSheetState.formatPanelOpen = false;
@@ -1635,12 +1644,25 @@ function setSupplementTableAddWeeksExtraPadding(wrapper, paddingPx = 0) {
     section.style.setProperty('--supplement-editor-extra-space', `${nextPadding}px`);
 }
 
+function getSupplementTableFormulaRowHeight() {
+    const row = supplementTableSheetElements?.shell?.querySelector?.('.supplement-sheet-editor__formula');
+    const measuredHeight = row?.getBoundingClientRect?.().height || 0;
+    return Math.max(
+        0,
+        Math.round(Number.isFinite(measuredHeight) ? measuredHeight : 0)
+    ) || SUPPLEMENT_TABLE_FORMULA_ROW_HEIGHT;
+}
+
 function getSupplementTableDesiredExtraPadding() {
+    const formulaRowHeight = getSupplementTableFormulaRowHeight();
+    if (supplementTableSheetState.textInputFocused || isSupplementTableEditorInputFocused()) {
+        return Math.max(0, getSupplementTableKeyboardHeight() + formulaRowHeight);
+    }
     if (supplementTableSheetState.formatPanelOpen) {
-        return Math.max(0, SUPPLEMENT_TABLE_FORMAT_PANEL_EXTRA_PADDING - SUPPLEMENT_TABLE_FORMULA_ROW_HEIGHT);
+        return Math.max(0, SUPPLEMENT_TABLE_FORMAT_PANEL_EXTRA_PADDING - formulaRowHeight);
     }
     if (supplementTableSheetState.timePanelOpen) {
-        return Math.max(0, SUPPLEMENT_TABLE_TIME_PANEL_EXTRA_PADDING - SUPPLEMENT_TABLE_FORMULA_ROW_HEIGHT);
+        return Math.max(0, SUPPLEMENT_TABLE_TIME_PANEL_EXTRA_PADDING - formulaRowHeight);
     }
     return 0;
 }
@@ -1721,6 +1743,7 @@ function ensureSupplementTableSheetEditorShell() {
         supplementTableSheetState.formatColorPaletteOpen = false;
         supplementTableSheetState.timePanelOpen = false;
         supplementTableSheetState.textInputFocused = true;
+        supplementTableSheetState.commitUiPinned = false;
         syncSupplementTableEditorViewportOffset();
         syncSupplementTableEditorShell();
         requestAnimationFrame(scrollSupplementTableSelectedCellIntoView);
@@ -1737,6 +1760,7 @@ function ensureSupplementTableSheetEditorShell() {
     blurBtn.type = 'button';
     blurBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 512 512" aria-hidden="true"><title>Checkmark-sharp SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="44" d="M416 128L192 384l-96-96"></path></svg>`;
     blurBtn.addEventListener('click', async () => {
+        supplementTableSheetState.commitUiPinned = false;
         if (isSupplementTableSheetDraftDirty()) {
             supplementTableSheetState.textInputFocused = false;
             supplementTableSheetState.formatPanelOpen = false;
@@ -1974,6 +1998,11 @@ function ensureSupplementTableSheetEditorShell() {
         syncSupplementTableEditorViewportOffset();
         scrollSupplementTableSelectedCellIntoView();
     };
+    const pinCommitUiForBlockedDismiss = () => {
+        if (!supplementTableSheetState.textInputFocused) return;
+        supplementTableSheetState.commitUiPinned = true;
+        syncSupplementTableEditorShell();
+    };
     const handleDismissPointerDown = (event) => {
         if (!supplementTableSheetState.selectedCell || !isSupplementTableSheetDraftDirty()) return;
         const target = event.target;
@@ -1981,6 +2010,7 @@ function ensureSupplementTableSheetEditorShell() {
         if (shell.contains(target)) return;
         if (document.querySelector('.top-bar.top-bar--supplements-table')?.contains?.(target)) return;
         if (target.closest?.('.navigation') || target.closest?.('.navigation-fon')) {
+            pinCommitUiForBlockedDismiss();
             event.preventDefault();
             event.stopPropagation();
             showToast('Сохраните данные');
@@ -1999,6 +2029,7 @@ function ensureSupplementTableSheetEditorShell() {
         }
 
         if (blockedCellTarget) {
+            pinCommitUiForBlockedDismiss();
             event.preventDefault();
             event.stopPropagation();
             showToast('Сохраните данные');
@@ -2074,8 +2105,10 @@ function syncSupplementTableEditorShell() {
     refs.textInput.value = draft.text;
     refs.textInput.inputMode = 'text';
     const draftDirty = isSupplementTableSheetDraftDirty();
-    refs.formulaIcon.classList.toggle('is-hidden', supplementTableSheetState.textInputFocused);
-    refs.blurBtn.classList.toggle('is-visible', supplementTableSheetState.textInputFocused);
+    const commitUiVisible =
+        supplementTableSheetState.textInputFocused || supplementTableSheetState.commitUiPinned;
+    refs.formulaIcon.classList.toggle('is-hidden', commitUiVisible);
+    refs.blurBtn.classList.toggle('is-visible', commitUiVisible);
     refs.blurBtn.classList.toggle('is-ready', draftDirty);
     refs.formatBoldBtn.classList.toggle('is-active', style.bold);
     refs.formatItalicBtn.classList.toggle('is-active', style.italic);
@@ -2126,13 +2159,15 @@ function syncSupplementTableTopBarMenu() {
 
     const selectionActive = isSupplementTableSheetSelectionActive();
     const historyVisible = hasSupplementPlanHistoryChanges();
-    const editorTopBarVisible = selectionActive && !supplementTableSheetState.textInputFocused;
+    const editorShellPinned =
+        supplementTableSheetState.textInputFocused || supplementTableSheetState.commitUiPinned;
+    const editorTopBarVisible = selectionActive && !editorShellPinned;
     const historyActionsVisible = historyVisible && !selectionActive;
     const menuVisible = historyActionsVisible || editorTopBarVisible;
 
     topBar.classList.toggle(
         'supplements-topbar--editor-hidden',
-        Boolean(selectionActive && supplementTableSheetState.textInputFocused)
+        Boolean(selectionActive && editorShellPinned)
     );
 
     if (calendarBtn) {
@@ -2296,6 +2331,7 @@ function handleSupplementTableCellSelection(button, mergeRange = null) {
     supplementTableSheetState.formatColorPaletteOpen = false;
     supplementTableSheetState.timePanelOpen = Boolean(draft.times.length > 0);
     supplementTableSheetState.textInputFocused = false;
+    supplementTableSheetState.commitUiPinned = false;
     supplementTableSheetState.numericPadMode = false;
 
     applySupplementTableCellSelectionVisual(button);

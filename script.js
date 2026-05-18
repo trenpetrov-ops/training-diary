@@ -5,6 +5,7 @@ import { renderProfilePage } from './pages/profile.js';
 import { renderSupplementsPage } from './pages/supplement.js';
 import { cleanupSupplementTransientUi } from './pages/supplement.js';
 import { openPdfDateModal } from './pages/supplement.js';
+import { isSupplementsTableViewActive } from './pages/supplement.js';
 
 import { openMealsPdfModal } from './pages/meal.js';
 import { generateMealsPdf } from './pages/meal.js';
@@ -22,6 +23,7 @@ import { attachMonthCarouselSwipe } from './calendar-month-carousel.js';
 import {
     initBottomNav,
     syncBottomNavAfterRender,
+    syncBottomNavBuildExpiryNotice,
     setBottomNavLayoutFromAppVisibility,
     syncSupplementsBottomNavBadge
 } from './nav/bottom-nav.js';
@@ -256,6 +258,7 @@ let state = {
     isProgramsLoading: false,
 
     userProfile: null,
+    nativeBuildExpiry: null,
     profileCabinetEditing: false,
     profileOriginPage: null,
     appleHealthSyncReturn: initialAppleHealthSyncReturn,
@@ -546,6 +549,131 @@ window.showToast = showToast;
 
 const TOPBAR_BACK_ARROW_MARKUP = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="m3.55 12l7.35 7.35q.375.375.363.875t-.388.875t-.875.375t-.875-.375l-7.7-7.675q-.3-.3-.45-.675T.825 12t.15-.75t.45-.675l7.7-7.7q.375-.375.888-.363t.887.388t.375.875t-.375.875z"></path></svg>`;
 
+let provisioningProfileInfoRequest = null;
+
+function pluralizeRussianDays(value) {
+    const abs = Math.abs(Number(value) || 0);
+    const mod100 = abs % 100;
+    const mod10 = abs % 10;
+    if (mod100 >= 11 && mod100 <= 14) return 'дней';
+    if (mod10 === 1) return 'день';
+    if (mod10 >= 2 && mod10 <= 4) return 'дня';
+    return 'дней';
+}
+
+function formatProvisioningProfileDate(value) {
+    if (!value) return '';
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return new Intl.DateTimeFormat('ru-RU', {
+        day: 'numeric',
+        month: 'long'
+    }).format(date);
+}
+
+function getProvisioningProfileCalendarDaysLeft(expiresAt) {
+    const expiryDate = expiresAt instanceof Date ? expiresAt : new Date(expiresAt);
+    if (Number.isNaN(expiryDate.getTime())) return null;
+
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfExpiryDay = new Date(expiryDate.getFullYear(), expiryDate.getMonth(), expiryDate.getDate());
+    return Math.max(0, Math.round((startOfExpiryDay.getTime() - startOfToday.getTime()) / 86400000));
+}
+
+function buildProvisioningProfileUiState(raw) {
+    if (!raw || raw.available !== true || !raw.expiresAt) return null;
+
+    const expiresAt = new Date(raw.expiresAt);
+    if (Number.isNaN(expiresAt.getTime())) return null;
+
+    const daysLeft = getProvisioningProfileCalendarDaysLeft(expiresAt);
+    if (daysLeft == null) return null;
+
+    const expiryDateLabel = formatProvisioningProfileDate(expiresAt);
+    const remainingLabel = daysLeft > 0
+        ? `${daysLeft} ${pluralizeRussianDays(daysLeft)}`
+        : 'сегодня';
+
+    return {
+        available: true,
+        expiresAt: expiresAt.toISOString(),
+        issuedAt: raw.issuedAt || null,
+        timeToLiveDays: Number(raw.timeToLiveDays || 0) || 0,
+        daysLeft,
+        authText: daysLeft > 0
+            ? `Срок этой сборки: ещё ${remainingLabel}${expiryDateLabel ? `, до ${expiryDateLabel}` : ''}.`
+            : 'Срок этой сборки заканчивается сегодня.',
+        navText: daysLeft > 0
+            ? `Сборка: ${remainingLabel}`
+            : 'Сборка: сегодня'
+    };
+}
+
+function ensureProvisioningProfileNotice(host, className) {
+    if (!host) return null;
+    let note = host.querySelector(`.${className.split(' ')[0]}`);
+    if (!note) {
+        note = document.createElement('div');
+        note.className = className;
+        host.appendChild(note);
+    }
+    return note;
+}
+
+function syncProvisioningProfileInlineNotices() {
+    const authHost = document.querySelector('#auth-screen .auth-box');
+    const modeHost = document.querySelector('#mode-select-screen .mode-select-box');
+    const authNote = ensureProvisioningProfileNotice(authHost, 'app-build-expiry-note');
+    const modeNote = ensureProvisioningProfileNotice(modeHost, 'app-build-expiry-note app-build-expiry-note--mode-select');
+    const text = state.nativeBuildExpiry?.authText || '';
+    const visible = Boolean(text);
+
+    [authNote, modeNote].forEach((node) => {
+        if (!node) return;
+        node.textContent = text;
+        node.hidden = !visible;
+    });
+
+    syncBottomNavBuildExpiryNotice(state.nativeBuildExpiry?.navText || '');
+}
+
+async function refreshProvisioningProfileInfo() {
+    if (!isCapacitorIosPlatform()) {
+        state.nativeBuildExpiry = null;
+        syncProvisioningProfileInlineNotices();
+        return null;
+    }
+
+    if (provisioningProfileInfoRequest) return provisioningProfileInfoRequest;
+
+    provisioningProfileInfoRequest = Promise.resolve()
+        .then(async () => {
+            const plugin = window.Capacitor?.Plugins?.ProvisioningProfile;
+            if (!plugin?.getInfo) {
+                state.nativeBuildExpiry = null;
+                syncProvisioningProfileInlineNotices();
+                return null;
+            }
+
+            try {
+                const payload = await plugin.getInfo();
+                state.nativeBuildExpiry = buildProvisioningProfileUiState(payload);
+            } catch (error) {
+                console.warn('[ProvisioningProfile] Failed to read provisioning profile info.', error);
+                state.nativeBuildExpiry = null;
+            }
+
+            syncProvisioningProfileInlineNotices();
+            return state.nativeBuildExpiry;
+        })
+        .finally(() => {
+            provisioningProfileInfoRequest = null;
+        });
+
+    return provisioningProfileInfoRequest;
+}
+
 
 
 // 🔥 Управление видимостью трех основных экранов
@@ -573,6 +701,8 @@ function toggleAppVisibility(isAuthenticated) {
         if (container) container.style.display = 'block';
         setBottomNavLayoutFromAppVisibility(true, true);
     }
+
+    syncProvisioningProfileInlineNotices();
 }
 
 
@@ -9495,7 +9625,10 @@ function shouldShowNativeStatusBarForCurrentView() {
         if (shouldHideNativeStatusBarForMealView()) return false;
         return !isMealOverlaySubpageActive();
     }
-    if (state.currentPage === 'supplements') return !isSupplementsDetailSubpageActive();
+    if (state.currentPage === 'supplements') {
+        if (isSupplementsTableViewActive()) return false;
+        return !isSupplementsDetailSubpageActive();
+    }
 
     return ['programs', 'programsInCycle', 'programDetails', 'journal', 'reports', 'cycleReport', 'mealsReport'].includes(state.currentPage);
 }
@@ -9505,6 +9638,7 @@ function shouldApplyStandaloneTopGapForCurrentView() {
     if (state.currentPage === 'journalRecordDetails') return true;
     if (shouldHideNativeStatusBarForMealView()) return true;
     if (isMealOverlaySubpageActive()) return true;
+    if (isSupplementsTableViewActive()) return true;
     if (isSupplementsDetailSubpageActive()) return true;
     return false;
 }
@@ -10217,6 +10351,9 @@ window.addEventListener('unhandledrejection', (event) => {
 
 runBootstrapStep('ensureAppViewportHeightBinding', ensureAppViewportHeightBinding);
 runBootstrapStep('ensureNativeKeyboardBottomNavBinding', ensureNativeKeyboardBottomNavBinding);
+runBootstrapStep('refreshProvisioningProfileInfo', () => {
+    void refreshProvisioningProfileInfo();
+});
 
 export function render() {
     const root = document.getElementById('root');
@@ -10244,6 +10381,7 @@ export function render() {
     if (!userId || state.currentMode === null) {
         void syncAppChrome();
         syncBottomNavAfterRender(state.currentPage);
+        syncProvisioningProfileInlineNotices();
         scheduleRootScrollLockState();
         return;
     }
@@ -10281,23 +10419,27 @@ export function render() {
     } else if (state.currentPage === 'cycleReport') {
         renderCycleReportPage(state.reportHtmlCache);
         syncBottomNavAfterRender(state.currentPage);
+        syncProvisioningProfileInlineNotices();
         scheduleRootScrollLockState();
         void syncAppChrome();
         return;
     } else if (state.currentPage === 'mealsReport') {
         renderMealsReportPage(state.reportHtmlCache);
         syncBottomNavAfterRender(state.currentPage);
+        syncProvisioningProfileInlineNotices();
         scheduleRootScrollLockState();
         void syncAppChrome();
         return;
     } else if (state.currentPage === 'modeSelect') {
         syncBottomNavAfterRender(state.currentPage);
+        syncProvisioningProfileInlineNotices();
         scheduleRootScrollLockState();
         void syncAppChrome();
         return;
     }
 
     syncBottomNavAfterRender(state.currentPage);
+    syncProvisioningProfileInlineNotices();
     scheduleRootScrollLockState();
 
     void syncAppChrome();
