@@ -26,30 +26,6 @@ function mountBottomNavMarkup() {
     applyBottomNavButtonOrder();
 }
 
-function ensureBottomNavBuildExpiryNotice() {
-    const nav = document.querySelector('.navigation');
-    if (!nav) return null;
-
-    let note = nav.querySelector('.navigation-build-expiry');
-    if (!note) {
-        note = document.createElement('div');
-        note.className = 'navigation-build-expiry';
-        note.hidden = true;
-        nav.appendChild(note);
-    }
-
-    return note;
-}
-
-export function syncBottomNavBuildExpiryNotice(text = '') {
-    const note = ensureBottomNavBuildExpiryNotice();
-    if (!note) return;
-
-    const normalized = String(text || '').trim();
-    note.textContent = normalized;
-    note.hidden = !normalized;
-}
-
 let mealSearchNavOnBack = null;
 let mealSearchNavOnAction = null;
 let mealSearchNavOnSecondaryAction = null;
@@ -474,7 +450,6 @@ export function setBottomNavLayoutFromAppVisibility(isAuthenticated, modeSelecte
     const show = !!(isAuthenticated && modeSelected);
     if (nav) nav.style.display = show ? 'flex' : 'none';
     if (fon) fon.style.display = show ? '' : 'none';
-    syncBottomNavBuildExpiryNotice(window.state?.nativeBuildExpiry?.navText || '');
 }
 
 /**
@@ -495,7 +470,6 @@ export function syncBottomNavAfterRender(currentPage) {
     if (hideNav) {
         navEl.style.display = 'none';
         if (navFon) navFon.style.display = 'none';
-        syncBottomNavBuildExpiryNotice(window.state?.nativeBuildExpiry?.navText || '');
         return;
     }
 
@@ -527,7 +501,6 @@ export function syncBottomNavAfterRender(currentPage) {
     }
 
     syncSupplementsBottomNavBadge();
-    syncBottomNavBuildExpiryNotice(window.state?.nativeBuildExpiry?.navText || '');
 }
 
 function setupProgramsIconAnimation() {
@@ -695,7 +668,6 @@ export function initBottomNav() {
         mountBottomNavMarkup();
         ensureNavigationMealSearchStructure();
         syncSupplementsBottomNavBadge();
-        syncBottomNavBuildExpiryNotice(window.state?.nativeBuildExpiry?.navText || '');
         // Animated bottom-nav icons are temporarily disabled; assets remain in the project.
         wireRouteHandlers();
     };

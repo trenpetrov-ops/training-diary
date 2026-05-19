@@ -76,23 +76,6 @@ html, body {
     opacity: 0;
     pointer-events: none;
 }
-.app-build-expiry-note {
-    margin-top: 14px;
-    font-size: 12px;
-    line-height: 1.35;
-    font-weight: 500;
-    color: #6f7685;
-    text-align: center;
-}
-
-.app-build-expiry-note[hidden] {
-    display: none !important;
-}
-
-.app-build-expiry-note--mode-select {
-    margin-top: 10px;
-}
-
 .loader-icon {
     width: 44px;
     height: 44px;
