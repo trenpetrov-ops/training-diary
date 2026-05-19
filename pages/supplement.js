@@ -1290,11 +1290,6 @@ function configureSupplementsTopBar(viewMode, planData) {
 
     topBar.classList.add('top-bar--supplements-table');
     topBar.querySelector('.top-menu-btn')?.remove();
-
-    const addBtn = createSupplementsTopBarAddButton(planData);
-    if (addBtn) {
-        leftGroup.append(addBtn);
-    }
     leftGroup.append(createElement('div', 'supplements-topbar-inline-menu'));
     leftGroup.append(createSupplementsTopBarCalendarButton());
     syncSupplementTableTopBarMenu();
@@ -1394,6 +1389,38 @@ function resetSupplementTableSheetSelectionDraftState() {
     supplementTableSheetState.history = [cloneSupplementTableCellDraft(nextDraft)];
     supplementTableSheetState.historyIndex = 0;
     supplementTableSheetState.commitUiPinned = false;
+}
+
+function doesSupplementTableSelectionMatchCell(dateStr, supplementName, slot) {
+    const selectedCell = supplementTableSheetState.selectedCell;
+    if (!selectedCell) return false;
+    return (
+        selectedCell.dateStr === dateStr &&
+        selectedCell.supplementName === supplementName &&
+        Number(selectedCell.slot) === Number(slot)
+    );
+}
+
+function syncSupplementTableSelectionCommittedRawDose(rawDose) {
+    const selectedCell = supplementTableSheetState.selectedCell;
+    if (!selectedCell) return;
+
+    selectedCell.originalRawDose = cloneSupplementDoseValue(rawDose);
+    const nextDraft = createSupplementTableCellDraft(rawDose);
+    supplementTableSheetState.draft = cloneSupplementTableCellDraft(nextDraft);
+    supplementTableSheetState.initialDraft = cloneSupplementTableCellDraft(nextDraft);
+    supplementTableSheetState.history = [cloneSupplementTableCellDraft(nextDraft)];
+    supplementTableSheetState.historyIndex = 0;
+    supplementTableSheetState.commitUiPinned = false;
+    supplementTableSheetState.timePanelOpen =
+        supplementTableSheetState.timePanelOpen && Array.isArray(nextDraft.times) && nextDraft.times.length > 0;
+
+    if (selectedCell.buttonEl?.isConnected) {
+        updateSupplementDoseCellButton(selectedCell.buttonEl, rawDose);
+        applySupplementTableCellSelectionVisual(selectedCell.buttonEl);
+    }
+    syncSupplementTableEditorShell();
+    syncSupplementTableTopBarMenu();
 }
 
 function pushSupplementTableSheetHistorySnapshot(snapshot) {
@@ -1677,6 +1704,18 @@ function getSupplementTableDesiredExtraPadding() {
     return 0;
 }
 
+function getSupplementTableViewportScrollBehavior() {
+    if (
+        supplementTableSheetState.textInputFocused ||
+        isSupplementTableEditorInputFocused() ||
+        supplementTableSheetState.formatPanelOpen ||
+        supplementTableSheetState.timePanelOpen
+    ) {
+        return 'smooth';
+    }
+    return 'auto';
+}
+
 function scheduleSupplementTableViewportSync({ behavior = 'auto', deferMs = 0 } = {}) {
     if (supplementTableViewportSyncFrameId) {
         cancelAnimationFrame(supplementTableViewportSyncFrameId);
@@ -1798,10 +1837,9 @@ function ensureSupplementTableSheetEditorShell() {
     });
     textInput.addEventListener('blur', () => {
         supplementTableSheetState.textInputFocused = false;
-        window.setTimeout(() => {
-            syncSupplementTableEditorShell();
-            scheduleSupplementTableViewportSync({ behavior: 'auto', deferMs: 16 });
-        }, 32);
+        syncSupplementTableEditorViewportOffset();
+        syncSupplementTableEditorShell();
+        scheduleSupplementTableViewportSync({ behavior: 'auto', deferMs: 16 });
     });
 
     const blurBtn = createElement('button', 'supplement-sheet-editor__formula-commit');
@@ -2043,10 +2081,7 @@ function ensureSupplementTableSheetEditorShell() {
     supplementTableSheetViewportAbortController?.abort?.();
     supplementTableSheetViewportAbortController = new AbortController();
     const syncViewport = () => {
-        const behavior =
-            supplementTableSheetState.textInputFocused || isSupplementTableEditorInputFocused()
-                ? 'smooth'
-                : 'auto';
+        const behavior = getSupplementTableViewportScrollBehavior();
         scheduleSupplementTableViewportSync({ behavior, deferMs: 16 });
     };
     const pinCommitUiForBlockedDismiss = () => {
@@ -2189,10 +2224,7 @@ function syncSupplementTableEditorShell() {
     const timeValues = draft.times.length > 0 ? draft.times : [''];
     timeValues.forEach((timeValue) => appendSupplementTableEditorTimeRow(refs.timesList, timeValue));
 
-    const viewportSyncBehavior =
-        supplementTableSheetState.textInputFocused || isSupplementTableEditorInputFocused()
-            ? 'smooth'
-            : 'auto';
+    const viewportSyncBehavior = getSupplementTableViewportScrollBehavior();
     scheduleSupplementTableViewportSync({ behavior: viewportSyncBehavior, deferMs: 16 });
     window.clearTimeout(supplementTableEditorDeferredScrollTimer);
     supplementTableEditorDeferredScrollTimer = window.setTimeout(() => {
@@ -2896,6 +2928,7 @@ function renderSupplementsTableView(contentContainer, planData) {
     tableWrapper.id = 'supplement-table-wrapper';
     tableWrapper.dataset.displayColumns = String(tableColumns.length);
     tableWrapper.classList.remove('supplement-table-wrapper--fitted');
+    tableWrapper.style.visibility = 'hidden';
 
     const guard = createElement('div', 'scroll-guard');
     const table = createElement('table', `supplement-plan-table supplement-plan-table--${tableRangeMode}`);
@@ -3009,6 +3042,10 @@ function renderSupplementsTableView(contentContainer, planData) {
         }
         supplementTableVirtualState.lastScrollTop = tableWrapper.scrollTop;
         syncSupplementJumpButtonVisibility(jumpBtnWrap, supplementTableVirtualState);
+        requestAnimationFrame(() => {
+            if (!tableWrapper.isConnected) return;
+            tableWrapper.style.removeProperty('visibility');
+        });
     });
 
     attachSupplementTableBounceLock(tableWrapper, supplementTableViewportSyncController.signal);
@@ -6414,6 +6451,7 @@ function getSupplementHistoryMap(planData, records = null) {
 function getSupplementTableColumns(planData) {
   const allEntries = getSupplementEntries(planData, { includeArchived: true })
     .sort((left, right) => left.slot - right.slot || left.planIndex - right.planIndex);
+  const activeEntries = allEntries.filter(entry => !entry.archived);
   const historyMap = getSupplementHistoryMap(planData);
   const slotMap = new Map();
   let maxSlot = -1;
@@ -6436,7 +6474,22 @@ function getSupplementTableColumns(planData) {
     slotMap.set(entry.slot, column);
   });
 
-  const totalColumns = Math.max(5, maxSlot + 1);
+  const baseColumnCount = Math.max(5, maxSlot + 1);
+  let hasReusableEmptyColumn = false;
+  for (let slot = 0; slot < baseColumnCount; slot += 1) {
+    const column = slotMap.get(slot);
+    if (!column || (!column.activeEntry && !column.hasHistory)) {
+      hasReusableEmptyColumn = true;
+      break;
+    }
+  }
+  const shouldExposeTrailingAddColumn =
+    activeEntries.length >= 5 &&
+    activeEntries.length < MAX_SUPPLEMENTS_COUNT &&
+    !hasReusableEmptyColumn;
+  const totalColumns = shouldExposeTrailingAddColumn
+    ? Math.min(MAX_SUPPLEMENTS_COUNT, baseColumnCount + 1)
+    : baseColumnCount;
   const columns = [];
   let activeIndex = 0;
 
@@ -6697,6 +6750,9 @@ function enableSupplementDoseCellLongPressActions(tableWrapper) {
       navigator.vibrate?.(8);
       if (scope === 'single') {
         updateSupplementDoseCellButton(button, '');
+        if (doesSupplementTableSelectionMatchCell(dateStr, supplementName, slot)) {
+          syncSupplementTableSelectionCommittedRawDose('');
+        }
       }
 
       const saved = await updateSupplementPlanInFirestore(plan, { previousPlanOverride: previousPlan });
@@ -6706,6 +6762,9 @@ function enableSupplementDoseCellLongPressActions(tableWrapper) {
         delete state._supplementsSkipNextRenderSignature;
         if (scope === 'single') {
           updateSupplementDoseCellButton(button, previousRawDose);
+          if (doesSupplementTableSelectionMatchCell(dateStr, supplementName, slot)) {
+            syncSupplementTableSelectionCommittedRawDose(previousRawDose);
+          }
         } else if (scope === 'merge' || scope === 'block') {
           await renderSupplementsPage();
         }
@@ -6733,6 +6792,9 @@ function enableSupplementDoseCellLongPressActions(tableWrapper) {
       navigator.vibrate?.(8);
       if (scope === 'single') {
         updateSupplementDoseCellButton(button, '');
+        if (doesSupplementTableSelectionMatchCell(dateStr, supplementName, slot)) {
+          syncSupplementTableSelectionCommittedRawDose('');
+        }
       }
 
       const saved = await updateSupplementPlanInFirestore(plan, { previousPlanOverride: previousPlan });
@@ -6742,6 +6804,9 @@ function enableSupplementDoseCellLongPressActions(tableWrapper) {
         delete state._supplementsSkipNextRenderSignature;
         if (scope === 'single') {
           updateSupplementDoseCellButton(button, previousRawDose);
+          if (doesSupplementTableSelectionMatchCell(dateStr, supplementName, slot)) {
+            syncSupplementTableSelectionCommittedRawDose(previousRawDose);
+          }
         }
         return;
       }
@@ -6779,7 +6844,11 @@ function enableSupplementDoseCellLongPressActions(tableWrapper) {
       syncSupplementsBottomNavBadge(plan);
       if (scope === 'single') {
         const dayIndex = plan.data.findIndex(day => day.date === dateStr);
-        updateSupplementDoseCellButton(button, plan.data[dayIndex]?.doses?.[supplementName]);
+        const nextRawDose = plan.data[dayIndex]?.doses?.[supplementName];
+        updateSupplementDoseCellButton(button, nextRawDose);
+        if (doesSupplementTableSelectionMatchCell(dateStr, supplementName, slot)) {
+          syncSupplementTableSelectionCommittedRawDose(nextRawDose);
+        }
       } else if (scope === 'merge' || scope === 'block') {
         await renderSupplementsPage();
       }
@@ -6794,6 +6863,9 @@ function enableSupplementDoseCellLongPressActions(tableWrapper) {
         delete state._supplementsSkipNextRenderSignature;
         if (scope === 'single') {
           updateSupplementDoseCellButton(button, previousRawDose);
+          if (doesSupplementTableSelectionMatchCell(dateStr, supplementName, slot)) {
+            syncSupplementTableSelectionCommittedRawDose(previousRawDose);
+          }
         }
         return;
       }

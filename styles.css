@@ -143,11 +143,6 @@ button:focus, button:focus-visible, button:active {
 .supplement-delete-modal.keyboard-viewport-shift-host {
     transform: translate3d(0, calc(-1 * var(--keyboard-local-shift, 0px)), 0) scale(0.9);
 }
-.keyboard-docked-modal-host--caret-settling input:focus,
-.keyboard-docked-modal-host--caret-settling textarea:focus,
-.keyboard-docked-modal-host--caret-settling [contenteditable="true"]:focus {
-    caret-color: transparent !important;
-}
 .modal-set.keyboard-scroll-space-host,
 .modal-content.keyboard-scroll-space-host,
 .modal-cicle.keyboard-scroll-space-host,
@@ -225,7 +220,7 @@ html, body {
     min-height: var(--top-bar-height);
     height: auto;
     border-bottom: 1px solid transparent;
-    transition: border-bottom-color 0.12s ease;
+    /* transition: border-bottom-color 0.12s ease; */
 }
 .top-bar.top-bar-stuck-border {
     border-bottom-color: #dedede;
@@ -2454,8 +2449,6 @@ button.btn.btn-primary.add-exercise-btn:active {
 }
 .modal-overlay.program-details .modal-content {
     display: flex;
-    flex-direction: row;
-    align-items: center;
 }
 .modal-overlay.program-details .modal-content .modal-buttons button {
     margin-left: 10px;
@@ -18041,7 +18034,7 @@ button.btn.btn-secondary.profile-copy-btn {
     font-size: 17px;
     font-weight: 700;
     letter-spacing: -0.02em;
-    color: #1c1c1e;
+    color: #111827;
 }
 .modal-cicle__hint {
     margin: 0 0 18px;
@@ -18233,6 +18226,66 @@ button.btn.btn-secondary.profile-copy-btn {
     border: none !important;
     color: #fff !important;
     background: linear-gradient(180deg, var(--ui-auth-accent-mid), var(--ui-auth-accent)) !important;
+}
+.modal-simple-form {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 11px;
+    width: 100%;
+    max-width: 400px;
+    text-align: left;
+}
+.modal-simple-form__title {
+    margin: 0;
+    font-size: 17px;
+    line-height: 1.2;
+    font-weight: 700;
+    color: #111827;
+    padding: 9px 0px 4px 3px;
+}
+.modal-simple-form .modal-input {
+    width: 100%;
+    /* min-height: 44px; */
+    height: auto;
+    margin: 0;
+    padding: 10px 12px;
+    box-sizing: border-box;
+    border: 1px solid #d1d1d6;
+    border-radius: 10px;
+    background: #fafafa;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+    -webkit-appearance: none;
+    appearance: none;
+    text-align: left;
+}
+.modal-simple-form .modal-input:focus {
+    border-color: rgba(10, 132, 255, 0.55);
+    box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.1);
+    background: #fff;
+}
+.modal-simple-form .modal-buttons {
+    display: flex;
+    gap: 10px;
+    margin-top: 0;
+}
+.modal-simple-form .modal-buttons .btn {
+    flex: 1;
+    /* min-height: 48px; */
+    margin: 0 !important;
+    /* border-radius: var(--ui-radius-md) !important; */
+    /* font-weight: 600 !important; */
+}
+.modal-simple-form .modal-buttons .btn-primary {
+    border: none !important;
+    color: #fff !important;
+    background: #3e8ce1;
+}
+.modal-simple-form .modal-buttons .cancel-btn {
+    border: 1px solid #ececec!important;
+    background: #f4f4f4!important;
+    color: #353a45 !important;
 }
 .add-program-section-label {
     margin: 16px 0 8px;
@@ -19107,20 +19160,20 @@ button.btn.btn-secondary.profile-copy-btn {
     display: flex;
     align-items: center;
     gap: 10px;
-    transition:
+    /* transition:
         height 240ms cubic-bezier(0.22, 1, 0.36, 1),
         min-height 240ms cubic-bezier(0.22, 1, 0.36, 1),
         max-height 240ms cubic-bezier(0.22, 1, 0.36, 1),
         padding 240ms cubic-bezier(0.22, 1, 0.36, 1),
-        border-bottom-color 180ms ease;
+        border-bottom-color 180ms ease; */
     will-change: height, min-height, max-height, padding;
 }
 .top-bar.top-bar--supplements-table > * {
     opacity: 1;
     visibility: visible;
-    transition:
+    /* transition:
         opacity 180ms ease,
-        visibility 0s linear 0ms;
+        visibility 0s linear 0ms; */
 }
 .top-bar.top-bar--supplements-table .topbar-cycle-btns {
     display: flex;
@@ -20810,7 +20863,7 @@ html.supplement-table-sheet-editing div#supplements-content.supplements-page--ta
     min-height: 0;
     max-height: none;
     overflow: auto;
-    scroll-behavior: smooth;
+    scroll-behavior: auto;
     overscroll-behavior: none;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-x pan-y;

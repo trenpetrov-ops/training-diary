@@ -596,10 +596,11 @@ function buildLocalBuildTrialUiState(startedAt) {
 
     const expiresAt = startedAt + LOCAL_BUILD_TRIAL_DURATION_MS;
     const remainingMs = Math.max(0, expiresAt - Date.now());
-    const totalMinutes = Math.floor(remainingMs / 60000);
-    const days = Math.floor(totalMinutes / (24 * 60));
-    const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
-    const minutes = totalMinutes % 60;
+    const totalSeconds = Math.floor(remainingMs / 1000);
+    const days = Math.floor(totalSeconds / (24 * 60 * 60));
+    const hours = Math.floor((totalSeconds % (24 * 60 * 60)) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
 
     return {
         startedAt,
@@ -608,7 +609,8 @@ function buildLocalBuildTrialUiState(startedAt) {
         days,
         hours,
         minutes,
-        navText: `До окончания подписки ${days} ${pluralizeRussianUnit(days, 'день', 'дня', 'дней')} ${hours} ${pluralizeRussianUnit(hours, 'час', 'часа', 'часов')} ${minutes} мин`
+        seconds,
+        navText: `До окончания подписки ${days} ${pluralizeRussianUnit(days, 'день', 'дня', 'дней')} ${hours} ${pluralizeRussianUnit(hours, 'час', 'часа', 'часов')} ${minutes} ${pluralizeRussianUnit(minutes, 'минута', 'минуты', 'минут')} ${seconds} ${pluralizeRussianUnit(seconds, 'секунда', 'секунды', 'секунд')}`
     };
 }
 
@@ -635,7 +637,7 @@ function scheduleLocalBuildTrialCountdownTick() {
 
     if (!isCapacitorIosPlatform()) return;
 
-    const nextDelay = Math.max(1000, 60000 - (Date.now() % 60000) + 50);
+    const nextDelay = Math.max(250, 1000 - (Date.now() % 1000) + 25);
     localBuildTrialTickTimer = window.setTimeout(() => {
         scheduleLocalBuildTrialCountdownTick();
     }, nextDelay);
@@ -2564,11 +2566,10 @@ function openEditCycleModal(cycle) {
     modal.className = 'modal-overlay-edit';
 
     const modalContent = document.createElement('div');
-    modalContent.className = `modal-edit ${MODAL_TEXT_INPUT_CLASS}`;
+    modalContent.className = `modal-edit modal-simple-form ${MODAL_TEXT_INPUT_CLASS}`;
     prepareKeyboardDockedModal(modal, modalContent);
 
-    const title = document.createElement('h3');
-    title.textContent = 'Редактировать цикл';
+    const title = createElement('h3', 'modal-simple-form__title', 'Редактировать название цикла');
 
     const input = document.createElement('input');
     input.type = 'text';
@@ -2578,7 +2579,12 @@ function openEditCycleModal(cycle) {
     const btnGroup = document.createElement('div');
     btnGroup.className = 'modal-buttons';
 
-    const saveBtn = createElement('button', 'btn btn-primary', 'изменить');
+    const cancelBtn = createElement('button', 'btn cancel-btn', 'Отмена');
+    const saveBtn = createElement('button', 'btn btn-primary', 'Изменить');
+
+    cancelBtn.addEventListener('click', () => {
+        document.body.removeChild(modal);
+    });
 
     saveBtn.addEventListener('click', async () => {
         const newName = input.value.trim();
@@ -2595,8 +2601,8 @@ function openEditCycleModal(cycle) {
         }
     });
 
-    btnGroup.append(saveBtn);
-    modalContent.append( input, btnGroup);
+    btnGroup.append(cancelBtn, saveBtn);
+    modalContent.append(title, input, btnGroup);
     modal.append(modalContent);
     presentKeyboardDockedModal(modal, modalContent);
 
@@ -2616,11 +2622,10 @@ function openAddCycleModal(onConfirm) {
     modal.className = 'modal-overlay-cicle';
 
     const modalContent = document.createElement('div');
-    modalContent.className = `modal-cicle ${MODAL_TEXT_INPUT_CLASS}`;
+    modalContent.className = `modal-cicle modal-simple-form ${MODAL_TEXT_INPUT_CLASS}`;
     prepareKeyboardDockedModal(modal, modalContent);
 
-    const title = document.createElement('h3');
-    title.textContent = 'Создание нового цикла';
+    const title = createElement('h3', 'modal-simple-form__title', 'Добавить новый цикл');
 
     const input = document.createElement('input');
     input.type = 'text';
@@ -2630,8 +2635,12 @@ function openAddCycleModal(onConfirm) {
     const btnGroup = document.createElement('div');
     btnGroup.className = 'modal-buttons';
 
+    const cancelBtn = createElement('button', 'btn cancel-btn', 'Отмена');
+    const confirmBtn = createElement('button', 'btn btn-primary', 'Добавить');
 
-    const confirmBtn = createElement('button', 'btn btn-primary', 'добавить');
+    cancelBtn.addEventListener('click', () => {
+        document.body.removeChild(modal);
+    });
 
 
     confirmBtn.addEventListener('click', async () => {
@@ -2644,8 +2653,8 @@ function openAddCycleModal(onConfirm) {
         document.body.removeChild(modal);
     });
 
-    btnGroup.append( confirmBtn);
-    modalContent.append( input, btnGroup);
+    btnGroup.append(cancelBtn, confirmBtn);
+    modalContent.append(title, input, btnGroup);
     modal.append(modalContent);
     presentKeyboardDockedModal(modal, modalContent);
 
@@ -2823,11 +2832,10 @@ function openEditProgramModal(program) {
     modal.className = 'modal-overlay-edit';
 
     const modalContent = document.createElement('div');
-    modalContent.className = `modal-edit ${MODAL_TEXT_INPUT_CLASS}`;
+    modalContent.className = `modal-edit modal-simple-form ${MODAL_TEXT_INPUT_CLASS}`;
     prepareKeyboardDockedModal(modal, modalContent);
 
-    const title = document.createElement('h3');
-    title.textContent = 'Редактировать программу';
+    const title = createElement('h3', 'modal-simple-form__title', 'Редактировать название программы');
 
     const input = document.createElement('input');
     input.type = 'text';
@@ -2837,7 +2845,12 @@ function openEditProgramModal(program) {
     const btnGroup = document.createElement('div');
     btnGroup.className = 'modal-buttons';
 
-    const saveBtn = createElement('button', 'btn btn-primary', 'изменить');
+    const cancelBtn = createElement('button', 'btn cancel-btn', 'Отмена');
+    const saveBtn = createElement('button', 'btn btn-primary', 'Изменить');
+
+    cancelBtn.addEventListener('click', () => {
+        document.body.removeChild(modal);
+    });
 
     saveBtn.addEventListener('click', async () => {
         const newName = input.value.trim();
@@ -2854,8 +2867,8 @@ function openEditProgramModal(program) {
         }
     });
 
-    btnGroup.append(saveBtn);
-    modalContent.append( input, btnGroup);
+    btnGroup.append(cancelBtn, saveBtn);
+    modalContent.append(title, input, btnGroup);
     modal.append(modalContent);
     presentKeyboardDockedModal(modal, modalContent);
 
@@ -3155,68 +3168,12 @@ function __formatSetDisplayKgReps(displayWeight, displayReps) {
     return `${displayWeight} <small>кг</small> <small>x</small> ${displayReps} <small>пов</small>`;
 }
 
-const KEYBOARD_DOCKED_MODAL_CARET_SETTLE_MS = 180;
-
-let keyboardDockedCaretRefreshTimeoutId = 0;
-let activeKeyboardDockedCaretHost = null;
-
 /** Модалки с вводом текста: циклы, программы, упражнения, подход, комментарии. */
 export const MODAL_TEXT_INPUT_CLASS = 'modal-text-input';
 
 export function prepareKeyboardDockedModal(overlay, host) {
     if (!overlay || !host) return;
     host.classList.add('keyboard-docked-modal-host');
-}
-
-function clearKeyboardDockedCaretRefresh(host = activeKeyboardDockedCaretHost) {
-    if (keyboardDockedCaretRefreshTimeoutId) {
-        clearTimeout(keyboardDockedCaretRefreshTimeoutId);
-        keyboardDockedCaretRefreshTimeoutId = 0;
-    }
-    if (host?.classList) {
-        host.classList.remove('keyboard-docked-modal-host--caret-settling');
-    }
-    if (!host || host === activeKeyboardDockedCaretHost) {
-        activeKeyboardDockedCaretHost = null;
-    }
-}
-
-function refreshKeyboardDockedModalCaret(control, host) {
-    if (!control?.isConnected || !host?.isConnected) return;
-
-    clearKeyboardDockedCaretRefresh();
-    activeKeyboardDockedCaretHost = host;
-    host.classList.add('keyboard-docked-modal-host--caret-settling');
-
-    const canRestoreSelection =
-        typeof control.selectionStart === 'number' &&
-        typeof control.selectionEnd === 'number' &&
-        typeof control.setSelectionRange === 'function';
-    const selectionStart = canRestoreSelection ? control.selectionStart : null;
-    const selectionEnd = canRestoreSelection ? control.selectionEnd : null;
-    const selectionDirection = canRestoreSelection ? control.selectionDirection : 'none';
-
-    keyboardDockedCaretRefreshTimeoutId = window.setTimeout(() => {
-        keyboardDockedCaretRefreshTimeoutId = 0;
-
-        if (control.isConnected) {
-            try {
-                control.focus({ preventScroll: true });
-            } catch (_) {
-                try {
-                    control.focus();
-                } catch (_) {}
-            }
-
-            if (canRestoreSelection && control === document.activeElement) {
-                try {
-                    control.setSelectionRange(selectionStart, selectionEnd, selectionDirection || 'none');
-                } catch (_) {}
-            }
-        }
-
-        clearKeyboardDockedCaretRefresh(host);
-    }, KEYBOARD_DOCKED_MODAL_CARET_SETTLE_MS);
 }
 
 export function presentKeyboardDockedModal(overlay, host, options = {}) {
@@ -6107,16 +6064,22 @@ export function openMediaFullScreen(url, type = 'photo') {
 // =================================================================
 function openAddExerciseModal(program) {
     const modal = createElement('div', 'modal-overlay program-details');
-    const modalContent = createElement('div', `modal-content modal-add-exercise ${MODAL_TEXT_INPUT_CLASS}`);
+    const modalContent = createElement('div', `modal-content modal-add-exercise modal-simple-form ${MODAL_TEXT_INPUT_CLASS}`);
     prepareKeyboardDockedModal(modal, modalContent);
+
+    const title = createElement('h3', 'modal-simple-form__title', 'Новое упражнение');
 
     const input = createElement('input', 'modal-input');
     input.placeholder = 'Название упражнения';
 
     const btnGroup = createElement('div', 'modal-buttons');
 
-    const saveBtn = createElement('button', 'btn btn-primary', 'добавить');
+    const cancelBtn = createElement('button', 'btn cancel-btn', 'Отмена');
+    const saveBtn = createElement('button', 'btn btn-primary', 'Добавить');
 
+    cancelBtn.addEventListener('click', () => {
+        document.body.removeChild(modal);
+    });
 
     saveBtn.addEventListener('click', async () => {
         const name = input.value.trim();
@@ -6131,8 +6094,8 @@ function openAddExerciseModal(program) {
         render();
     });
 
-    btnGroup.append(saveBtn);
-    modalContent.append(input, btnGroup);
+    btnGroup.append(cancelBtn, saveBtn);
+    modalContent.append(title, input, btnGroup);
     modal.append(modalContent);
     presentKeyboardDockedModal(modal, modalContent);
 
@@ -6217,15 +6180,22 @@ function openExerciseMenuModal(program, exercise) {
           if (e.target === overlay) document.body.removeChild(overlay);
       });
 
-      const modal = createElement('div', `modal-content modal-compact modal-edit-exercise-name ${MODAL_TEXT_INPUT_CLASS}`);
+      const modal = createElement('div', `modal-content modal-compact modal-edit-exercise-name modal-simple-form ${MODAL_TEXT_INPUT_CLASS}`);
       prepareKeyboardDockedModal(overlay, modal);
+
+      const title = createElement('h3', 'modal-simple-form__title', 'Редактировать упражнение');
 
       const nameInput = createElement('input', 'modal-input');
       nameInput.type = 'text';
       nameInput.value = exercise.name;
 
-      const controls = createElement('div', 'modal-controls');
+      const controls = createElement('div', 'modal-buttons');
+      const cancel = createElement('button', 'btn cancel-btn', 'Отмена');
       const save = createElement('button', 'btn btn-primary', 'Изменить');
+
+      cancel.addEventListener('click', () => {
+          document.body.removeChild(overlay);
+      });
 
       save.addEventListener('click', async () => {
           const nextName = nameInput.value.trim();
@@ -6243,8 +6213,8 @@ function openExerciseMenuModal(program, exercise) {
           render();
       });
 
-      controls.append(save);
-      modal.append(nameInput, controls);
+      controls.append(cancel, save);
+      modal.append(title, nameInput, controls);
       overlay.appendChild(modal);
       presentKeyboardDockedModal(overlay, modal);
   }
@@ -10068,7 +10038,6 @@ function ensureNativeKeyboardBottomNavBinding() {
                     return;
                 }
                 setKeyboardViewportShift(host, nextShift, safeKeyboardHeight);
-                refreshKeyboardDockedModalCaret(active, host);
                 return;
             }
 
