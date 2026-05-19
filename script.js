@@ -23,6 +23,7 @@ import { attachMonthCarouselSwipe } from './calendar-month-carousel.js';
 import {
     initBottomNav,
     syncBottomNavAfterRender,
+    syncBottomNavTrialCountdown,
     setBottomNavLayoutFromAppVisibility,
     syncSupplementsBottomNavBadge
 } from './nav/bottom-nav.js';
@@ -86,6 +87,8 @@ const firebaseConfig = {
 const CLOUDINARY_CLOUD_NAME = 'dck5p8h6x';
 const CLOUDINARY_UPLOAD_PRESET = 'training_diary';
 const LAST_SELECTED_CYCLE_STORAGE_PREFIX = 'trainingDiary:lastSelectedCycle:v1';
+const LOCAL_BUILD_TRIAL_STARTED_AT_KEY = 'trainingDiary:localBuildTrialStartedAt:v1';
+const LOCAL_BUILD_TRIAL_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
 
 
 // Используем projectId в качестве уникального ID приложения для структуры базы
@@ -257,6 +260,7 @@ let state = {
     isProgramsLoading: false,
 
     userProfile: null,
+    localBuildTrial: null,
     profileCabinetEditing: false,
     profileOriginPage: null,
     appleHealthSyncReturn: initialAppleHealthSyncReturn,
@@ -547,6 +551,96 @@ window.showToast = showToast;
 
 const TOPBAR_BACK_ARROW_MARKUP = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="m3.55 12l7.35 7.35q.375.375.363.875t-.388.875t-.875.375t-.875-.375l-7.7-7.675q-.3-.3-.45-.675T.825 12t.15-.75t.45-.675l7.7-7.7q.375-.375.888-.363t.887.388t.375.875t-.375.875z"></path></svg>`;
 
+let localBuildTrialTickTimer = 0;
+
+function pluralizeRussianUnit(value, one, few, many) {
+    const abs = Math.abs(Number(value) || 0);
+    const mod100 = abs % 100;
+    const mod10 = abs % 10;
+    if (mod100 >= 11 && mod100 <= 14) return many;
+    if (mod10 === 1) return one;
+    if (mod10 >= 2 && mod10 <= 4) return few;
+    return many;
+}
+
+function readLocalBuildTrialStartedAt() {
+    try {
+        const raw = window.localStorage?.getItem?.(LOCAL_BUILD_TRIAL_STARTED_AT_KEY);
+        const parsed = Number(raw);
+        if (!Number.isFinite(parsed) || parsed <= 0) return null;
+        return parsed;
+    } catch (_) {
+        return null;
+    }
+}
+
+function persistLocalBuildTrialStartedAt(value) {
+    try {
+        window.localStorage?.setItem?.(LOCAL_BUILD_TRIAL_STARTED_AT_KEY, String(value));
+    } catch (_) {}
+}
+
+function ensureLocalBuildTrialStartedAt() {
+    if (!isCapacitorIosPlatform()) return null;
+
+    const existing = readLocalBuildTrialStartedAt();
+    if (existing) return existing;
+
+    const startedAt = Date.now();
+    persistLocalBuildTrialStartedAt(startedAt);
+    return startedAt;
+}
+
+function buildLocalBuildTrialUiState(startedAt) {
+    if (!Number.isFinite(startedAt) || startedAt <= 0) return null;
+
+    const expiresAt = startedAt + LOCAL_BUILD_TRIAL_DURATION_MS;
+    const remainingMs = Math.max(0, expiresAt - Date.now());
+    const totalMinutes = Math.floor(remainingMs / 60000);
+    const days = Math.floor(totalMinutes / (24 * 60));
+    const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+    const minutes = totalMinutes % 60;
+
+    return {
+        startedAt,
+        expiresAt,
+        remainingMs,
+        days,
+        hours,
+        minutes,
+        navText: `До окончания подписки ${days} ${pluralizeRussianUnit(days, 'день', 'дня', 'дней')} ${hours} ${pluralizeRussianUnit(hours, 'час', 'часа', 'часов')} ${minutes} мин`
+    };
+}
+
+function syncLocalBuildTrialCountdown() {
+    if (!isCapacitorIosPlatform()) {
+        state.localBuildTrial = null;
+        syncBottomNavTrialCountdown('');
+        return null;
+    }
+
+    const startedAt = ensureLocalBuildTrialStartedAt();
+    state.localBuildTrial = buildLocalBuildTrialUiState(startedAt);
+    syncBottomNavTrialCountdown(state.localBuildTrial?.navText || '');
+    return state.localBuildTrial;
+}
+
+function scheduleLocalBuildTrialCountdownTick() {
+    if (localBuildTrialTickTimer) {
+        window.clearTimeout(localBuildTrialTickTimer);
+        localBuildTrialTickTimer = 0;
+    }
+
+    syncLocalBuildTrialCountdown();
+
+    if (!isCapacitorIosPlatform()) return;
+
+    const nextDelay = Math.max(1000, 60000 - (Date.now() % 60000) + 50);
+    localBuildTrialTickTimer = window.setTimeout(() => {
+        scheduleLocalBuildTrialCountdownTick();
+    }, nextDelay);
+}
+
 
 
 // 🔥 Управление видимостью трех основных экранов
@@ -574,6 +668,8 @@ function toggleAppVisibility(isAuthenticated) {
         if (container) container.style.display = 'block';
         setBottomNavLayoutFromAppVisibility(true, true);
     }
+
+    syncLocalBuildTrialCountdown();
 
 }
 
@@ -10223,6 +10319,7 @@ window.addEventListener('unhandledrejection', (event) => {
 
 runBootstrapStep('ensureAppViewportHeightBinding', ensureAppViewportHeightBinding);
 runBootstrapStep('ensureNativeKeyboardBottomNavBinding', ensureNativeKeyboardBottomNavBinding);
+runBootstrapStep('scheduleLocalBuildTrialCountdownTick', scheduleLocalBuildTrialCountdownTick);
 
 export function render() {
     const root = document.getElementById('root');

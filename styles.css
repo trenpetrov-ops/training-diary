@@ -20810,6 +20810,7 @@ html.supplement-table-sheet-editing div#supplements-content.supplements-page--ta
     min-height: 0;
     max-height: none;
     overflow: auto;
+    scroll-behavior: smooth;
     overscroll-behavior: none;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-x pan-y;

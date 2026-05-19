@@ -60,6 +60,8 @@ let supplementTableSheetViewportAbortController = null;
 let supplementPlanHistoryState = createSupplementPlanHistoryDefaultState();
 let supplementsCurrentViewMode = 'calendar';
 let supplementTableEditorDeferredScrollTimer = null;
+let supplementTableViewportSyncFrameId = 0;
+let supplementTableViewportSyncTimeoutId = 0;
 
 const SUPPLEMENT_SHEET_TEXT_COLORS = ['#111827', '#d93c3c', '#0f766e', '#2563eb', '#7c3aed', '#b45309'];
 const SUPPLEMENT_SHEET_FILL_COLORS = ['', '#fff7cc', '#dff5df', '#dbeafe', '#f3e8ff', '#fee2e2'];
@@ -1328,6 +1330,14 @@ function applySupplementTableCellSelectionVisual(button) {
 function removeSupplementTableSheetEditorShell() {
     window.clearTimeout(supplementTableEditorDeferredScrollTimer);
     supplementTableEditorDeferredScrollTimer = null;
+    if (supplementTableViewportSyncFrameId) {
+        cancelAnimationFrame(supplementTableViewportSyncFrameId);
+        supplementTableViewportSyncFrameId = 0;
+    }
+    if (supplementTableViewportSyncTimeoutId) {
+        window.clearTimeout(supplementTableViewportSyncTimeoutId);
+        supplementTableViewportSyncTimeoutId = 0;
+    }
     supplementTableSheetViewportAbortController?.abort?.();
     supplementTableSheetViewportAbortController = null;
     const activeWrapper = supplementTableSheetState.selectedCell?.tableWrapper || null;
@@ -1667,7 +1677,36 @@ function getSupplementTableDesiredExtraPadding() {
     return 0;
 }
 
-function scrollSupplementTableSelectedCellIntoView() {
+function scheduleSupplementTableViewportSync({ behavior = 'auto', deferMs = 0 } = {}) {
+    if (supplementTableViewportSyncFrameId) {
+        cancelAnimationFrame(supplementTableViewportSyncFrameId);
+        supplementTableViewportSyncFrameId = 0;
+    }
+    if (supplementTableViewportSyncTimeoutId) {
+        window.clearTimeout(supplementTableViewportSyncTimeoutId);
+        supplementTableViewportSyncTimeoutId = 0;
+    }
+
+    const run = () => {
+        supplementTableViewportSyncFrameId = requestAnimationFrame(() => {
+            supplementTableViewportSyncFrameId = 0;
+            syncSupplementTableEditorViewportOffset();
+            scrollSupplementTableSelectedCellIntoView({ behavior });
+        });
+    };
+
+    if (deferMs > 0) {
+        supplementTableViewportSyncTimeoutId = window.setTimeout(() => {
+            supplementTableViewportSyncTimeoutId = 0;
+            run();
+        }, deferMs);
+        return;
+    }
+
+    run();
+}
+
+function scrollSupplementTableSelectedCellIntoView({ behavior = 'auto' } = {}) {
     const selectedCell = supplementTableSheetState.selectedCell;
     const shell = supplementTableSheetElements?.shell;
     if (!selectedCell?.buttonEl || !shell) return;
@@ -1679,7 +1718,7 @@ function scrollSupplementTableSelectedCellIntoView() {
     const currentExtraPadding = getSupplementTableAddWeeksExtraPadding(wrapper);
     if (currentExtraPadding !== desiredExtraPadding) {
         setSupplementTableAddWeeksExtraPadding(wrapper, desiredExtraPadding);
-        requestAnimationFrame(scrollSupplementTableSelectedCellIntoView);
+        scheduleSupplementTableViewportSync({ behavior, deferMs: 32 });
         return;
     }
 
@@ -1693,9 +1732,19 @@ function scrollSupplementTableSelectedCellIntoView() {
     if (buttonRect.bottom > bottomLimit) {
         const overflowBottom = Math.max(0, Math.ceil(buttonRect.bottom - bottomLimit));
         const maxScrollTop = Math.max(0, Math.round(wrapper.scrollHeight - wrapper.clientHeight));
-        wrapper.scrollTop = Math.min(maxScrollTop, wrapper.scrollTop + overflowBottom);
+        const nextScrollTop = Math.min(maxScrollTop, wrapper.scrollTop + overflowBottom);
+        if (typeof wrapper.scrollTo === 'function') {
+            wrapper.scrollTo({ top: nextScrollTop, behavior });
+        } else {
+            wrapper.scrollTop = nextScrollTop;
+        }
     } else if (buttonRect.top < topLimit) {
-        wrapper.scrollTop = Math.max(0, wrapper.scrollTop - Math.ceil(topLimit - buttonRect.top));
+        const nextScrollTop = Math.max(0, wrapper.scrollTop - Math.ceil(topLimit - buttonRect.top));
+        if (typeof wrapper.scrollTo === 'function') {
+            wrapper.scrollTo({ top: nextScrollTop, behavior });
+        } else {
+            wrapper.scrollTop = nextScrollTop;
+        }
     }
 }
 
@@ -1744,15 +1793,14 @@ function ensureSupplementTableSheetEditorShell() {
         supplementTableSheetState.timePanelOpen = false;
         supplementTableSheetState.textInputFocused = true;
         supplementTableSheetState.commitUiPinned = false;
-        syncSupplementTableEditorViewportOffset();
         syncSupplementTableEditorShell();
-        requestAnimationFrame(scrollSupplementTableSelectedCellIntoView);
+        scheduleSupplementTableViewportSync({ behavior: 'smooth', deferMs: 16 });
     });
     textInput.addEventListener('blur', () => {
         supplementTableSheetState.textInputFocused = false;
         window.setTimeout(() => {
-            syncSupplementTableEditorViewportOffset();
             syncSupplementTableEditorShell();
+            scheduleSupplementTableViewportSync({ behavior: 'auto', deferMs: 16 });
         }, 32);
     });
 
@@ -1995,8 +2043,11 @@ function ensureSupplementTableSheetEditorShell() {
     supplementTableSheetViewportAbortController?.abort?.();
     supplementTableSheetViewportAbortController = new AbortController();
     const syncViewport = () => {
-        syncSupplementTableEditorViewportOffset();
-        scrollSupplementTableSelectedCellIntoView();
+        const behavior =
+            supplementTableSheetState.textInputFocused || isSupplementTableEditorInputFocused()
+                ? 'smooth'
+                : 'auto';
+        scheduleSupplementTableViewportSync({ behavior, deferMs: 16 });
     };
     const pinCommitUiForBlockedDismiss = () => {
         if (!supplementTableSheetState.textInputFocused) return;
@@ -2138,10 +2189,15 @@ function syncSupplementTableEditorShell() {
     const timeValues = draft.times.length > 0 ? draft.times : [''];
     timeValues.forEach((timeValue) => appendSupplementTableEditorTimeRow(refs.timesList, timeValue));
 
-    syncSupplementTableEditorViewportOffset();
-    requestAnimationFrame(scrollSupplementTableSelectedCellIntoView);
+    const viewportSyncBehavior =
+        supplementTableSheetState.textInputFocused || isSupplementTableEditorInputFocused()
+            ? 'smooth'
+            : 'auto';
+    scheduleSupplementTableViewportSync({ behavior: viewportSyncBehavior, deferMs: 16 });
     window.clearTimeout(supplementTableEditorDeferredScrollTimer);
-    supplementTableEditorDeferredScrollTimer = window.setTimeout(scrollSupplementTableSelectedCellIntoView, 220);
+    supplementTableEditorDeferredScrollTimer = window.setTimeout(() => {
+        scheduleSupplementTableViewportSync({ behavior: viewportSyncBehavior, deferMs: 0 });
+    }, 120);
 }
 
 function syncSupplementTableTopBarMenu() {

@@ -48,6 +48,27 @@
     /* transition: transform 0.2s ease, opacity 0.16s ease, color 0.3s ease; */
 }
 
+.navigation-trial-countdown {
+    position: absolute;
+    left: 50%;
+    bottom: 4px;
+    transform: translateX(-50%);
+    max-width: calc(100% - 20px);
+    font-size: 10px;
+    line-height: 1.1;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: #6f7685;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+}
+
+.navigation-trial-countdown[hidden] {
+    display: none !important;
+}
+
 body.supplement-table-sheet-editing .navigation,
 body.supplement-table-sheet-editing .navigation-fon {
     border-radius: 0 !important;
