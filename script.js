@@ -9930,8 +9930,18 @@ function ensureNativeKeyboardBottomNavBinding() {
     if (!Keyboard?.addListener) return;
     const useManualViewportShift = isCapacitorIosPlatform();
     let keyboardViewportSyncFrameId = 0;
+    let keyboardHideFallbackTimer = 0;
+
+    const clearKeyboardHideFallbackTimer = () => {
+        if (!keyboardHideFallbackTimer) return;
+        window.clearTimeout(keyboardHideFallbackTimer);
+        keyboardHideFallbackTimer = 0;
+    };
 
     const setKeyboardVisible = (visible, keyboardHeight = 0) => {
+        if (visible) {
+            clearKeyboardHideFallbackTimer();
+        }
         document.body?.classList.toggle('app-keyboard-visible', Boolean(visible));
         if (useManualViewportShift && visible) {
             const nextKeyboardHeight = Math.max(0, Math.round(Number(keyboardHeight) || 0));
@@ -9948,6 +9958,15 @@ function ensureNativeKeyboardBottomNavBinding() {
             setKeyboardScrollHost(null, 0);
         }
         dispatchAppKeyboardViewportChange(Boolean(visible), visible ? keyboardHeight : 0);
+    };
+
+    const scheduleKeyboardHideFallback = () => {
+        clearKeyboardHideFallbackTimer();
+        keyboardHideFallbackTimer = window.setTimeout(() => {
+            keyboardHideFallbackTimer = 0;
+            if (getFocusedKeyboardControl()) return;
+            setKeyboardVisible(false, 0);
+        }, 180);
     };
 
     const getFocusedKeyboardControl = () => {
@@ -10143,6 +10162,7 @@ function ensureNativeKeyboardBottomNavBinding() {
 
     document.addEventListener('focusin', (event) => {
         if (!event.target?.matches?.('input:not([type="hidden"]), textarea, select, [contenteditable="true"]')) return;
+        clearKeyboardHideFallbackTimer();
         const host = resolveKeyboardShiftHost(event.target);
         const useDockedModalHost = isKeyboardDockedModalHost(host);
         if (document.body?.classList.contains('app-keyboard-visible')) {
@@ -10155,12 +10175,19 @@ function ensureNativeKeyboardBottomNavBinding() {
         if (useDockedModalHost) return;
         scheduleFocusedKeyboardControlViewportSync(40, 180);
     });
+    document.addEventListener('focusout', (event) => {
+        if (!event.target?.matches?.('input:not([type="hidden"]), textarea, select, [contenteditable="true"]')) return;
+        scheduleKeyboardHideFallback();
+    });
 
     window.addEventListener('resize', () => {
         if (!useManualViewportShift || !document.body?.classList.contains('app-keyboard-visible')) return;
         requestFocusedKeyboardControlViewportSync();
     });
-    window.addEventListener('pagehide', () => setKeyboardVisible(false, 0));
+    window.addEventListener('pagehide', () => {
+        clearKeyboardHideFallbackTimer();
+        setKeyboardVisible(false, 0);
+    });
 }
 
 function syncRootScrollLockState() {

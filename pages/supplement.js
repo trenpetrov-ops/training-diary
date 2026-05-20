@@ -26,6 +26,7 @@ import { prepareKeyboardDockedModal } from '../script.js';
 import { presentKeyboardDockedModal } from '../script.js';
 import { renderTopBar } from '../script.js';
 import { render } from '../script.js';
+import { requestAppChromeSync } from '../script.js';
 import { attachMonthCarouselSwipe } from '../calendar-month-carousel.js';
 import {
     clearMealBottomNavOverlayMode,
@@ -73,6 +74,7 @@ function createSupplementTableSheetDefaultState() {
         selectedCell: null,
         draft: null,
         initialDraft: null,
+        bufferedPlanBase: null,
         history: [],
         historyIndex: -1,
         formatPanelOpen: false,
@@ -369,6 +371,8 @@ function endSupplementDoseMergeMode() {
     document.getElementById('supplement-dose-merge-toolbar')?.remove();
     document.querySelector('.top-bar')?.classList?.remove('top-bar--supplement-dose-merge');
     supplementDoseMergeSession = null;
+    clearSupplementDoseLongPressPopover();
+    syncSupplementTableTopBarMenu();
 }
 
 function syncSupplementDoseMergeHighlights() {
@@ -398,6 +402,192 @@ function syncSupplementDoseMergeHighlights() {
     }
 }
 
+function isSupplementDoseMergeSessionRangeSelected(session, rowIndex) {
+    if (!session || !Number.isInteger(rowIndex)) return false;
+    const lo = Math.min(session.anchorIdx, session.extentIdx);
+    const hi = Math.max(session.anchorIdx, session.extentIdx);
+    return rowIndex >= lo && rowIndex <= hi;
+}
+
+function getSupplementDoseMergeSessionSelectionStats(session, plan = state.supplementPlan) {
+    if (!session || !Array.isArray(plan?.data)) {
+        return { canMerge: false, canCopy: false };
+    }
+    const lo = Math.min(session.anchorIdx, session.extentIdx);
+    const hi = Math.max(session.anchorIdx, session.extentIdx);
+    return {
+        canMerge: hi - lo >= 1,
+        canCopy: (plan.data.slice(lo, hi + 1) || []).some((day) =>
+            hasSupplementDoseValue(day?.doses?.[session.supplementName])
+        )
+    };
+}
+
+function copySupplementDoseMergeSelectionToClipboard() {
+    const session = supplementDoseMergeSession;
+    const clipboardData = buildSupplementDoseRangeClipboardFromSession(session, state.supplementPlan);
+    if (!clipboardData || !clipboardData.values.some((value) => hasSupplementDoseValue(value))) {
+        showToast('Нет данных для копирования');
+        return;
+    }
+    setSupplementDoseRangeClipboardValue(clipboardData, {
+        dateStr: state.supplementPlan?.data?.[session.anchorIdx]?.date || '',
+        supplementName: session.supplementName
+    });
+    navigator.vibrate?.(8);
+    endSupplementDoseMergeMode();
+    showToast('Диапазон скопирован');
+}
+
+async function deleteSupplementDoseMergeSelection() {
+    const session = supplementDoseMergeSession;
+    if (!session || !Array.isArray(state.supplementPlan?.data)) return;
+
+    const lo = Math.min(session.anchorIdx, session.extentIdx);
+    const hi = Math.max(session.anchorIdx, session.extentIdx);
+    const plan = JSON.parse(JSON.stringify(state.supplementPlan || { supplements: [], data: [] }));
+    ensureSupplementEntrySlots(plan);
+
+    const startDate = plan.data[lo]?.date;
+    const endDate = plan.data[hi]?.date;
+    if (!startDate || !endDate) return;
+
+    filterSupplementDoseMergesOverlappingRange(plan, session.slot, session.supplementName, startDate, endDate);
+    for (let i = lo; i <= hi; i += 1) {
+        if (!plan.data[i]) continue;
+        plan.data[i].doses = plan.data[i].doses || {};
+        plan.data[i].doses[session.supplementName] = '';
+    }
+
+    const previousPlan = state.supplementPlan;
+    state.supplementPlan = plan;
+    syncSupplementsBottomNavBadge(plan);
+    state._supplementsSkipNextRenderSignature = getSupplementPlanSnapshotSignature(plan);
+    rememberCurrentSupplementTableScroll();
+    endSupplementDoseMergeMode();
+
+    if (!refreshSupplementTableWindowInPlace()) {
+        await renderSupplementsPage();
+    }
+
+    const saved = await updateSupplementPlanInFirestore(plan, { previousPlanOverride: previousPlan });
+    if (!saved) {
+        state.supplementPlan = previousPlan;
+        syncSupplementsBottomNavBadge(previousPlan);
+        delete state._supplementsSkipNextRenderSignature;
+        if (!refreshSupplementTableWindowInPlace()) {
+            await renderSupplementsPage();
+        }
+        return;
+    }
+
+    showToast('Удалено');
+}
+
+function showSupplementDoseMergeRangeActionMenu(tableWrapper, anchorElement) {
+    clearSupplementDoseLongPressPopover();
+    const session = supplementDoseMergeSession;
+    if (!tableWrapper || !anchorElement || !session) return;
+
+    const { canMerge, canCopy } = getSupplementDoseMergeSessionSelectionStats(session);
+    const canDelete = canCopy;
+    const popover = createElement(
+        'div',
+        'supplement-dose-longpress-popover supplement-dose-longpress-popover--menu'
+    );
+
+    const rows = [
+        { id: 'mergeSelection', label: 'Объединить', enabled: canMerge },
+        { id: 'copySelection', label: 'Копировать', enabled: canCopy }
+    ];
+    rows.length = 0;
+    rows.push(
+        { id: 'copySelection', label: 'Копировать', enabled: canCopy },
+        { id: 'deleteSelection', label: 'Удалить', enabled: canDelete },
+        { id: 'divider' },
+        { id: 'mergeSelection', label: 'Объединить', enabled: canMerge }
+    );
+
+    const close = () => {
+        if (!popover.isConnected) return;
+        document.removeEventListener('pointerdown', handlePointerDown, true);
+        tableWrapper.removeEventListener('scroll', handleWrapperScroll);
+        window.removeEventListener('resize', handleViewportChange);
+        popover.remove();
+        if (supplementDoseLongPressOverlayCleanup === close) {
+            supplementDoseLongPressOverlayCleanup = null;
+        }
+    };
+
+    rows.forEach((row) => {
+        if (row.id === 'divider') {
+            popover.append(createElement('div', 'supplement-dose-longpress-menu-divider'));
+            return;
+        }
+        const btn = createElement('button', 'supplement-dose-longpress-menu-item', row.label);
+        btn.type = 'button';
+        btn.disabled = !row.enabled;
+        if (!row.enabled) btn.classList.add('supplement-dose-longpress-menu-item--disabled');
+        btn.addEventListener('click', async (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (!row.enabled) return;
+            close();
+            if (row.id === 'copySelection') {
+                copySupplementDoseMergeSelectionToClipboard();
+                return;
+            }
+            if (row.id === 'deleteSelection') {
+                await deleteSupplementDoseMergeSelection();
+                return;
+            }
+            if (row.id === 'mergeSelection') {
+                await commitSupplementDoseMerge();
+            }
+        });
+        popover.append(btn);
+    });
+
+    document.body.append(popover);
+
+    const syncPosition = () => {
+        if (!popover.isConnected || !anchorElement.isConnected) return;
+        const anchorRect = anchorElement.getBoundingClientRect();
+        const viewportWidth = Math.round(window.innerWidth || document.documentElement?.clientWidth || 0);
+        const viewportHeight = Math.round(window.innerHeight || document.documentElement?.clientHeight || 0);
+        const popoverWidth = Math.round(popover.offsetWidth || 160);
+        const popoverHeight = Math.round(popover.offsetHeight || 120);
+        const nextLeft = clampValue(
+            Math.round(anchorRect.left + (anchorRect.width - popoverWidth) / 2),
+            8,
+            Math.max(8, viewportWidth - popoverWidth - 8)
+        );
+        let nextTop = Math.round(anchorRect.top - popoverHeight - 8);
+        if (nextTop < 8) {
+            nextTop = Math.round(anchorRect.bottom + 8);
+        }
+        nextTop = clampValue(nextTop, 8, Math.max(8, viewportHeight - popoverHeight - 8));
+        popover.style.left = `${nextLeft}px`;
+        popover.style.top = `${nextTop}px`;
+    };
+
+    const handleViewportChange = () => syncPosition();
+    const handleWrapperScroll = () => close();
+    const handlePointerDown = (event) => {
+        if (popover.contains(event.target)) return;
+        if (tableWrapper.contains(event.target)) {
+            suppressNextSupplementTableDoseCellClick(tableWrapper);
+        }
+        close();
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    tableWrapper.addEventListener('scroll', handleWrapperScroll, { passive: true });
+    window.addEventListener('resize', handleViewportChange);
+    requestAnimationFrame(syncPosition);
+    supplementDoseLongPressOverlayCleanup = close;
+}
+
 function startSupplementDoseMergeMode(tableWrapper, sourceButton) {
     endSupplementDoseMergeMode();
     const dateStr = sourceButton?.dataset?.date || '';
@@ -423,12 +613,7 @@ function startSupplementDoseMergeMode(tableWrapper, sourceButton) {
     row.append(cancelBtn, mergeBtn, copyBtn);
     bar.append(row, hint);
 
-    const topBar = document.querySelector('.top-bar');
-    if (!topBar) {
-        return;
-    }
-    topBar.classList.add('top-bar--supplement-dose-merge');
-    topBar.insertBefore(bar, topBar.firstChild);
+    clearSupplementTableCellSelection({ preserveMenu: false, revertPreview: false });
 
     const onTableClickCapture = (e) => {
         const sess = supplementDoseMergeSession;
@@ -443,16 +628,13 @@ function startSupplementDoseMergeMode(tableWrapper, sourceButton) {
         }
         const j = state.supplementPlan?.data?.findIndex((d) => d.date === btn.dataset.date) ?? -1;
         if (j < 0) return;
+        if (isSupplementDoseMergeSessionRangeSelected(sess, j)) {
+            showSupplementDoseMergeRangeActionMenu(sess.tableWrapper, btn);
+            return;
+        }
         hint.textContent = '';
         sess.extentIdx = j;
         syncSupplementDoseMergeHighlights();
-        const lo = Math.min(sess.anchorIdx, sess.extentIdx);
-        const hi = Math.max(sess.anchorIdx, sess.extentIdx);
-        sess.mergeBtn.disabled = hi - lo < 1;
-        const selectedValues = state.supplementPlan?.data?.slice(lo, hi + 1) || [];
-        sess.copyBtn.disabled = !selectedValues.some((day) =>
-            hasSupplementDoseValue(day?.doses?.[sess.supplementName])
-        );
     };
 
     supplementDoseMergeSession = {
@@ -488,6 +670,7 @@ function startSupplementDoseMergeMode(tableWrapper, sourceButton) {
     tableWrapper.addEventListener('click', onTableClickCapture, true);
     syncSupplementDoseMergeHighlights();
     copyBtn.disabled = true;
+    syncSupplementTableTopBarMenu();
 }
 
 async function commitSupplementDoseMerge() {
@@ -528,14 +711,29 @@ async function commitSupplementDoseMerge() {
         plan.data[i].doses[name] = mergedValue ? cloneSupplementDoseValue(mergedValue) : '';
     }
 
-    endSupplementDoseMergeMode();
     const previousPlan = state.supplementPlan;
+    state.supplementPlan = plan;
+    syncSupplementsBottomNavBadge(plan);
+    state._supplementsSkipNextRenderSignature = getSupplementPlanSnapshotSignature(plan);
     rememberCurrentSupplementTableScroll();
+    endSupplementDoseMergeMode();
+
+    if (!refreshSupplementTableWindowInPlace()) {
+        await renderSupplementsPage();
+    }
     const saved = await updateSupplementPlanInFirestore(plan, { previousPlanOverride: previousPlan });
     if (saved) {
         showToast('Ячейки объединены');
     }
-    renderSupplementsPage();
+    if (!saved) {
+        state.supplementPlan = previousPlan;
+        syncSupplementsBottomNavBadge(previousPlan);
+        delete state._supplementsSkipNextRenderSignature;
+        if (!refreshSupplementTableWindowInPlace()) {
+            await renderSupplementsPage();
+        }
+        return;
+    }
 }
 
 async function applySplitSupplementDoseMerge(button) {
@@ -581,12 +779,39 @@ async function applySplitSupplementDoseMerge(button) {
     );
 
     const previousPlan = state.supplementPlan;
+    state.supplementPlan = plan;
+    syncSupplementsBottomNavBadge(plan);
+    state._supplementsSkipNextRenderSignature = getSupplementPlanSnapshotSignature(plan);
     rememberCurrentSupplementTableScroll();
+
+    if (!refreshSupplementTableWindowInPlace()) {
+        await renderSupplementsPage();
+    }
+    const tableWrapper = supplementTableVirtualState?.tableWrapper || document.getElementById('supplement-table-wrapper');
+    syncSupplementDoseButtonsForDates(tableWrapper, plan, name, slot, dates);
+    if (doesSupplementTableSelectionMatchCell(dateStr, supplementName, slot)) {
+        supplementTableSheetState.selectedCell.mergeRange = null;
+        syncSupplementTableSelectionCommittedRawDose(valueToKeep ? cloneSupplementDoseValue(valueToKeep) : '');
+    }
     const saved = await updateSupplementPlanInFirestore(plan, { previousPlanOverride: previousPlan });
     if (saved) {
         showToast('Объединение снято');
     }
-    renderSupplementsPage();
+    if (!saved) {
+        state.supplementPlan = previousPlan;
+        syncSupplementsBottomNavBadge(previousPlan);
+        delete state._supplementsSkipNextRenderSignature;
+        if (!refreshSupplementTableWindowInPlace()) {
+            await renderSupplementsPage();
+        }
+        syncSupplementDoseButtonsForDates(tableWrapper, previousPlan, name, slot, dates);
+        if (doesSupplementTableSelectionMatchCell(dateStr, supplementName, slot)) {
+            const previousCommittedValue = getSupplementDoseValueFromPlanData(previousPlan, dateStr, supplementName);
+            supplementTableSheetState.selectedCell.mergeRange = merge;
+            syncSupplementTableSelectionCommittedRawDose(previousCommittedValue);
+        }
+        return;
+    }
 }
 
 export function sanitizeSupplementPlan(planData) {
@@ -805,6 +1030,7 @@ export async function renderSupplementsPage() {
             createElement('div', 'muted', 'Цикл не найден. Выберите другой.')
         );
         root.append(contentContainer);
+        requestAppChromeSync();
         return false;
     }
 
@@ -827,6 +1053,7 @@ export async function renderSupplementsPage() {
             createElement('div', 'muted', 'План добавок пока не загружен.')
         );
         root.append(contentContainer);
+        requestAppChromeSync();
         return false;
     }
 
@@ -846,6 +1073,7 @@ export async function renderSupplementsPage() {
         }
         title.innerHTML = `Добавки: <span>${formatDayAndMonth(state.supplementCalendarDetailDate)}</span>`;
         renderSupplementCalendarDayDetailsPage(contentContainer, activePlanData, state.supplementCalendarDetailDate);
+        requestAppChromeSync();
         return;
     }
 
@@ -870,6 +1098,7 @@ export async function renderSupplementsPage() {
         }
         renderSupplementsTableView(contentContainer, state.supplementPlan || activePlanData);
     }
+    requestAppChromeSync();
     return;
 
     // TODO: здесь у тебя дальше идёт рендер таблицы / карточек добавок
@@ -1101,6 +1330,7 @@ export function isSupplementsTableViewActive() {
 
 function setSupplementsViewMode(mode) {
     supplementsCurrentViewMode = mode === 'table' ? 'table' : 'calendar';
+    requestAppChromeSync();
 }
 
 function getSupplementsTableRangeMode() {
@@ -1307,8 +1537,16 @@ function isSupplementTableSheetDraftDirty() {
     );
 }
 
+function hasSupplementTableBufferedPlanChanges() {
+    return Boolean(supplementTableSheetState.bufferedPlanBase);
+}
+
+function hasSupplementTablePendingSaveChanges() {
+    return isSupplementTableSheetDraftDirty() || hasSupplementTableBufferedPlanChanges();
+}
+
 export function shouldBlockSupplementTablePageNavigation() {
-    if (!isSupplementTableSheetDraftDirty()) return false;
+    if (!hasSupplementTablePendingSaveChanges()) return false;
     showToast('Сохраните данные');
     return true;
 }
@@ -1350,6 +1588,15 @@ function removeSupplementTableSheetEditorShell() {
 
 function clearSupplementTableCellSelection({ preserveMenu = false, revertPreview = true } = {}) {
     const selectedCell = supplementTableSheetState.selectedCell;
+    const bufferedPlanBase = supplementTableSheetState.bufferedPlanBase;
+    if (bufferedPlanBase && revertPreview) {
+        state.supplementPlan = cloneSupplementPlanHistoryEntry(bufferedPlanBase);
+        syncSupplementsBottomNavBadge(state.supplementPlan);
+        delete state._supplementsSkipNextRenderSignature;
+        if (!refreshSupplementTableWindowInPlace()) {
+            renderSupplementsPage();
+        }
+    }
     if (selectedCell?.buttonEl && revertPreview) {
         updateSupplementDoseCellButton(selectedCell.buttonEl, selectedCell.originalRawDose);
     }
@@ -1360,6 +1607,7 @@ function clearSupplementTableCellSelection({ preserveMenu = false, revertPreview
     supplementTableSheetState.selectedCell = null;
     supplementTableSheetState.draft = null;
     supplementTableSheetState.initialDraft = null;
+    supplementTableSheetState.bufferedPlanBase = null;
     supplementTableSheetState.history = [];
     supplementTableSheetState.historyIndex = -1;
     supplementTableSheetState.formatPanelOpen = false;
@@ -1421,6 +1669,106 @@ function syncSupplementTableSelectionCommittedRawDose(rawDose) {
     }
     syncSupplementTableEditorShell();
     syncSupplementTableTopBarMenu();
+}
+
+function setSupplementTableCellSelection(button, mergeRange = null, { preserveEditorFocus = false } = {}) {
+    if (!button?.dataset?.date || !button?.dataset?.supplementName) return;
+
+    clearSupplementTableCellSelectionVisual();
+
+    const rawDose = getSupplementDoseFromState(button.dataset.date, button.dataset.supplementName);
+    const draft = createSupplementTableCellDraft(rawDose);
+
+    supplementTableSheetState.selectedCell = {
+        buttonEl: button,
+        tableWrapper: button.closest('.supplement-table-wrapper'),
+        dateStr: button.dataset.date,
+        supplementName: button.dataset.supplementName,
+        slot: Number(button.dataset.supplementSlot),
+        mergeRange: mergeRange || null,
+        originalRawDose: cloneSupplementDoseValue(rawDose)
+    };
+    supplementTableSheetState.menuOpen = true;
+    supplementTableSheetState.draft = cloneSupplementTableCellDraft(draft);
+    supplementTableSheetState.initialDraft = cloneSupplementTableCellDraft(draft);
+    supplementTableSheetState.history = [cloneSupplementTableCellDraft(draft)];
+    supplementTableSheetState.historyIndex = 0;
+    supplementTableSheetState.formatPanelOpen = false;
+    supplementTableSheetState.formatColorPaletteOpen = false;
+    supplementTableSheetState.timePanelOpen = Boolean(draft.times.length > 0);
+    supplementTableSheetState.textInputFocused = preserveEditorFocus;
+    supplementTableSheetState.commitUiPinned = false;
+    supplementTableSheetState.numericPadMode = false;
+
+    applySupplementTableCellSelectionVisual(button);
+    syncSupplementTableEditorShell();
+
+    if (preserveEditorFocus) {
+        requestAnimationFrame(() => {
+            supplementTableSheetElements?.textInput?.focus?.({ preventScroll: true });
+        });
+    }
+}
+
+function applySupplementTableSelectionDraftLocally() {
+    const selectedCell = supplementTableSheetState.selectedCell;
+    if (!selectedCell) return { changed: false, scope: 'none' };
+
+    const previousPlan = cloneSupplementPlanHistoryEntry(state.supplementPlan || { supplements: [], data: [] });
+    const previousRawDose = selectedCell.originalRawDose;
+    const nextRawDose = buildSupplementDoseValueFromDraft(supplementTableSheetState.draft, previousRawDose);
+    const plan = JSON.parse(JSON.stringify(state.supplementPlan || { supplements: [], data: [] }));
+
+    let scope = 'single';
+    if (!hasSupplementDoseValue(nextRawDose)) {
+        const result = clearSupplementDoseCellOrMergeInPlan(
+            plan,
+            selectedCell.dateStr,
+            selectedCell.supplementName,
+            selectedCell.slot
+        );
+        scope = result.scope;
+        if (scope === 'none') {
+            resetSupplementTableSheetSelectionDraftState();
+            syncSupplementTableEditorShell();
+            return { changed: false, scope };
+        }
+    } else {
+        const datesToSave =
+            selectedCell.mergeRange?.startDate && selectedCell.mergeRange?.endDate
+                ? getSupplementDoseMergeDateStrings(plan, selectedCell.mergeRange)
+                : [selectedCell.dateStr];
+
+        datesToSave.forEach((dateStr) => {
+            const dayIndex = ensureSupplementDayRecord(plan, dateStr);
+            if (dayIndex < 0) return;
+            plan.data[dayIndex].doses = plan.data[dayIndex].doses || {};
+            plan.data[dayIndex].doses[selectedCell.supplementName] = cloneSupplementDoseValue(nextRawDose);
+        });
+        scope = datesToSave.length > 1 ? 'merge' : 'single';
+    }
+
+    if (!supplementTableSheetState.bufferedPlanBase) {
+        supplementTableSheetState.bufferedPlanBase = previousPlan;
+    }
+
+    state.supplementPlan = plan;
+    syncSupplementsBottomNavBadge(plan);
+    state._supplementsSkipNextRenderSignature = getSupplementPlanSnapshotSignature(plan);
+    rememberCurrentSupplementTableScroll();
+
+    if (scope === 'single' && selectedCell.buttonEl?.isConnected) {
+        updateSupplementDoseCellButton(selectedCell.buttonEl, nextRawDose);
+        applySupplementTableCellSelectionVisual(selectedCell.buttonEl);
+    } else if (!refreshSupplementTableWindowInPlace()) {
+        renderSupplementsPage();
+    }
+
+    selectedCell.originalRawDose = cloneSupplementDoseValue(nextRawDose);
+    resetSupplementTableSheetSelectionDraftState();
+    syncSupplementTableEditorShell();
+
+    return { changed: true, scope, nextRawDose };
 }
 
 function pushSupplementTableSheetHistorySnapshot(snapshot) {
@@ -1812,6 +2160,7 @@ function ensureSupplementTableSheetEditorShell() {
     }
 
     const shell = createElement('div', 'supplement-sheet-editor');
+    const formulaWrap = createElement('div', 'supplement-sheet-editor__formula-row');
     const formulaRow = createElement('div', 'supplement-sheet-editor__formula');
     const formulaIcon = createElement('button', 'supplement-sheet-editor__formula-icon');
     formulaIcon.type = 'button';
@@ -1847,7 +2196,7 @@ function ensureSupplementTableSheetEditorShell() {
     blurBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 512 512" aria-hidden="true"><title>Checkmark-sharp SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="44" d="M416 128L192 384l-96-96"></path></svg>`;
     blurBtn.addEventListener('click', async () => {
         supplementTableSheetState.commitUiPinned = false;
-        if (isSupplementTableSheetDraftDirty()) {
+        if (hasSupplementTablePendingSaveChanges()) {
             supplementTableSheetState.textInputFocused = false;
             supplementTableSheetState.formatPanelOpen = false;
             supplementTableSheetState.formatColorPaletteOpen = false;
@@ -1861,7 +2210,8 @@ function ensureSupplementTableSheetEditorShell() {
         syncSupplementTableEditorShell();
     });
 
-    formulaRow.append(textInput, formulaIcon, blurBtn);
+    formulaRow.append(textInput, formulaIcon);
+    formulaWrap.append(formulaRow, blurBtn);
 
     const toolbar = createElement('div', 'supplement-sheet-editor__toolbar');
     const colorBtn = createElement('button', 'supplement-sheet-editor__tool-btn supplement-sheet-editor__tool-btn--color', 'A');
@@ -2075,7 +2425,7 @@ function ensureSupplementTableSheetEditorShell() {
     shell.style.setProperty('--supplement-editor-bottom-offset', `${initialDockOffset}px`);
     shell.style.bottom = `${initialDockOffset}px`;
 
-    shell.append(formatPanel, timesPanel, formulaRow);
+    shell.append(formatPanel, timesPanel, formulaWrap);
     document.body.append(shell);
 
     supplementTableSheetViewportAbortController?.abort?.();
@@ -2090,11 +2440,39 @@ function ensureSupplementTableSheetEditorShell() {
         syncSupplementTableEditorShell();
     };
     const handleDismissPointerDown = (event) => {
-        if (!supplementTableSheetState.selectedCell || !isSupplementTableSheetDraftDirty()) return;
+        if (!supplementTableSheetState.selectedCell) return;
         const target = event.target;
         if (!target) return;
         if (shell.contains(target)) return;
         if (document.querySelector('.top-bar.top-bar--supplements-table')?.contains?.(target)) return;
+        const currentTableWrapper = supplementTableSheetState.selectedCell?.tableWrapper || null;
+        const blockedCellTarget = target.closest?.('.supplement-dose-cell-btn');
+        if (blockedCellTarget && currentTableWrapper?.contains?.(blockedCellTarget)) {
+            const isSameCellTarget = doesSupplementTableSelectionMatchCell(
+                blockedCellTarget.dataset.date,
+                blockedCellTarget.dataset.supplementName,
+                Number(blockedCellTarget.dataset.supplementSlot)
+            );
+            if (supplementTableSheetState.textInputFocused && !isSameCellTarget) {
+                event.preventDefault();
+                event.stopPropagation();
+                suppressNextSupplementTableDoseCellClick(currentTableWrapper);
+                if (hasSupplementTablePendingSaveChanges()) {
+                    applySupplementTableSelectionDraftLocally();
+                }
+                const mergeForModal = findSupplementDoseMergeCovering(
+                    state.supplementPlan,
+                    blockedCellTarget.dataset.date,
+                    Number(blockedCellTarget.dataset.supplementSlot),
+                    blockedCellTarget.dataset.supplementName
+                );
+                setSupplementTableCellSelection(blockedCellTarget, mergeForModal || null, {
+                    preserveEditorFocus: true
+                });
+                return;
+            }
+        }
+        if (!hasSupplementTablePendingSaveChanges()) return;
         if (target.closest?.('.navigation') || target.closest?.('.navigation-fon')) {
             pinCommitUiForBlockedDismiss();
             event.preventDefault();
@@ -2107,9 +2485,6 @@ function ensureSupplementTableSheetEditorShell() {
             }
             return;
         }
-
-        const currentTableWrapper = supplementTableSheetState.selectedCell?.tableWrapper || null;
-        const blockedCellTarget = target.closest?.('.supplement-dose-cell-btn');
         if (currentTableWrapper?.contains?.(target) && !blockedCellTarget) {
             return;
         }
@@ -2190,12 +2565,13 @@ function syncSupplementTableEditorShell() {
 
     refs.textInput.value = draft.text;
     refs.textInput.inputMode = 'text';
-    const draftDirty = isSupplementTableSheetDraftDirty();
-    const commitUiVisible =
+    const hasPendingSave = hasSupplementTablePendingSaveChanges();
+    const editorInputActive =
         supplementTableSheetState.textInputFocused || supplementTableSheetState.commitUiPinned;
-    refs.formulaIcon.classList.toggle('is-hidden', commitUiVisible);
+    const commitUiVisible = hasPendingSave && editorInputActive;
+    refs.formulaIcon.classList.toggle('is-hidden', editorInputActive);
     refs.blurBtn.classList.toggle('is-visible', commitUiVisible);
-    refs.blurBtn.classList.toggle('is-ready', draftDirty);
+    refs.blurBtn.classList.toggle('is-ready', hasPendingSave);
     refs.formatBoldBtn.classList.toggle('is-active', style.bold);
     refs.formatItalicBtn.classList.toggle('is-active', style.italic);
     refs.formatUnderlineBtn.classList.toggle('is-active', style.underline);
@@ -2246,24 +2622,26 @@ function syncSupplementTableTopBarMenu() {
     }
 
     const selectionActive = isSupplementTableSheetSelectionActive();
+    const mergeModeActive = Boolean(supplementDoseMergeSession);
     const historyVisible = hasSupplementPlanHistoryChanges();
     const editorShellPinned =
         supplementTableSheetState.textInputFocused || supplementTableSheetState.commitUiPinned;
-    const editorTopBarVisible = selectionActive && !editorShellPinned;
-    const historyActionsVisible = historyVisible && !selectionActive;
-    const menuVisible = historyActionsVisible || editorTopBarVisible;
+    const editorTopBarVisible = selectionActive && !editorShellPinned && !mergeModeActive;
+    const historyActionsVisible = historyVisible && !selectionActive && !mergeModeActive;
+    const mergeActionsVisible = mergeModeActive;
+    const menuVisible = historyActionsVisible || editorTopBarVisible || mergeActionsVisible;
 
     topBar.classList.toggle(
         'supplements-topbar--editor-hidden',
-        Boolean(selectionActive && editorShellPinned)
+        Boolean(selectionActive && editorShellPinned && !mergeModeActive)
     );
 
     if (calendarBtn) {
-        calendarBtn.style.display = selectionActive ? 'none' : '';
+        calendarBtn.style.display = selectionActive || mergeModeActive ? 'none' : '';
         calendarBtn.classList.toggle('supplements-topbar-calendar-btn--history-visible', historyActionsVisible);
     }
     if (addBtn) {
-        addBtn.style.display = selectionActive ? 'none' : '';
+        addBtn.style.display = selectionActive || mergeModeActive ? 'none' : '';
     }
 
     menu.replaceChildren();
@@ -2282,9 +2660,23 @@ function syncSupplementTableTopBarMenu() {
         return btn;
     };
 
-    const draftDirty = isSupplementTableSheetDraftDirty();
-    const canUndo = canUndoSupplementPlanHistory() && !draftDirty;
-    const canRedo = canRedoSupplementPlanHistory() && !draftDirty;
+    const hasPendingSave = hasSupplementTablePendingSaveChanges();
+    const canUndo = canUndoSupplementPlanHistory() && !hasPendingSave;
+    const canRedo = canRedoSupplementPlanHistory() && !hasPendingSave;
+
+    if (mergeActionsVisible) {
+        const cancelMergeBtn = createElement(
+            'button',
+            'supplements-topbar-inline-menu-text-btn supplements-topbar-inline-menu-text-btn--cancel',
+            'Отменить выделение'
+        );
+        cancelMergeBtn.type = 'button';
+        cancelMergeBtn.addEventListener('click', () => {
+            endSupplementDoseMergeMode();
+        });
+        menu.append(cancelMergeBtn);
+        return;
+    }
 
     if (editorTopBarVisible) {
         const style = cloneSupplementDoseStyle(supplementTableSheetState.draft?.style);
@@ -2327,7 +2719,7 @@ function syncSupplementTableTopBarMenu() {
             'Готово',
             `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"><title>Check SVG Icon</title><path fill="currentColor" d="M9.55 18q-.3 0-.575-.125t-.475-.35l-3.9-3.9q-.3-.3-.287-.712t.287-.713q.3-.3.713-.3t.712.3l3.525 3.525l8.525-8.525q.3-.3.713-.3t.712.3q.3.3.3.713t-.3.712l-8.9 8.9q-.2.2-.475.325T9.55 18"/></svg>`,
             () => {
-                if (isSupplementTableSheetDraftDirty()) {
+                if (hasSupplementTablePendingSaveChanges()) {
                     showToast('Сохраните данные');
                     return;
                 }
@@ -2367,7 +2759,7 @@ function syncSupplementTableTopBarMenu() {
 
         const saveBtn = createElement('button', 'supplements-topbar-inline-menu-text-btn supplements-topbar-inline-menu-text-btn--save', 'Сохранить');
         saveBtn.type = 'button';
-        saveBtn.disabled = !isSupplementTableSheetDraftDirty();
+        saveBtn.disabled = !hasSupplementTablePendingSaveChanges();
         saveBtn.addEventListener('click', async () => {
             await saveSupplementTableSheetSelection();
         });
@@ -2380,132 +2772,121 @@ function handleSupplementTableCellSelection(button, mergeRange = null) {
     if (!button?.dataset?.date || !button?.dataset?.supplementName) return;
     if (supplementDoseMergeSession) return;
 
-    const isSameCell =
-        supplementTableSheetState.selectedCell &&
-        supplementTableSheetState.selectedCell.dateStr === button.dataset.date &&
-        supplementTableSheetState.selectedCell.supplementName === button.dataset.supplementName;
+    const isSameCell = doesSupplementTableSelectionMatchCell(
+        button.dataset.date,
+        button.dataset.supplementName,
+        Number(button.dataset.supplementSlot)
+    );
 
     if (isSameCell) {
+        if (hasSupplementTablePendingSaveChanges()) {
+            showToast('Сохраните данные');
+            return;
+        }
         supplementTableSheetState.menuOpen = true;
         syncSupplementTableEditorShell();
+        openSupplementDoseCellActionMenu(button.closest('.supplement-table-wrapper'), button);
         return;
     }
 
-    if (isSupplementTableSheetSelectionActive() && isSupplementTableSheetDraftDirty()) {
+    const preserveEditorFocus = Boolean(
+        supplementTableSheetState.textInputFocused || isSupplementTableEditorInputFocused()
+    );
+
+    if (isSupplementTableSheetDraftDirty()) {
+        applySupplementTableSelectionDraftLocally();
+    }
+
+    if (false && hasSupplementTablePendingSaveChanges()) {
         showToast('Сохраните данные');
         return;
     }
 
-    clearSupplementTableCellSelection({ preserveMenu: true, revertPreview: true });
-
-    const rawDose = getSupplementDoseFromState(button.dataset.date, button.dataset.supplementName);
-    const draft = createSupplementTableCellDraft(rawDose);
-
-    supplementTableSheetState.selectedCell = {
-        buttonEl: button,
-        tableWrapper: button.closest('.supplement-table-wrapper'),
-        dateStr: button.dataset.date,
-        supplementName: button.dataset.supplementName,
-        slot: Number(button.dataset.supplementSlot),
-        mergeRange: mergeRange || null,
-        originalRawDose: cloneSupplementDoseValue(rawDose)
-    };
-    supplementTableSheetState.menuOpen = true;
-    supplementTableSheetState.draft = cloneSupplementTableCellDraft(draft);
-    supplementTableSheetState.initialDraft = cloneSupplementTableCellDraft(draft);
-    supplementTableSheetState.history = [cloneSupplementTableCellDraft(draft)];
-    supplementTableSheetState.historyIndex = 0;
-    supplementTableSheetState.formatPanelOpen = false;
-    supplementTableSheetState.formatColorPaletteOpen = false;
-    supplementTableSheetState.timePanelOpen = Boolean(draft.times.length > 0);
-    supplementTableSheetState.textInputFocused = false;
-    supplementTableSheetState.commitUiPinned = false;
-    supplementTableSheetState.numericPadMode = false;
-
-    applySupplementTableCellSelectionVisual(button);
-    syncSupplementTableEditorShell();
+    setSupplementTableCellSelection(button, mergeRange || null, {
+        preserveEditorFocus
+    });
+    return;
 }
 
 async function saveSupplementTableSheetSelection({ preserveSelection = false } = {}) {
     const selectedCell = supplementTableSheetState.selectedCell;
     if (!selectedCell) return;
 
-    const plan = JSON.parse(JSON.stringify(state.supplementPlan || { supplements: [], data: [] }));
-    const previousPlan = state.supplementPlan;
-    const previousRawDose = selectedCell.originalRawDose;
-    const nextRawDose = buildSupplementDoseValueFromDraft(supplementTableSheetState.draft, previousRawDose);
-
     let scope = 'single';
-    if (!hasSupplementDoseValue(nextRawDose)) {
-        const result = clearSupplementDoseCellOrMergeInPlan(
-            plan,
-            selectedCell.dateStr,
-            selectedCell.supplementName,
-            selectedCell.slot
-        );
-        scope = result.scope;
-        if (scope === 'none') {
-            clearSupplementTableCellSelection({ preserveMenu: false, revertPreview: true });
-            return;
-        }
-    } else {
-        const datesToSave =
-            selectedCell.mergeRange?.startDate && selectedCell.mergeRange?.endDate
-                ? getSupplementDoseMergeDateStrings(plan, selectedCell.mergeRange)
-                : [selectedCell.dateStr];
-
-        datesToSave.forEach((dateStr) => {
-            const dayIndex = ensureSupplementDayRecord(plan, dateStr);
-            if (dayIndex < 0) return;
-            plan.data[dayIndex].doses = plan.data[dayIndex].doses || {};
-            plan.data[dayIndex].doses[selectedCell.supplementName] = cloneSupplementDoseValue(nextRawDose);
-        });
-        scope = datesToSave.length > 1 ? 'merge' : 'single';
+    if (isSupplementTableSheetDraftDirty()) {
+        const localResult = applySupplementTableSelectionDraftLocally();
+        scope = localResult.scope || scope;
     }
 
-    state.supplementPlan = plan;
-    syncSupplementsBottomNavBadge(plan);
-    state._supplementsSkipNextRenderSignature = getSupplementPlanSnapshotSignature(plan);
+    if (!hasSupplementTablePendingSaveChanges()) {
+        if (preserveSelection) {
+            supplementTableSheetState.formatPanelOpen = false;
+            supplementTableSheetState.formatColorPaletteOpen = false;
+            supplementTableSheetState.timePanelOpen = false;
+            supplementTableSheetState.textInputFocused = false;
+            supplementTableSheetState.commitUiPinned = false;
+            syncSupplementTableEditorShell();
+            return;
+        }
+        clearSupplementTableCellSelection({ preserveMenu: false, revertPreview: false });
+        return;
+    }
 
-    rememberCurrentSupplementTableScroll();
-    if (scope === 'single' && selectedCell.buttonEl?.isConnected) {
-        updateSupplementDoseCellButton(selectedCell.buttonEl, nextRawDose);
+    const previousPlan = cloneSupplementPlanHistoryEntry(
+        supplementTableSheetState.bufferedPlanBase || state.supplementPlan || { supplements: [], data: [] }
+    );
+    const plan = cloneSupplementPlanHistoryEntry(state.supplementPlan || { supplements: [], data: [] });
+    const currentRawDose = getSupplementDoseValueFromPlanData(
+        plan,
+        selectedCell.dateStr,
+        selectedCell.supplementName
+    );
+
+    const previousSignature = getSupplementPlanSnapshotSignature(previousPlan);
+    const nextSignature = getSupplementPlanSnapshotSignature(plan);
+
+    if (previousSignature === nextSignature) {
+        supplementTableSheetState.bufferedPlanBase = null;
+        if (preserveSelection) {
+            supplementTableSheetState.formatPanelOpen = false;
+            supplementTableSheetState.formatColorPaletteOpen = false;
+            supplementTableSheetState.timePanelOpen = false;
+            supplementTableSheetState.textInputFocused = false;
+            supplementTableSheetState.commitUiPinned = false;
+            syncSupplementTableSelectionCommittedRawDose(currentRawDose);
+            syncSupplementTableEditorShell();
+            return;
+        }
+        clearSupplementTableCellSelection({ preserveMenu: false, revertPreview: false });
+        return;
     }
 
     const saved = await updateSupplementPlanInFirestore(plan, { previousPlanOverride: previousPlan });
     if (!saved) {
-        state.supplementPlan = previousPlan;
-        syncSupplementsBottomNavBadge(previousPlan);
-        delete state._supplementsSkipNextRenderSignature;
-        if (selectedCell.buttonEl?.isConnected) {
-            updateSupplementDoseCellButton(selectedCell.buttonEl, previousRawDose);
+        if (preserveSelection) {
+            supplementTableSheetState.textInputFocused = false;
+            supplementTableSheetState.commitUiPinned = true;
+            syncSupplementTableEditorShell();
+        } else if (selectedCell.buttonEl?.isConnected) {
             applySupplementTableCellSelectionVisual(selectedCell.buttonEl);
+            syncSupplementTableTopBarMenu();
         }
         return;
     }
 
-    const previousSignature = getSupplementPlanSnapshotSignature(previousPlan);
-    const nextSignature = getSupplementPlanSnapshotSignature(plan);
-    if (previousSignature !== nextSignature && !hasSupplementPlanHistoryChanges()) {
-        commitSupplementPlanHistoryEntry(previousPlan, plan);
-    }
-
-    if (preserveSelection && scope === 'single' && selectedCell.buttonEl?.isConnected) {
-        selectedCell.originalRawDose = cloneSupplementDoseValue(nextRawDose);
+    supplementTableSheetState.bufferedPlanBase = null;
+    if (preserveSelection) {
         supplementTableSheetState.formatPanelOpen = false;
         supplementTableSheetState.formatColorPaletteOpen = false;
         supplementTableSheetState.timePanelOpen = false;
         supplementTableSheetState.textInputFocused = false;
-        resetSupplementTableSheetSelectionDraftState();
-        applySupplementTableCellSelectionVisual(selectedCell.buttonEl);
+        supplementTableSheetState.commitUiPinned = false;
+        syncSupplementTableSelectionCommittedRawDose(currentRawDose);
         syncSupplementTableEditorShell();
         return;
     }
 
     clearSupplementTableCellSelection({ preserveMenu: false, revertPreview: false });
-    if (scope === 'merge') {
-        renderSupplementsPage();
-    }
 }
 
 function buildSupplementImportedPlan(sourceCycle, targetCycle, options = {}) {
@@ -3257,6 +3638,52 @@ function renderSupplementTableWindow(tableState) {
     const firstParsed = parseSupplementDateString(firstDate);
     tableWrapper.dataset.windowStartDate = firstParsed ? formatSupplementDateString(firstParsed) : '';
     tableState.todayRowElement = todayRowElement;
+}
+
+function refreshSupplementTableWindowInPlace() {
+    const tableState = supplementTableVirtualState;
+    const tableWrapper = tableState?.tableWrapper;
+    if (!tableState || !tableWrapper?.isConnected) return false;
+
+    const preservedScrollTop = tableWrapper.scrollTop;
+    const preservedScrollLeft = tableWrapper.scrollLeft;
+
+    tableState.planData = state.supplementPlan || tableState.planData;
+    tableState.historyRangesBySlot = buildSupplementHistoryRangesBySlot(tableState.planData, tableState.tableColumns);
+    renderSupplementTableWindow(tableState);
+
+    tableWrapper.scrollTop = preservedScrollTop;
+    tableWrapper.scrollLeft = preservedScrollLeft;
+    tableState.lastScrollTop = tableWrapper.scrollTop;
+    rememberSupplementTableScroll(tableWrapper);
+    syncSupplementJumpButtonVisibility(tableState.jumpBtnWrap, tableState);
+
+    const selectedCell = supplementTableSheetState.selectedCell;
+    if (selectedCell) {
+        const nextButton = Array.from(
+            tableWrapper.querySelectorAll('button.supplement-dose-cell-btn[data-date][data-supplement-name][data-supplement-slot]')
+        ).find((button) => (
+            button.dataset.date === selectedCell.dateStr &&
+            button.dataset.supplementName === selectedCell.supplementName &&
+            Number(button.dataset.supplementSlot) === Number(selectedCell.slot)
+        ));
+
+        if (nextButton) {
+            selectedCell.buttonEl = nextButton;
+            selectedCell.tableWrapper = tableWrapper;
+            selectedCell.mergeRange =
+                findSupplementDoseMergeCovering(
+                    tableState.planData,
+                    selectedCell.dateStr,
+                    Number(selectedCell.slot),
+                    selectedCell.supplementName
+                ) || null;
+            applySupplementTableCellSelectionVisual(nextButton);
+            syncSupplementTableEditorShell();
+        }
+    }
+
+    return true;
 }
 
 function getSupplementTableRowHeightPx(tableWrapper) {
@@ -5026,13 +5453,19 @@ async function applySupplementPlanHistoryIndex(nextIndex) {
         return;
     }
 
-    if (isSupplementTableSheetDraftDirty()) return;
+    if (hasSupplementTablePendingSaveChanges()) return;
 
     const nextPlan = cloneSupplementPlanHistoryEntry(supplementPlanHistoryState.entries[nextIndex]);
     const currentPlan = cloneSupplementPlanHistoryEntry(state.supplementPlan || supplementPlanHistoryState.entries[supplementPlanHistoryState.index]);
 
     clearSupplementTableCellSelection({ preserveMenu: true, revertPreview: true });
+    state.supplementPlan = nextPlan;
+    syncSupplementsBottomNavBadge(nextPlan);
     state._supplementsSkipNextRenderSignature = getSupplementPlanSnapshotSignature(nextPlan);
+
+    if (!refreshSupplementTableWindowInPlace()) {
+        await renderSupplementsPage();
+    }
 
     const saved = await updateSupplementPlanInFirestore(nextPlan, {
         previousPlanOverride: currentPlan,
@@ -5041,11 +5474,15 @@ async function applySupplementPlanHistoryIndex(nextIndex) {
     });
 
     if (!saved) {
+        state.supplementPlan = currentPlan;
+        syncSupplementsBottomNavBadge(currentPlan);
         delete state._supplementsSkipNextRenderSignature;
+        if (!refreshSupplementTableWindowInPlace()) {
+            await renderSupplementsPage();
+        }
         return;
     }
 
-    renderSupplementsPage();
     supplementTableSheetState.menuOpen = true;
     syncSupplementTableTopBarMenu();
 }
@@ -5068,9 +5505,231 @@ function suppressNextSupplementTableDoseCellClick(tableWrapper) {
     }, 260);
 }
 
+async function runSupplementDoseCellAction(tableWrapper, button, action) {
+    const dateStr = button?.dataset.date || '';
+    const supplementName = button?.dataset.supplementName || '';
+    const slot = Number(button?.dataset.supplementSlot);
+    if (!tableWrapper || !dateStr || !supplementName) return;
+
+    if (action === 'copy') {
+        const rawDose = getSupplementDoseFromState(dateStr, supplementName);
+        if (!hasSupplementDoseValue(rawDose)) return;
+        setSupplementDoseClipboardValue(rawDose, {
+            cellKey: `${dateStr}::${supplementName}`,
+            dateStr,
+            supplementName
+        });
+        navigator.vibrate?.(8);
+        showToast('Скопировано');
+        return;
+    }
+
+    if (action === 'cut') {
+        const rawDose = getSupplementDoseFromState(dateStr, supplementName);
+        if (!hasSupplementDoseValue(rawDose)) return;
+        setSupplementDoseClipboardValue(rawDose, {
+            cellKey: `${dateStr}::${supplementName}`,
+            dateStr,
+            supplementName
+        });
+
+        const plan = JSON.parse(JSON.stringify(state.supplementPlan || { supplements: [], data: [] }));
+        const { scope } = clearSupplementDoseCellOrMergeInPlan(plan, dateStr, supplementName, slot);
+        if (scope === 'none') return;
+
+        const previousPlan = state.supplementPlan;
+        const previousRawDose = getSupplementDoseFromState(dateStr, supplementName);
+        state.supplementPlan = plan;
+        syncSupplementsBottomNavBadge(plan);
+        state._supplementsSkipNextRenderSignature = getSupplementPlanSnapshotSignature(plan);
+
+        rememberCurrentSupplementTableScroll();
+        navigator.vibrate?.(8);
+        if (scope === 'single') {
+            updateSupplementDoseCellButton(button, '');
+            if (doesSupplementTableSelectionMatchCell(dateStr, supplementName, slot)) {
+                syncSupplementTableSelectionCommittedRawDose('');
+            }
+        }
+
+        const saved = await updateSupplementPlanInFirestore(plan, { previousPlanOverride: previousPlan });
+        if (!saved) {
+            state.supplementPlan = previousPlan;
+            syncSupplementsBottomNavBadge(previousPlan);
+            delete state._supplementsSkipNextRenderSignature;
+            if (scope === 'single') {
+                updateSupplementDoseCellButton(button, previousRawDose);
+                if (doesSupplementTableSelectionMatchCell(dateStr, supplementName, slot)) {
+                    syncSupplementTableSelectionCommittedRawDose(previousRawDose);
+                }
+            } else if (scope === 'merge' || scope === 'block') {
+                await renderSupplementsPage();
+            }
+            return;
+        }
+        showToast('Вырезано');
+        if (scope === 'merge') {
+            renderSupplementsPage();
+        }
+        return;
+    }
+
+    if (action === 'delete') {
+        const plan = JSON.parse(JSON.stringify(state.supplementPlan || { supplements: [], data: [] }));
+        const { scope } = clearSupplementDoseCellOrMergeInPlan(plan, dateStr, supplementName, slot);
+        if (scope === 'none') return;
+
+        const previousPlan = state.supplementPlan;
+        const previousRawDose = getSupplementDoseFromState(dateStr, supplementName);
+        state.supplementPlan = plan;
+        syncSupplementsBottomNavBadge(plan);
+        state._supplementsSkipNextRenderSignature = getSupplementPlanSnapshotSignature(plan);
+
+        rememberCurrentSupplementTableScroll();
+        navigator.vibrate?.(8);
+        if (scope === 'single') {
+            updateSupplementDoseCellButton(button, '');
+            if (doesSupplementTableSelectionMatchCell(dateStr, supplementName, slot)) {
+                syncSupplementTableSelectionCommittedRawDose('');
+            }
+        }
+
+        const saved = await updateSupplementPlanInFirestore(plan, { previousPlanOverride: previousPlan });
+        if (!saved) {
+            state.supplementPlan = previousPlan;
+            syncSupplementsBottomNavBadge(previousPlan);
+            delete state._supplementsSkipNextRenderSignature;
+            if (scope === 'single') {
+                updateSupplementDoseCellButton(button, previousRawDose);
+                if (doesSupplementTableSelectionMatchCell(dateStr, supplementName, slot)) {
+                    syncSupplementTableSelectionCommittedRawDose(previousRawDose);
+                }
+            }
+            return;
+        }
+        showToast('Удалено');
+        if (scope === 'merge') {
+            renderSupplementsPage();
+        }
+        return;
+    }
+
+    if (action === 'paste') {
+        if (!hasSupplementDoseClipboardValue() && !hasSupplementDoseRangeClipboardValue()) return;
+
+        const plan = JSON.parse(JSON.stringify(state.supplementPlan || { supplements: [], data: [] }));
+        const previousPlan = state.supplementPlan;
+        const previousRawDose = getSupplementDoseFromState(dateStr, supplementName);
+        const { scope } = hasSupplementDoseRangeClipboardValue()
+            ? pasteSupplementDoseRangeToPlan(
+                plan,
+                dateStr,
+                supplementName,
+                slot,
+                supplementDoseRangeClipboard
+            )
+            : pasteSupplementDoseToCellOrMergeInPlan(
+                plan,
+                dateStr,
+                supplementName,
+                slot,
+                supplementDoseClipboard
+            );
+        if (scope === 'none') return;
+
+        state.supplementPlan = plan;
+        syncSupplementsBottomNavBadge(plan);
+        const dayIndex = plan.data.findIndex(day => day.date === dateStr);
+        const nextRawDose = plan.data[dayIndex]?.doses?.[supplementName];
+        if (scope === 'single') {
+            updateSupplementDoseCellButton(button, nextRawDose);
+            if (doesSupplementTableSelectionMatchCell(dateStr, supplementName, slot)) {
+                syncSupplementTableSelectionCommittedRawDose(nextRawDose);
+            }
+        } else if (scope === 'merge' || scope === 'block') {
+            if (doesSupplementTableSelectionMatchCell(dateStr, supplementName, slot)) {
+                syncSupplementTableSelectionCommittedRawDose(nextRawDose);
+            }
+            if (!refreshSupplementTableWindowInPlace()) {
+                await renderSupplementsPage();
+            }
+        }
+        state._supplementsSkipNextRenderSignature = getSupplementPlanSnapshotSignature(plan);
+
+        rememberCurrentSupplementTableScroll();
+        navigator.vibrate?.(8);
+        const saved = await updateSupplementPlanInFirestore(plan, { previousPlanOverride: previousPlan });
+        if (!saved) {
+            state.supplementPlan = previousPlan;
+            syncSupplementsBottomNavBadge(previousPlan);
+            delete state._supplementsSkipNextRenderSignature;
+            if (scope === 'single') {
+                updateSupplementDoseCellButton(button, previousRawDose);
+                if (doesSupplementTableSelectionMatchCell(dateStr, supplementName, slot)) {
+                    syncSupplementTableSelectionCommittedRawDose(previousRawDose);
+                }
+            } else if (scope === 'merge' || scope === 'block') {
+                if (doesSupplementTableSelectionMatchCell(dateStr, supplementName, slot)) {
+                    syncSupplementTableSelectionCommittedRawDose(previousRawDose);
+                }
+                if (!refreshSupplementTableWindowInPlace()) {
+                    await renderSupplementsPage();
+                }
+            }
+            return;
+        }
+        showToast(hasSupplementDoseValue(previousRawDose) ? 'Заменено' : 'Вставлено');
+    }
+}
+
+function openSupplementDoseCellActionMenu(tableWrapper, button) {
+    const dateStr = button?.dataset.date || '';
+    const supplementName = button?.dataset.supplementName || '';
+    if (!tableWrapper || !dateStr || !supplementName) return;
+
+    const rawDose = getSupplementDoseFromState(dateStr, supplementName);
+    const hasCellValue = hasSupplementDoseValue(rawDose);
+    const hasClipboard = hasSupplementDoseClipboardValue() || hasSupplementDoseRangeClipboardValue();
+    const slot = Number(button?.dataset?.supplementSlot);
+    const mergeCover =
+        state.supplementPlan && Number.isFinite(slot)
+            ? findSupplementDoseMergeCovering(state.supplementPlan, dateStr, slot, supplementName)
+            : null;
+    const isMergedDoseCell = Boolean(mergeCover && mergeCover.startDate === dateStr);
+
+    if (supplementDoseMergeSession?.tableWrapper === tableWrapper) {
+        endSupplementDoseMergeMode();
+    }
+
+    showSupplementDoseLongPressActionMenu(tableWrapper, button, {
+        hasCellValue,
+        hasClipboard,
+        pasteLabel: hasCellValue && hasClipboard ? 'Заменить' : 'Вставить',
+        mergeMenu: isMergedDoseCell
+            ? { actionId: 'splitMerge', label: 'Снять выделение' }
+            : { actionId: 'merge', label: 'Объединить' },
+        onPick: async (actionId) => {
+            if (actionId === 'merge') {
+                startSupplementDoseMergeMode(tableWrapper, button);
+                return;
+            }
+            if (actionId === 'splitMerge') {
+                await applySplitSupplementDoseMerge(button);
+                return;
+            }
+            await runSupplementDoseCellAction(tableWrapper, button, actionId);
+        }
+    });
+}
+
 function getSupplementDoseFromState(dateStr, supplementName) {
     const plan = state.supplementPlan || { data: [] };
     const dayRecord = (plan.data || []).find(day => day.date === dateStr);
+    return dayRecord?.doses?.[supplementName] || '';
+}
+
+function getSupplementDoseValueFromPlanData(planData, dateStr, supplementName) {
+    const dayRecord = (planData?.data || []).find((day) => day?.date === dateStr);
     return dayRecord?.doses?.[supplementName] || '';
 }
 
@@ -5144,6 +5803,27 @@ function updateSupplementDoseCellButton(button, rawDose) {
         button.append(createElement('span', 'supplement-dose-cell-time', timeText));
     }
 
+}
+
+function syncSupplementDoseButtonsForDates(tableWrapper, planData, supplementName, slot, dateStrings) {
+    if (!tableWrapper || !Array.isArray(dateStrings) || dateStrings.length === 0) return;
+    const targetDates = new Set(dateStrings.filter(Boolean));
+    if (targetDates.size === 0) return;
+
+    tableWrapper
+        .querySelectorAll('button.supplement-dose-cell-btn[data-date][data-supplement-name][data-supplement-slot]')
+        .forEach((button) => {
+            if (!targetDates.has(button.dataset.date)) return;
+            if (String(button.dataset.supplementName || '') !== String(supplementName || '')) return;
+            if (Number(button.dataset.supplementSlot) !== Number(slot)) return;
+
+            const rawDose = getSupplementDoseValueFromPlanData(
+                planData,
+                button.dataset.date,
+                supplementName
+            );
+            updateSupplementDoseCellButton(button, rawDose);
+        });
 }
 
 function showSupplementDoseLongPressActionMenu(tableWrapper, anchorElement, menuConfig) {
@@ -6666,7 +7346,7 @@ async function reorderSupplementColumns(dragFrom, dragTo) {
   return true;
 }
 
-function enableSupplementDoseCellLongPressActions(tableWrapper) {
+function enableSupplementDoseCellLongPressActionsLegacy_DoNotUse(tableWrapper) {
   const table = tableWrapper?.querySelector('.supplement-plan-table');
   if (!tableWrapper || !table) return;
   if (tableWrapper.dataset.supplementDoseLongPressBound === '1') return;
@@ -6963,6 +7643,26 @@ function enableSupplementDoseCellLongPressActions(tableWrapper) {
     document.addEventListener('pointerup', handlePointerEnd);
     document.addEventListener('pointercancel', handlePointerEnd);
     pressTimer = setTimeout(() => triggerLongPressAction(sourceButton), longPressDelay);
+  });
+}
+
+function enableSupplementDoseCellLongPressActions(tableWrapper) {
+  const table = tableWrapper?.querySelector('.supplement-plan-table');
+  if (!tableWrapper || !table) return;
+  if (tableWrapper.dataset.supplementDoseLongPressBound === '1') return;
+  tableWrapper.dataset.supplementDoseLongPressBound = '1';
+
+  tableWrapper.addEventListener('click', event => {
+    if (tableWrapper.dataset.supplementDoseLongPressSuppress !== '1') return;
+    event.preventDefault();
+    event.stopPropagation();
+    delete tableWrapper.dataset.supplementDoseLongPressSuppress;
+  }, true);
+
+  tableWrapper.addEventListener('contextmenu', event => {
+    const button = event.target?.closest?.('button.supplement-dose-cell-btn');
+    if (!button || !tableWrapper.contains(button)) return;
+    event.preventDefault();
   });
 }
 

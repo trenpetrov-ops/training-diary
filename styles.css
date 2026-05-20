@@ -18176,8 +18176,8 @@ button.btn.btn-secondary.profile-copy-btn {
     appearance: none;
 }
 .modal-cicle--add-program .modal-input:focus {
-    border-color: rgba(10, 132, 255, 0.55);
-    box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.1);
+    border: 1px solid #9d9da1;
+    /* box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.1); */
     background: #fff;
 }
 .modal-edit.modal-exercise-name-modal {
@@ -18261,9 +18261,24 @@ button.btn.btn-secondary.profile-copy-btn {
     text-align: left;
 }
 .modal-simple-form .modal-input:focus {
-    border-color: rgba(10, 132, 255, 0.55);
-    box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.1);
-    background: #fff;
+    border: 1px solid #9d9da1;
+    /* box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.1); */
+    /* background: #fff; */
+}
+.modal-simple-form .modal-input,
+.modal-cicle--add-program .modal-input,
+.modal-set input[type="number"] {
+    border: 1px solid #d1d1d6;
+    background: #ffffff;
+    box-shadow: none;
+    transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+.modal-simple-form .modal-input:focus,
+.modal-cicle--add-program .modal-input:focus,
+.modal-set input[type="number"]:focus {
+    border: 1px solid #9d9da1;
+    /* background: #fff; */
+    /* box-shadow: inset 0 0 0 1px #282828; */
 }
 .modal-simple-form .modal-buttons {
     display: flex;
@@ -20234,16 +20249,12 @@ div#supplements-content.supplements-page--day-details > h3 {
     z-index: 1200;
     display: grid;
     gap: 0;
-    background: #e5e7ec;
-    padding-bottom: 0;
-    /* border-top-left-radius: 18px; */
-    /* border-top-right-radius: 18px; */
-    /* box-shadow: 0 -8px 28px rgba(15, 23, 42, 0.14); */
-    border-top: 1px solid #c5c7cc;
+    border: 1px solid #c5c7cc;
     overflow: hidden;
     transition: bottom var(--keyboard-transition-ms, 250ms) cubic-bezier(0.22, 0.61, 0.36, 1);
-    /* transition: box-shadow 0.22s ease, transform 0.22s ease; */
-    /* padding-top: 5px; */
+    padding: 6px 6px;
+    border-radius: 25px 25px 0px 0px;
+    background: #eeeff3;
 }
 .supplement-sheet-editor--format-open,
 .supplement-sheet-editor--times-open {
@@ -20254,28 +20265,42 @@ div#supplements-content.supplements-page--day-details > h3 {
 .supplement-sheet-editor--times-open .supplement-sheet-editor__formula {
     display: none;
 }
+.supplement-sheet-editor__formula-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
 .supplement-sheet-editor__formula {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 42px;
+    flex: 1 1 auto;
     align-items: center;
-    min-height: 52px;
-    border-top: 1px solid #dddddf;
     background: #eeeff3;
-    padding: 0 30px 0 30px;
+    padding: 0px 14px 0px 24px;
+    border-radius: 25px;
+    height: 38px;
+    border: 0.5px solid #eeeff3;
+}
+.supplement-sheet-editor__formula:focus-within {
+    background: #fff;
+    border: 0.5px solid #bcbcbc78;
 }
 .supplement-sheet-editor__formula-icon,
 .supplement-sheet-editor__formula-commit {
-    grid-column: 2;
-    grid-row: 1;
     border: 0;
     background: transparent;
-    color: #4b5563;
+    /* color: #4b5563; */
+    transition: opacity 0.1s ease, color 0.1s ease, transform 0.1s ease;
+}
+.supplement-sheet-editor__formula-icon {
+    grid-column: 2;
+    grid-row: 1;
     height: 100%;
-    transition: opacity 0.16s ease, color 0.16s ease, transform 0.16s ease;
 }
 .supplement-sheet-editor__formula-icon {
     opacity: 1;
     pointer-events: auto;
+    color: #4b5563;
 }
 
 button.supplement-sheet-editor__formula-icon svg {
@@ -20292,8 +20317,20 @@ button.supplement-sheet-editor__tool-btn.supplement-sheet-editor__tool-btn--time
     pointer-events: none;
 }
 .supplement-sheet-editor__formula-commit {
-    opacity: 0;
     pointer-events: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    flex: 0 0 42px;
+    border-radius: 999px;
+    color: #1f9d57;
+    display: none;
+    background: white;
+    padding-top: 5px;
+    padding-left: 6px;
+    border: 0.5px solid #bcbcbc78;
 }
 .supplement-sheet-editor__formula-commit.is-visible {
     opacity: 1;
@@ -20301,21 +20338,23 @@ button.supplement-sheet-editor__tool-btn.supplement-sheet-editor__tool-btn--time
 }
 .supplement-sheet-editor__formula-commit.is-ready {
     color: #1f9d57;
+    display: block;
 }
 .supplement-sheet-editor__input {
     grid-column: 1;
     grid-row: 1;
     width: 100%;
-    min-height: 19px;
-    max-height: 19px;
     resize: none;
     border: 0;
     outline: 0;
-    background: transparent;
+    background: #ffffff00;
     color: #111827;
     font-size: 15px;
-    line-height: 1.28;
-    padding: 14px 4px 12px;
+    /* line-height: 1.28; */
+    padding: 0px 4px 0px;
+}
+.supplement-sheet-editor__input:focus::placeholder {
+    color: transparent;
 }
 .supplement-sheet-editor__symbols {
     display: none;
