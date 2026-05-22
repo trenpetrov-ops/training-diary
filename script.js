@@ -9778,7 +9778,7 @@ const KEYBOARD_MODAL_HOST_SELECTOR = [
 const KEYBOARD_SHIFT_HOST_SELECTOR = [
     KEYBOARD_MODAL_HOST_SELECTOR,
     '.create-food-form-scroll-host--keyboard-padding-only',
-    '.meal-search-tab-panel--keyboard-padding-only',
+    '.meal-search-list--keyboard-padding-only',
     '.meal-overlay-subpage',
     '.meal-overlay-layer',
     '.modal-overlay-remove-edit',
@@ -9816,7 +9816,7 @@ function shouldUseKeyboardPaddingOnlyHost(host) {
     return Boolean(
         host?.classList?.contains('create-food-form-page--keyboard-padding-only')
         || host?.classList?.contains('create-food-form-scroll-host--keyboard-padding-only')
-        || host?.classList?.contains('meal-search-tab-panel--keyboard-padding-only')
+        || host?.classList?.contains('meal-search-list--keyboard-padding-only')
     );
 }
 

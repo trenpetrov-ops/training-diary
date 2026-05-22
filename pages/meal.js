@@ -162,10 +162,7 @@ function saveMealPageScroll() {
     if (searchScreen && state.mealSearchScrollByTab) {
         const tab = state.mealSearchTab || 'all';
         const panel = searchScreen.querySelector(`.meal-search-tab-panel[data-tab="${tab}"]`);
-        const scrollHost =
-            panel?.classList?.contains('meal-search-tab-panel--keyboard-padding-only')
-                ? panel
-                : panel?.querySelector('.meal-search-list');
+        const scrollHost = panel?.querySelector('.meal-search-list');
         if (scrollHost) {
             state.mealSearchScrollByTab[tab] = scrollHost.scrollTop;
         }
@@ -11623,6 +11620,9 @@ function renderMealSearch() {
     const listProducts = createElement('div', 'food-list meal-search-list');
     const listRecipes = createElement('div', 'food-list meal-search-list');
     const listBase = createElement('div', 'food-list meal-search-list');
+    listProducts.classList.add('meal-search-list--keyboard-padding-only');
+    listRecipes.classList.add('meal-search-list--keyboard-padding-only');
+    listBase.classList.add('meal-search-list--keyboard-padding-only');
     const basePager = {
         query: '',
         page: 0,
@@ -11916,9 +11916,6 @@ function renderMealSearch() {
     const panelProducts = createElement('div', 'meal-search-tab-panel');
     const panelRecipes = createElement('div', 'meal-search-tab-panel');
     const panelBase = createElement('div', 'meal-search-tab-panel');
-    panelProducts.classList.add('meal-search-tab-panel--keyboard-padding-only');
-    panelRecipes.classList.add('meal-search-tab-panel--keyboard-padding-only');
-    panelBase.classList.add('meal-search-tab-panel--keyboard-padding-only');
     panelAll.dataset.tab = 'all';
     panelProducts.dataset.tab = 'products';
     panelRecipes.dataset.tab = 'recipes';
@@ -12063,9 +12060,9 @@ function renderMealSearch() {
     }
 
     function getSearchScrollHostByTab(t) {
-        if (t === 'products') return panelProducts;
-        if (t === 'recipes') return panelRecipes;
-        if (t === 'base') return panelBase;
+        if (t === 'products') return listProducts;
+        if (t === 'recipes') return listRecipes;
+        if (t === 'base') return listBase;
         return listAll;
     }
 
@@ -12400,9 +12397,9 @@ function renderMealSearch() {
     }
 
     wireMealSearchListScroll(listAll, 'all');
-    wireMealSearchListScroll(panelProducts, 'products');
-    wireMealSearchListScroll(panelRecipes, 'recipes');
-    wireMealSearchListScroll(panelBase, 'base');
+    wireMealSearchListScroll(listProducts, 'products');
+    wireMealSearchListScroll(listRecipes, 'recipes');
+    wireMealSearchListScroll(listBase, 'base');
 
     function syncMealSearchTopbarActionForTab(tab) {
         renderTopbarActionsForTab(tab);
@@ -12579,9 +12576,9 @@ function renderMealSearch() {
         renderProductsOrRecipesPage(listRecipes, recipesPager, requestId);
 
         listAll.scrollTop = state.mealSearchScrollByTab.all || 0;
-        panelProducts.scrollTop = state.mealSearchScrollByTab.products || 0;
-        panelRecipes.scrollTop = state.mealSearchScrollByTab.recipes || 0;
-        panelBase.scrollTop = state.mealSearchScrollByTab.base || 0;
+        listProducts.scrollTop = state.mealSearchScrollByTab.products || 0;
+        listRecipes.scrollTop = state.mealSearchScrollByTab.recipes || 0;
+        listBase.scrollTop = state.mealSearchScrollByTab.base || 0;
 
         // Вкладка "база": FatSecret (англ.) или общий каталог Firestore «база пользователей».
         if (state.mealSearchBaseMode === 'user') {

@@ -15219,12 +15219,6 @@ button.delete-food-from-meal-btn {
     min-height: 0;
     max-height: 100%;
 }
-.meal-search-screen--fill .meal-search-tab-panel--keyboard-padding-only {
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior-y: none;
-    touch-action: pan-x pan-y;
-}
 .meal-search-tab-carousel .food-info-header-content, .meal-search-tab-carousel .meal-search-list, .meal-search-tab-carousel .meal-search-tab-panel {
     touch-action: pan-x pan-y;
     background: none;
@@ -15246,10 +15240,9 @@ button.delete-food-from-meal-btn {
     overscroll-behavior-y: none;
     touch-action: pan-x pan-y;
 }
-.meal-search-screen--fill .meal-search-tab-panel--keyboard-padding-only .meal-search-list {
+.meal-search-screen--fill .meal-search-tab-carousel .meal-search-list.meal-search-list--keyboard-padding-only {
     min-height: 0;
-    flex: 0 0 auto;
-    overflow: visible;
+    flex: 1 1 auto;
     padding-bottom: calc(var(--bottom-nav-clearance, 99px) + var(--keyboard-extra-scroll-space, 0px) + 8px);
     scroll-padding-bottom: calc(var(--bottom-nav-clearance, 99px) + var(--keyboard-extra-scroll-space, 0px) + 8px);
 }
