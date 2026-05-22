@@ -11620,9 +11620,6 @@ function renderMealSearch() {
     const listProducts = createElement('div', 'food-list meal-search-list');
     const listRecipes = createElement('div', 'food-list meal-search-list');
     const listBase = createElement('div', 'food-list meal-search-list');
-    listProducts.classList.add('meal-search-list--keyboard-padding-only');
-    listRecipes.classList.add('meal-search-list--keyboard-padding-only');
-    listBase.classList.add('meal-search-list--keyboard-padding-only');
     const basePager = {
         query: '',
         page: 0,
@@ -12660,7 +12657,6 @@ function renderMealSearch() {
         (event) => {
             const activeInput = getActiveMealSearchInput();
             if (!activeInput) return;
-            if (!document.body?.classList?.contains('app-keyboard-visible')) return;
 
             const target = event.target;
             if (!target) return;
