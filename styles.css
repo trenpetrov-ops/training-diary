@@ -15219,6 +15219,12 @@ button.delete-food-from-meal-btn {
     min-height: 0;
     max-height: 100%;
 }
+.meal-search-screen--fill .meal-search-tab-panel--keyboard-padding-only {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: none;
+    touch-action: pan-x pan-y;
+}
 .meal-search-tab-carousel .food-info-header-content, .meal-search-tab-carousel .meal-search-list, .meal-search-tab-carousel .meal-search-tab-panel {
     touch-action: pan-x pan-y;
     background: none;
@@ -15239,6 +15245,13 @@ button.delete-food-from-meal-btn {
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: none;
     touch-action: pan-x pan-y;
+}
+.meal-search-screen--fill .meal-search-tab-panel--keyboard-padding-only .meal-search-list {
+    min-height: 0;
+    flex: 0 0 auto;
+    overflow: visible;
+    padding-bottom: calc(var(--bottom-nav-clearance, 99px) + var(--keyboard-extra-scroll-space, 0px) + 8px);
+    scroll-padding-bottom: calc(var(--bottom-nav-clearance, 99px) + var(--keyboard-extra-scroll-space, 0px) + 8px);
 }
 .meal-search-tab-carousel .meal-search-empty {
     width: 100%;
@@ -20268,29 +20281,32 @@ div#supplements-content.supplements-page--day-details > h3 {
 .supplement-sheet-editor__formula-row {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 3px;
 }
 .supplement-sheet-editor__formula {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 42px;
+    /* display: grid; */
+    /* grid-template-columns: minmax(0, 1fr) 42px; */
     flex: 1 1 auto;
     align-items: center;
     background: #eeeff3;
-    padding: 0px 14px 0px 24px;
+    padding: 0px 0px 0px 52px;
     border-radius: 25px;
     height: 38px;
     border: 0.5px solid #eeeff3;
+    display: flex;
+    flex-direction: row-reverse;
 }
 .supplement-sheet-editor__formula:focus-within {
     background: #fff;
     border: 0.5px solid #bcbcbc78;
+    padding: 0px 0px 0px 24px;
 }
 .supplement-sheet-editor__formula-icon,
 .supplement-sheet-editor__formula-commit {
     border: 0;
     background: transparent;
     /* color: #4b5563; */
-    transition: opacity 0.1s ease, color 0.1s ease, transform 0.1s ease;
+    /* transition: opacity 0.1s ease, color 0.1s ease, transform 0.1s ease; */
 }
 .supplement-sheet-editor__formula-icon {
     grid-column: 2;
@@ -20300,7 +20316,9 @@ div#supplements-content.supplements-page--day-details > h3 {
 .supplement-sheet-editor__formula-icon {
     opacity: 1;
     pointer-events: auto;
-    color: #4b5563;
+    color: #757575;
+    display: block;
+    padding: 0;
 }
 
 button.supplement-sheet-editor__formula-icon svg {
@@ -20313,24 +20331,25 @@ button.supplement-sheet-editor__tool-btn.supplement-sheet-editor__tool-btn--time
     height: 21px;
 }
 .supplement-sheet-editor__formula-icon.is-hidden {
-    opacity: 0;
+    /* opacity: 0; */
     pointer-events: none;
+    display: none;
 }
 .supplement-sheet-editor__formula-commit {
     pointer-events: none;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 38px;
+    width: 63px;
     height: 38px;
-    flex: 0 0 42px;
+    flex: 0 0 63px;
     border-radius: 999px;
-    color: #1f9d57;
-    display: none;
+    color: #8e8e93;
     background: white;
-    padding-top: 5px;
-    padding-left: 6px;
+    padding-top: 1px;
+    padding-left: 7px;
     border: 0.5px solid #bcbcbc78;
+    opacity: 0;
 }
 .supplement-sheet-editor__formula-commit.is-visible {
     opacity: 1;
@@ -20338,7 +20357,6 @@ button.supplement-sheet-editor__tool-btn.supplement-sheet-editor__tool-btn--time
 }
 .supplement-sheet-editor__formula-commit.is-ready {
     color: #1f9d57;
-    display: block;
 }
 .supplement-sheet-editor__input {
     grid-column: 1;

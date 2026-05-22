@@ -107,6 +107,34 @@ function ensurePlistBoolValue(plistContent, key, boolValue) {
   };
 }
 
+function ensurePlistArrayValue(plistContent, key, values) {
+  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const keyRegex = new RegExp(
+    `(<key>${escapedKey}<\\/key>\\s*<array>)([\\s\\S]*?)(\\s*<\\/array>)`,
+    'i'
+  );
+  const normalizedEntries = values.map((value) => `\n\t\t<string>${value}</string>`).join('');
+
+  if (keyRegex.test(plistContent)) {
+    const nextContent = plistContent.replace(keyRegex, `$1${normalizedEntries}\n\t$3`);
+    return {
+      changed: nextContent !== plistContent,
+      content: nextContent
+    };
+  }
+
+  const insertion = `\n\t<key>${key}</key>\n\t<array>${normalizedEntries}\n\t</array>`;
+  const closingDictTag = '\n</dict>\n</plist>';
+  if (!plistContent.includes(closingDictTag)) {
+    throw new Error(`Could not find the closing </dict></plist> sequence while inserting ${key}.`);
+  }
+
+  return {
+    changed: true,
+    content: plistContent.replace(closingDictTag, `${insertion}${closingDictTag}`)
+  };
+}
+
 function removeMarkedSwiftBlock(swiftContent) {
   if (
     !swiftContent.includes(PROVISIONING_PLUGIN_MARKER_START) ||
@@ -172,6 +200,23 @@ function main() {
     plistChanged = plistChanged || result.changed;
   }
 
+  const portraitOrientations = ['UIInterfaceOrientationPortrait'];
+  const phoneOrientationsResult = ensurePlistArrayValue(
+    content,
+    'UISupportedInterfaceOrientations',
+    portraitOrientations
+  );
+  content = phoneOrientationsResult.content;
+  plistChanged = plistChanged || phoneOrientationsResult.changed;
+
+  const ipadOrientationsResult = ensurePlistArrayValue(
+    content,
+    'UISupportedInterfaceOrientations~ipad',
+    portraitOrientations
+  );
+  content = ipadOrientationsResult.content;
+  plistChanged = plistChanged || ipadOrientationsResult.changed;
+
   if (plistChanged) {
     fs.writeFileSync(infoPlistPath, content, 'utf8');
   }
@@ -208,7 +253,7 @@ function main() {
 
   if (!plistChanged && !swiftChanged && !storyboardChanged) {
     console.log(
-      `[configure-capacitor-ios] already configured with URL scheme "${CALLBACK_SCHEME}", dark-content status bar defaults, iOS privacy usage descriptions, and without the provisioning profile bridge`
+      `[configure-capacitor-ios] already configured with URL scheme "${CALLBACK_SCHEME}", portrait-only orientations, dark-content status bar defaults, iOS privacy usage descriptions, and without the provisioning profile bridge`
     );
     return;
   }

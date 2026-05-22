@@ -162,9 +162,12 @@ function saveMealPageScroll() {
     if (searchScreen && state.mealSearchScrollByTab) {
         const tab = state.mealSearchTab || 'all';
         const panel = searchScreen.querySelector(`.meal-search-tab-panel[data-tab="${tab}"]`);
-        const list = panel && panel.querySelector('.meal-search-list');
-        if (list) {
-            state.mealSearchScrollByTab[tab] = list.scrollTop;
+        const scrollHost =
+            panel?.classList?.contains('meal-search-tab-panel--keyboard-padding-only')
+                ? panel
+                : panel?.querySelector('.meal-search-list');
+        if (scrollHost) {
+            state.mealSearchScrollByTab[tab] = scrollHost.scrollTop;
         }
     }
     mealPageScrollY = getMealScrollY();
@@ -11913,6 +11916,9 @@ function renderMealSearch() {
     const panelProducts = createElement('div', 'meal-search-tab-panel');
     const panelRecipes = createElement('div', 'meal-search-tab-panel');
     const panelBase = createElement('div', 'meal-search-tab-panel');
+    panelProducts.classList.add('meal-search-tab-panel--keyboard-padding-only');
+    panelRecipes.classList.add('meal-search-tab-panel--keyboard-padding-only');
+    panelBase.classList.add('meal-search-tab-panel--keyboard-padding-only');
     panelAll.dataset.tab = 'all';
     panelProducts.dataset.tab = 'products';
     panelRecipes.dataset.tab = 'recipes';
@@ -12053,6 +12059,13 @@ function renderMealSearch() {
         if (t === 'products') return listProducts;
         if (t === 'recipes') return listRecipes;
         if (t === 'base') return listBase;
+        return listAll;
+    }
+
+    function getSearchScrollHostByTab(t) {
+        if (t === 'products') return panelProducts;
+        if (t === 'recipes') return panelRecipes;
+        if (t === 'base') return panelBase;
         return listAll;
     }
 
@@ -12376,20 +12389,20 @@ function renderMealSearch() {
 
 
 
-    function wireMealSearchListScroll(list, tabKey) {
-        list.addEventListener(
+    function wireMealSearchListScroll(scrollHost, tabKey) {
+        scrollHost.addEventListener(
             'scroll',
             () => {
-                state.mealSearchScrollByTab[tabKey] = list.scrollTop;
+                state.mealSearchScrollByTab[tabKey] = scrollHost.scrollTop;
             },
             { passive: true }
         );
     }
 
     wireMealSearchListScroll(listAll, 'all');
-    wireMealSearchListScroll(listProducts, 'products');
-    wireMealSearchListScroll(listRecipes, 'recipes');
-    wireMealSearchListScroll(listBase, 'base');
+    wireMealSearchListScroll(panelProducts, 'products');
+    wireMealSearchListScroll(panelRecipes, 'recipes');
+    wireMealSearchListScroll(panelBase, 'base');
 
     function syncMealSearchTopbarActionForTab(tab) {
         renderTopbarActionsForTab(tab);
@@ -12447,9 +12460,9 @@ function renderMealSearch() {
         }
 
         requestAnimationFrame(() => {
-            const newList = getSearchListByTab(tab);
-            if (newList) {
-                newList.scrollTop = 0;
+            const newScrollHost = getSearchScrollHostByTab(tab);
+            if (newScrollHost) {
+                newScrollHost.scrollTop = 0;
             }
         });
 
@@ -12566,9 +12579,9 @@ function renderMealSearch() {
         renderProductsOrRecipesPage(listRecipes, recipesPager, requestId);
 
         listAll.scrollTop = state.mealSearchScrollByTab.all || 0;
-        listProducts.scrollTop = state.mealSearchScrollByTab.products || 0;
-        listRecipes.scrollTop = state.mealSearchScrollByTab.recipes || 0;
-        listBase.scrollTop = state.mealSearchScrollByTab.base || 0;
+        panelProducts.scrollTop = state.mealSearchScrollByTab.products || 0;
+        panelRecipes.scrollTop = state.mealSearchScrollByTab.recipes || 0;
+        panelBase.scrollTop = state.mealSearchScrollByTab.base || 0;
 
         // Вкладка "база": FatSecret (англ.) или общий каталог Firestore «база пользователей».
         if (state.mealSearchBaseMode === 'user') {
@@ -12636,6 +12649,36 @@ function renderMealSearch() {
         }
         loadAndRender();
     }, 250));
+
+    function getActiveMealSearchInput() {
+        const active = document.activeElement;
+        if (active === inputProducts || active === inputRecipes || active === inputBase) {
+            return active;
+        }
+        return null;
+    }
+
+    screen.addEventListener(
+        'pointerdown',
+        (event) => {
+            const activeInput = getActiveMealSearchInput();
+            if (!activeInput) return;
+            if (!document.body?.classList?.contains('app-keyboard-visible')) return;
+
+            const target = event.target;
+            if (!target) return;
+
+            const activeRow = activeInput.closest('.meal-search-panel-search');
+            if (activeRow?.contains(target)) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation?.();
+            activeInput.blur();
+            syncMealTabSearchRowsUi();
+        },
+        true
+    );
 
     function renderBasePaginationFooter(requestId) {
         if (requestId !== loadRequestId) return;

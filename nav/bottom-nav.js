@@ -6,7 +6,7 @@
  */
 
 import { bottomNavMarkup } from './bottom-nav-markup.js';
-import { shouldBlockSupplementTablePageNavigation } from '../pages/supplement.js';
+import { handleSupplementTableBottomNavAttempt, shouldBlockSupplementTablePageNavigation } from '../pages/supplement.js';
 
 let bottomNavStylesInjected = false;
 
@@ -340,6 +340,7 @@ function renderApp() {
 function shouldBlockBottomNavPageSwitch(targetPage, state) {
     if (!state) return false;
     if (state.currentPage === targetPage) return false;
+    if (handleSupplementTableBottomNavAttempt()) return true;
     return shouldBlockSupplementTablePageNavigation();
 }
 

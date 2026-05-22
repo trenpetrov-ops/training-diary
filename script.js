@@ -88,6 +88,7 @@ const CLOUDINARY_CLOUD_NAME = 'dck5p8h6x';
 const CLOUDINARY_UPLOAD_PRESET = 'training_diary';
 const LAST_SELECTED_CYCLE_STORAGE_PREFIX = 'trainingDiary:lastSelectedCycle:v1';
 const LOCAL_BUILD_TRIAL_STARTED_AT_KEY = 'trainingDiary:localBuildTrialStartedAt:v1';
+const LOCAL_BUILD_TRIAL_BUILD_STAMP_KEY = 'trainingDiary:localBuildTrialBuildStamp:v1';
 const LOCAL_BUILD_TRIAL_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
 
 
@@ -580,14 +581,46 @@ function persistLocalBuildTrialStartedAt(value) {
     } catch (_) {}
 }
 
+function readLocalBuildTrialBuildStamp() {
+    try {
+        return String(window.localStorage?.getItem?.(LOCAL_BUILD_TRIAL_BUILD_STAMP_KEY) || '').trim();
+    } catch (_) {
+        return '';
+    }
+}
+
+function persistLocalBuildTrialBuildStamp(value) {
+    try {
+        const normalized = String(value || '').trim();
+        if (!normalized) {
+            window.localStorage?.removeItem?.(LOCAL_BUILD_TRIAL_BUILD_STAMP_KEY);
+            return;
+        }
+        window.localStorage?.setItem?.(LOCAL_BUILD_TRIAL_BUILD_STAMP_KEY, normalized);
+    } catch (_) {}
+}
+
+function getCurrentLocalBuildTrialBuildStamp() {
+    try {
+        return String(window.__TD_BUILD_STAMP__ || '').trim();
+    } catch (_) {
+        return '';
+    }
+}
+
 function ensureLocalBuildTrialStartedAt() {
     if (!isCapacitorIosPlatform()) return null;
 
+    const currentBuildStamp = getCurrentLocalBuildTrialBuildStamp();
+    const savedBuildStamp = readLocalBuildTrialBuildStamp();
     const existing = readLocalBuildTrialStartedAt();
-    if (existing) return existing;
+    if (existing && (!currentBuildStamp || currentBuildStamp === savedBuildStamp)) {
+        return existing;
+    }
 
     const startedAt = Date.now();
     persistLocalBuildTrialStartedAt(startedAt);
+    persistLocalBuildTrialBuildStamp(currentBuildStamp);
     return startedAt;
 }
 
@@ -9745,6 +9778,7 @@ const KEYBOARD_MODAL_HOST_SELECTOR = [
 const KEYBOARD_SHIFT_HOST_SELECTOR = [
     KEYBOARD_MODAL_HOST_SELECTOR,
     '.create-food-form-scroll-host--keyboard-padding-only',
+    '.meal-search-tab-panel--keyboard-padding-only',
     '.meal-overlay-subpage',
     '.meal-overlay-layer',
     '.modal-overlay-remove-edit',
@@ -9782,6 +9816,7 @@ function shouldUseKeyboardPaddingOnlyHost(host) {
     return Boolean(
         host?.classList?.contains('create-food-form-page--keyboard-padding-only')
         || host?.classList?.contains('create-food-form-scroll-host--keyboard-padding-only')
+        || host?.classList?.contains('meal-search-tab-panel--keyboard-padding-only')
     );
 }
 

@@ -82,7 +82,9 @@ function createSupplementTableSheetDefaultState() {
         timePanelOpen: false,
         textInputFocused: false,
         commitUiPinned: false,
-        numericPadMode: false
+        numericPadMode: false,
+        saveInFlight: false,
+        suppressEditorFocusUntil: 0
     };
 }
 
@@ -1560,6 +1562,16 @@ function applySupplementTableCellSelectionVisual(button) {
     button?.classList.add('supplement-dose-cell-btn--selected');
 }
 
+export function handleSupplementTableBottomNavAttempt() {
+    if (!isSupplementsTableViewActive() || !isSupplementTableSheetSelectionActive()) return false;
+    if (hasSupplementTablePendingSaveChanges()) {
+        showToast('Сохраните данные');
+        return true;
+    }
+    clearSupplementTableCellSelection({ preserveMenu: false, revertPreview: false });
+    return true;
+}
+
 function removeSupplementTableSheetEditorShell() {
     window.clearTimeout(supplementTableEditorDeferredScrollTimer);
     supplementTableEditorDeferredScrollTimer = null;
@@ -1616,6 +1628,8 @@ function clearSupplementTableCellSelection({ preserveMenu = false, revertPreview
     supplementTableSheetState.textInputFocused = false;
     supplementTableSheetState.commitUiPinned = false;
     supplementTableSheetState.numericPadMode = false;
+    supplementTableSheetState.saveInFlight = false;
+    supplementTableSheetState.suppressEditorFocusUntil = 0;
     if (!preserveMenu) {
         supplementTableSheetState.menuOpen = false;
     }
@@ -1629,14 +1643,19 @@ export function cleanupSupplementTransientUi() {
     endSupplementDoseMergeMode();
 }
 
-function resetSupplementTableSheetSelectionDraftState() {
+function resetSupplementTableSheetSelectionDraftState({ preserveBufferedPlanBase = false } = {}) {
     if (!supplementTableSheetState.selectedCell) return;
     const nextDraft = cloneSupplementTableCellDraft(supplementTableSheetState.draft);
     supplementTableSheetState.draft = nextDraft;
     supplementTableSheetState.initialDraft = cloneSupplementTableCellDraft(nextDraft);
     supplementTableSheetState.history = [cloneSupplementTableCellDraft(nextDraft)];
     supplementTableSheetState.historyIndex = 0;
+    if (!preserveBufferedPlanBase) {
+        supplementTableSheetState.bufferedPlanBase = null;
+    }
     supplementTableSheetState.commitUiPinned = false;
+    supplementTableSheetState.saveInFlight = false;
+    supplementTableSheetState.suppressEditorFocusUntil = 0;
 }
 
 function doesSupplementTableSelectionMatchCell(dateStr, supplementName, slot) {
@@ -1699,6 +1718,8 @@ function setSupplementTableCellSelection(button, mergeRange = null, { preserveEd
     supplementTableSheetState.textInputFocused = preserveEditorFocus;
     supplementTableSheetState.commitUiPinned = false;
     supplementTableSheetState.numericPadMode = false;
+    supplementTableSheetState.saveInFlight = false;
+    supplementTableSheetState.suppressEditorFocusUntil = 0;
 
     applySupplementTableCellSelectionVisual(button);
     syncSupplementTableEditorShell();
@@ -1765,7 +1786,7 @@ function applySupplementTableSelectionDraftLocally() {
     }
 
     selectedCell.originalRawDose = cloneSupplementDoseValue(nextRawDose);
-    resetSupplementTableSheetSelectionDraftState();
+    resetSupplementTableSheetSelectionDraftState({ preserveBufferedPlanBase: true });
     syncSupplementTableEditorShell();
 
     return { changed: true, scope, nextRawDose };
@@ -2176,6 +2197,15 @@ function ensureSupplementTableSheetEditorShell() {
         commitSupplementTableSheetDraftPatch({ text: textInput.value });
     });
     textInput.addEventListener('focus', () => {
+        if (Date.now() < Number(supplementTableSheetState.suppressEditorFocusUntil || 0)) {
+            supplementTableSheetState.textInputFocused = false;
+            requestAnimationFrame(() => {
+                textInput.blur();
+            });
+            syncSupplementTableEditorShell();
+            return;
+        }
+        supplementTableSheetState.suppressEditorFocusUntil = 0;
         supplementTableSheetState.formatPanelOpen = false;
         supplementTableSheetState.formatColorPaletteOpen = false;
         supplementTableSheetState.timePanelOpen = false;
@@ -2194,20 +2224,35 @@ function ensureSupplementTableSheetEditorShell() {
     const blurBtn = createElement('button', 'supplement-sheet-editor__formula-commit');
     blurBtn.type = 'button';
     blurBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 512 512" aria-hidden="true"><title>Checkmark-sharp SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="44" d="M416 128L192 384l-96-96"></path></svg>`;
-    blurBtn.addEventListener('click', async () => {
+    const triggerCommitFromEditor = async () => {
+        if (supplementTableSheetState.saveInFlight) return;
+        supplementTableSheetState.suppressEditorFocusUntil = Date.now() + 320;
         supplementTableSheetState.commitUiPinned = false;
         if (hasSupplementTablePendingSaveChanges()) {
             supplementTableSheetState.textInputFocused = false;
             supplementTableSheetState.formatPanelOpen = false;
             supplementTableSheetState.formatColorPaletteOpen = false;
             supplementTableSheetState.timePanelOpen = false;
+            syncSupplementTableEditorShell();
+            syncSupplementTableTopBarMenu();
             textInput.blur();
             await saveSupplementTableSheetSelection({ preserveSelection: true });
             return;
         }
         supplementTableSheetState.textInputFocused = false;
+        syncSupplementTableEditorShell();
+        syncSupplementTableTopBarMenu();
         textInput.blur();
         syncSupplementTableEditorShell();
+    };
+    blurBtn.addEventListener('pointerdown', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        void triggerCommitFromEditor();
+    });
+    blurBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
     });
 
     formulaRow.append(textInput, formulaIcon);
@@ -2445,7 +2490,27 @@ function ensureSupplementTableSheetEditorShell() {
         if (!target) return;
         if (shell.contains(target)) return;
         if (document.querySelector('.top-bar.top-bar--supplements-table')?.contains?.(target)) return;
+        if (supplementTableSheetState.saveInFlight) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
         const currentTableWrapper = supplementTableSheetState.selectedCell?.tableWrapper || null;
+        const blockedHeaderTarget = target.closest?.('.supplement-header, .sup-name, th.supplement-col, th.date-col, thead');
+        if (blockedHeaderTarget && currentTableWrapper?.contains?.(blockedHeaderTarget)) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (hasSupplementTablePendingSaveChanges()) {
+                pinCommitUiForBlockedDismiss();
+                showToast('Сохраните данные');
+            }
+            if (supplementTableSheetState.textInputFocused || isSupplementTableEditorInputFocused()) {
+                requestAnimationFrame(() => {
+                    supplementTableSheetElements?.textInput?.focus?.({ preventScroll: true });
+                });
+            }
+            return;
+        }
         const blockedCellTarget = target.closest?.('.supplement-dose-cell-btn');
         if (blockedCellTarget && currentTableWrapper?.contains?.(blockedCellTarget)) {
             const isSameCellTarget = doesSupplementTableSelectionMatchCell(
@@ -2486,6 +2551,18 @@ function ensureSupplementTableSheetEditorShell() {
             return;
         }
         if (currentTableWrapper?.contains?.(target) && !blockedCellTarget) {
+            if (hasSupplementTablePendingSaveChanges()) {
+                pinCommitUiForBlockedDismiss();
+                event.preventDefault();
+                event.stopPropagation();
+                showToast('Сохраните данные');
+                if (supplementTableSheetState.textInputFocused || isSupplementTableEditorInputFocused()) {
+                    requestAnimationFrame(() => {
+                        supplementTableSheetElements?.textInput?.focus?.({ preventScroll: true });
+                    });
+                }
+                return;
+            }
             return;
         }
 
@@ -2566,12 +2643,14 @@ function syncSupplementTableEditorShell() {
     refs.textInput.value = draft.text;
     refs.textInput.inputMode = 'text';
     const hasPendingSave = hasSupplementTablePendingSaveChanges();
+    const saveInFlight = Boolean(supplementTableSheetState.saveInFlight);
     const editorInputActive =
         supplementTableSheetState.textInputFocused || supplementTableSheetState.commitUiPinned;
-    const commitUiVisible = hasPendingSave && editorInputActive;
+    const commitUiVisible = editorInputActive && !saveInFlight;
     refs.formulaIcon.classList.toggle('is-hidden', editorInputActive);
     refs.blurBtn.classList.toggle('is-visible', commitUiVisible);
     refs.blurBtn.classList.toggle('is-ready', hasPendingSave);
+    refs.blurBtn.disabled = saveInFlight;
     refs.formatBoldBtn.classList.toggle('is-active', style.bold);
     refs.formatItalicBtn.classList.toggle('is-active', style.italic);
     refs.formatUnderlineBtn.classList.toggle('is-active', style.underline);
@@ -2624,6 +2703,7 @@ function syncSupplementTableTopBarMenu() {
     const selectionActive = isSupplementTableSheetSelectionActive();
     const mergeModeActive = Boolean(supplementDoseMergeSession);
     const historyVisible = hasSupplementPlanHistoryChanges();
+    const saveInFlight = Boolean(supplementTableSheetState.saveInFlight);
     const editorShellPinned =
         supplementTableSheetState.textInputFocused || supplementTableSheetState.commitUiPinned;
     const editorTopBarVisible = selectionActive && !editorShellPinned && !mergeModeActive;
@@ -2661,8 +2741,8 @@ function syncSupplementTableTopBarMenu() {
     };
 
     const hasPendingSave = hasSupplementTablePendingSaveChanges();
-    const canUndo = canUndoSupplementPlanHistory() && !hasPendingSave;
-    const canRedo = canRedoSupplementPlanHistory() && !hasPendingSave;
+    const canUndo = canUndoSupplementPlanHistory() && !hasPendingSave && !saveInFlight;
+    const canRedo = canRedoSupplementPlanHistory() && !hasPendingSave && !saveInFlight;
 
     if (mergeActionsVisible) {
         const cancelMergeBtn = createElement(
@@ -2759,7 +2839,7 @@ function syncSupplementTableTopBarMenu() {
 
         const saveBtn = createElement('button', 'supplements-topbar-inline-menu-text-btn supplements-topbar-inline-menu-text-btn--save', 'Сохранить');
         saveBtn.type = 'button';
-        saveBtn.disabled = !hasSupplementTablePendingSaveChanges();
+        saveBtn.disabled = !hasSupplementTablePendingSaveChanges() || saveInFlight;
         saveBtn.addEventListener('click', async () => {
             await saveSupplementTableSheetSelection();
         });
@@ -2771,6 +2851,7 @@ function syncSupplementTableTopBarMenu() {
 function handleSupplementTableCellSelection(button, mergeRange = null) {
     if (!button?.dataset?.date || !button?.dataset?.supplementName) return;
     if (supplementDoseMergeSession) return;
+    if (supplementTableSheetState.saveInFlight) return;
 
     const isSameCell = doesSupplementTableSelectionMatchCell(
         button.dataset.date,
@@ -2797,7 +2878,7 @@ function handleSupplementTableCellSelection(button, mergeRange = null) {
         applySupplementTableSelectionDraftLocally();
     }
 
-    if (false && hasSupplementTablePendingSaveChanges()) {
+    if (false) {
         showToast('Сохраните данные');
         return;
     }
@@ -2810,7 +2891,7 @@ function handleSupplementTableCellSelection(button, mergeRange = null) {
 
 async function saveSupplementTableSheetSelection({ preserveSelection = false } = {}) {
     const selectedCell = supplementTableSheetState.selectedCell;
-    if (!selectedCell) return;
+    if (!selectedCell || supplementTableSheetState.saveInFlight) return;
 
     let scope = 'single';
     if (isSupplementTableSheetDraftDirty()) {
@@ -2819,6 +2900,7 @@ async function saveSupplementTableSheetSelection({ preserveSelection = false } =
     }
 
     if (!hasSupplementTablePendingSaveChanges()) {
+        supplementTableSheetState.saveInFlight = false;
         if (preserveSelection) {
             supplementTableSheetState.formatPanelOpen = false;
             supplementTableSheetState.formatColorPaletteOpen = false;
@@ -2846,6 +2928,7 @@ async function saveSupplementTableSheetSelection({ preserveSelection = false } =
     const nextSignature = getSupplementPlanSnapshotSignature(plan);
 
     if (previousSignature === nextSignature) {
+        supplementTableSheetState.saveInFlight = false;
         supplementTableSheetState.bufferedPlanBase = null;
         if (preserveSelection) {
             supplementTableSheetState.formatPanelOpen = false;
@@ -2861,8 +2944,13 @@ async function saveSupplementTableSheetSelection({ preserveSelection = false } =
         return;
     }
 
+    supplementTableSheetState.saveInFlight = true;
+    syncSupplementTableEditorShell();
+    syncSupplementTableTopBarMenu();
+
     const saved = await updateSupplementPlanInFirestore(plan, { previousPlanOverride: previousPlan });
     if (!saved) {
+        supplementTableSheetState.saveInFlight = false;
         if (preserveSelection) {
             supplementTableSheetState.textInputFocused = false;
             supplementTableSheetState.commitUiPinned = true;
@@ -2874,6 +2962,7 @@ async function saveSupplementTableSheetSelection({ preserveSelection = false } =
         return;
     }
 
+    supplementTableSheetState.saveInFlight = false;
     supplementTableSheetState.bufferedPlanBase = null;
     if (preserveSelection) {
         supplementTableSheetState.formatPanelOpen = false;
@@ -3331,6 +3420,12 @@ function renderSupplementsTableView(contentContainer, planData) {
             const nameBtn = createElement('button', 'sup-name', column.shortName || column.name);
             nameBtn.type = 'button';
             nameBtn.addEventListener('click', () => {
+                if (isSupplementTableSheetSelectionActive()) {
+                    if (hasSupplementTablePendingSaveChanges()) {
+                        showToast('Сохраните данные');
+                    }
+                    return;
+                }
                 openSupplementEditModal({
                     planIndex: column.planIndex,
                     currentName: column.name,
@@ -3344,6 +3439,12 @@ function renderSupplementsTableView(contentContainer, planData) {
             addBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24"><title>Add-plus SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 12h6m0 0h6m-6 0v6m0-6V6"></path></svg>`;
             addBtn.type = 'button';
             addBtn.addEventListener('click', () => {
+                if (isSupplementTableSheetSelectionActive()) {
+                    if (hasSupplementTablePendingSaveChanges()) {
+                        showToast('Сохраните данные');
+                    }
+                    return;
+                }
                 openSupplementEditModal({
                     planIndex: -1,
                     currentName: '',
@@ -5154,10 +5255,17 @@ function normalizeSupplementTableCellDraftForComparison(draft) {
 
 function buildSupplementDoseValueFromDraft(draft, previousRawDose = '') {
     const previousDose = parseSupplementDoseValue(previousRawDose);
+    const nextText = String(draft?.text || '').trim();
+    const previousLegacyQuantityText = formatSupplementDoseQuantity(previousRawDose).trim();
+    const shouldPreserveLegacyQuantity =
+        !previousDose.text &&
+        nextText.length > 0 &&
+        nextText === previousLegacyQuantityText;
+
     return buildSupplementDoseValue({
-        text: String(draft?.text || '').trim(),
-        dosage: previousDose.dosage,
-        tablets: previousDose.tablets,
+        text: shouldPreserveLegacyQuantity ? '' : nextText,
+        dosage: shouldPreserveLegacyQuantity ? previousDose.dosage : '',
+        tablets: shouldPreserveLegacyQuantity ? previousDose.tablets : '',
         times: normalizeSupplementTimes(draft?.times || []),
         taken: Boolean(draft?.taken ?? previousDose.taken),
         style: cloneSupplementDoseStyle(draft?.style)
