@@ -12,6 +12,9 @@ import {
     showToast,
     openConfirmModal,
     openDateModal,
+    isOfflineModeActive,
+    isOfflineMediaUploadUnsupportedError,
+    getOfflineMediaUploadUnavailableMessage,
     uploadUserMediaFileWithProgress,
     deleteUserFirebaseStorageFileByDownloadUrl
 } from '../script.js';
@@ -821,7 +824,13 @@ function renderPhotoControls(photos, container, reportId) {
     fileInput.style.display = 'none';
 
     const addPhotoBtn = createElement('button', 'btn btn-secondary btn-small', '+');
-    addPhotoBtn.addEventListener('click', () => fileInput.click());
+    addPhotoBtn.addEventListener('click', () => {
+        if (isOfflineModeActive()) {
+            showToast(getOfflineMediaUploadUnavailableMessage(), 'error');
+            return;
+        }
+        fileInput.click();
+    });
 
     fileInput.addEventListener('change', async (e) => {
         const files = Array.from(e.target.files);
@@ -843,7 +852,12 @@ function renderPhotoControls(photos, container, reportId) {
                 showToast(`Фото ${file.name} загружено!`);
             } catch (error) {
                 console.error(error);
-                showToast(`Ошибка загрузки ${file.name}`, 'error');
+                showToast(
+                    isOfflineMediaUploadUnsupportedError(error)
+                        ? getOfflineMediaUploadUnavailableMessage()
+                        : `Ошибка загрузки ${file.name}`,
+                    'error'
+                );
             }
         }
         renderPhotoControls(photos, container, reportId);

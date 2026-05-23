@@ -45,6 +45,8 @@ import {
     requestAppChromeSync,
     showToast,
     isOfflineModeActive,
+    isOfflineMediaUploadUnsupportedError,
+    getOfflineMediaUploadUnavailableMessage,
     uploadUserMediaFileWithProgress,
     deleteUserFirebaseStorageFileByDownloadUrl
 } from '../script.js';
@@ -1674,6 +1676,10 @@ function openMealPhotoCaptureFlow(mealId) {
     };
 
     const openPicker = () => {
+        if (isOfflineModeActive()) {
+            showToast(getOfflineMediaUploadUnavailableMessage(), 'error');
+            return;
+        }
         fileInput.value = '';
         fileInput.click();
     };
@@ -1726,7 +1732,11 @@ function openMealPhotoCaptureFlow(mealId) {
                 showToast('Фото добавлено в прием');
             } catch (error) {
                 console.error(error);
-                showToast('Не удалось сохранить фото');
+                showToast(
+                    isOfflineMediaUploadUnsupportedError(error)
+                        ? getOfflineMediaUploadUnavailableMessage()
+                        : 'Не удалось сохранить фото'
+                );
                 retakeBtn.disabled = false;
                 saveBtn.disabled = false;
                 saveBtn.textContent = 'Сохранить';

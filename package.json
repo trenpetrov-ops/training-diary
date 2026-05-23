@@ -17,6 +17,7 @@
     "@capacitor/keyboard": "^7.0.6",
     "@capacitor/network": "^7.0.4",
     "@capacitor/status-bar": "^7.0.6",
+    "@fontsource/inter": "^5.2.8",
     "firebase": "^12.13.0",
     "lottie-web": "^5.13.0",
     "vite": "^8.0.14"

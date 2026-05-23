@@ -3190,7 +3190,6 @@ div#journal-content .record-header button.edit-date-btn svg {
 }
 div#journal-content .record-header .record-date {
     font-size: 12px;
-    padding-left: 6px;
     /* padding-left: 11px; */
     display: flex;
     align-items: flex-end;
@@ -14509,7 +14508,6 @@ button.action-btn.action-plan span.action-plan-text svg {
     resize: vertical;
     padding-top: 11px;
     line-height: 1.35;
-    margin-top: 16px;
 }
 .create-food-actions {
     padding: 19px 0px;
