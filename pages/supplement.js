@@ -1,5 +1,4 @@
 import {
-    getFirestore,
     doc,
     addDoc,
     setDoc,
@@ -10,7 +9,7 @@ import {
     getDocs,
     query,       // 👈 добавь
     where
-} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+} from "../offline/firestore-ops.js";
 import { openCycleSelectModal } from '../script.js';
 import { openDateModal } from '../script.js';
 import { getTodayDateString } from '../script.js';

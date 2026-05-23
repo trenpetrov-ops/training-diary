@@ -20,7 +20,7 @@ import {
     startAt,
     endAt,
     writeBatch
-} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+} from "../offline/firestore-ops.js";
 const mealOpenState = JSON.parse(localStorage.getItem('mealOpenState') || '{}');
 import {
     getCycleDocRef,
@@ -44,6 +44,7 @@ import {
     resolveServerApiUrl,
     requestAppChromeSync,
     showToast,
+    isOfflineModeActive,
     uploadUserMediaFileWithProgress,
     deleteUserFirebaseStorageFileByDownloadUrl
 } from '../script.js';
@@ -7857,6 +7858,12 @@ async function renderFoodDetails() {
 
         let fatFood = state.fatsecretDetailsCache[fatId]?.food || null;
         if (!fatFood) {
+            if (isOfflineModeActive()) {
+                showToast('Офлайн-режим: детали FatSecret недоступны без интернета');
+                state.mealView = 'search';
+                renderMealSearch();
+                return;
+            }
             try {
                 const resp = await fetch(resolveServerApiUrl('/api/fatsecret/food'), {
                     method: 'POST',
@@ -12919,6 +12926,15 @@ function renderMealSearch() {
             if (existing) existing.remove();
         }
 
+        if (isOfflineModeActive()) {
+            listBase.innerHTML = `
+                <div class="meal-search-empty">
+                    Офлайн-режим: база FatSecret недоступна без интернета. Используйте ваши локальные продукты и рецепты.
+                </div>
+            `;
+            return;
+        }
+
         let data = null;
         try {
             const resp = await fetch(resolveServerApiUrl('/api/fatsecret/search'), {
@@ -13139,6 +13155,9 @@ function renderMealSearch() {
                 externalId: fatId
             };
         } else {
+            if (isOfflineModeActive()) {
+                throw new Error('fatsecret_offline_unavailable');
+            }
             const resp = await fetch(resolveServerApiUrl('/api/fatsecret/food'), {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },

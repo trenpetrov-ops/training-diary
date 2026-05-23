@@ -1,19 +1,10 @@
 const CACHE_NAME = 'training-diary-v7';
 const CACHE_URLS = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  '/styles.css',
-  '/nav/bottom-nav.css',
-  '/nav/bottom-nav.js',
-  '/nav/bottom-nav-markup.js',
-  '/script.js',
-  '/pages/meal.js',
-  '/pages/profile.js',
-  '/pages/reports.js',
-  '/pages/supplement.js',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png'
+  './',
+  './index.html',
+  './manifest.json',
+  './icons/icon-192.png',
+  './icons/icon-512.png'
 ];
 
 self.addEventListener('install', event => {

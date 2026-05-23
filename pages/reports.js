@@ -3,7 +3,7 @@ import {
     deleteDoc,
     doc,
     updateDoc
-} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+} from "../offline/firestore-ops.js";
 import {
     getTodayDateString,
     getReportsCollection,

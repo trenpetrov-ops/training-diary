@@ -1,4 +1,4 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import { initializeApp } from "firebase/app";
 import { renderMealPage } from './pages/meal.js';
 import { renderReportsPage } from './pages/reports.js';
 import { renderProfilePage } from './pages/profile.js';
@@ -37,9 +37,14 @@ import {
     createUserWithEmailAndPassword,
     signInWithEmailAndPassword,
     signOut
-} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+} from "firebase/auth";
 import {
-    getFirestore,
+    initializeFirestore,
+    memoryLocalCache,
+    persistentLocalCache,
+    persistentSingleTabManager
+} from "firebase/firestore";
+import {
     doc,
     addDoc,
     setDoc,
@@ -56,7 +61,7 @@ import {
     serverTimestamp,
     writeBatch,
     arrayUnion
-} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+} from "./offline/firestore-ops.js";
 
 // 🔥 ДОБАВЛЯЕМ ИМПОРТЫ ДЛЯ FIREBASE STORAGE
 import {
@@ -65,7 +70,9 @@ import {
     uploadBytesResumable,
     getDownloadURL,
     deleteObject
-} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
+} from "firebase/storage";
+import { initNetworkMonitoring, getNetworkStatusSnapshot, subscribeNetworkStatus, isNetworkOffline } from './offline/network-status.js';
+import { clearSyncError, describeSyncStatus, getSyncStatusSnapshot, subscribeSyncStatus } from './offline/sync-status.js';
 
 document.addEventListener('contextmenu', (e) => e.preventDefault(), { capture: true });
 
@@ -90,6 +97,7 @@ const LAST_SELECTED_CYCLE_STORAGE_PREFIX = 'trainingDiary:lastSelectedCycle:v1';
 const LOCAL_BUILD_TRIAL_STARTED_AT_KEY = 'trainingDiary:localBuildTrialStartedAt:v1';
 const LOCAL_BUILD_TRIAL_BUILD_STAMP_KEY = 'trainingDiary:localBuildTrialBuildStamp:v1';
 const LOCAL_BUILD_TRIAL_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
+const FIRESTORE_PERSISTENT_CACHE_BYTES = 100 * 1024 * 1024;
 
 
 // Используем projectId в качестве уникального ID приложения для структуры базы
@@ -146,7 +154,21 @@ if (!firebaseConfig || Object.keys(firebaseConfig).length === 0) {
 
 const app = initializeApp(firebaseConfig);
 
-const db = getFirestore(app);
+const db = (() => {
+    try {
+        return initializeFirestore(app, {
+            localCache: persistentLocalCache({
+                cacheSizeBytes: FIRESTORE_PERSISTENT_CACHE_BYTES,
+                tabManager: persistentSingleTabManager()
+            })
+        });
+    } catch (error) {
+        console.warn('[firestore] Falling back to memory cache:', error);
+        return initializeFirestore(app, {
+            localCache: memoryLocalCache()
+        });
+    }
+})();
 const auth = initializeAuth(app, {
     persistence: [
         indexedDBLocalPersistence,
@@ -182,6 +204,9 @@ let codeLookupTimestamps = [];
 // 🔥 ДОБАВЛЕНО: Слушатели для БАДОВ и ОТЧЕТОВ
 let supplementsUnsubscribe = () => {};
 let reportsUnsubscribe = () => {};
+let networkMonitoringCleanup = () => {};
+let syncStatusUnsubscribe = () => {};
+let networkStatusUnsubscribe = () => {};
 
 
 
@@ -264,6 +289,8 @@ let state = {
     localBuildTrial: null,
     profileCabinetEditing: false,
     profileOriginPage: null,
+    networkStatus: getNetworkStatusSnapshot(),
+    syncStatus: getSyncStatusSnapshot(),
     appleHealthSyncReturn: initialAppleHealthSyncReturn,
     appleHealthSyncToastShown: false,
 
@@ -272,6 +299,79 @@ let state = {
 
 };
 window.state = state;
+
+export function getAppNetworkStatus() {
+    return state.networkStatus || getNetworkStatusSnapshot();
+}
+
+export function getAppSyncStatus() {
+    return state.syncStatus || getSyncStatusSnapshot();
+}
+
+export function isOfflineModeActive() {
+    return getAppNetworkStatus().online === false;
+}
+
+function shouldShowSyncStatusPill(snapshot = getAppSyncStatus()) {
+    return snapshot.status !== 'synced';
+}
+
+function getSyncStatusPillLabel(snapshot = getAppSyncStatus()) {
+    switch (snapshot.status) {
+        case 'offline-pending':
+            return `Офлайн · ${snapshot.pendingWrites}`;
+        case 'offline':
+            return 'Офлайн';
+        case 'syncing':
+            return `Синк · ${snapshot.pendingWrites}`;
+        case 'error':
+        case 'offline-error':
+            return 'Ошибка синка';
+        default:
+            return 'Синхронизировано';
+    }
+}
+
+function syncTopBarSyncStatusIndicator() {
+    const topBar = document.querySelector('.top-bar');
+    if (!topBar) return;
+
+    let pill = topBar.querySelector('.top-bar-sync-status');
+    const snapshot = getAppSyncStatus();
+    const shouldShow = shouldShowSyncStatusPill(snapshot) && Boolean(userId);
+
+    if (!shouldShow) {
+        pill?.remove();
+        return;
+    }
+
+    if (!pill) {
+        pill = document.createElement('button');
+        pill.type = 'button';
+        pill.className = 'top-bar-sync-status';
+        pill.addEventListener('click', () => {
+            const current = getAppSyncStatus();
+            if (current.lastError) {
+                showToast(current.lastError.message || 'Ошибка синхронизации');
+                clearSyncError();
+                return;
+            }
+            showToast(describeSyncStatus(current));
+        });
+        topBar.appendChild(pill);
+    }
+
+    pill.className = `top-bar-sync-status top-bar-sync-status--${snapshot.status}`;
+    pill.textContent = getSyncStatusPillLabel(snapshot);
+    pill.title = describeSyncStatus(snapshot);
+}
+
+function applyAppConnectivityState({ rerender = false } = {}) {
+    state.networkStatus = getNetworkStatusSnapshot();
+    state.syncStatus = getSyncStatusSnapshot();
+    syncTopBarSyncStatusIndicator();
+    if (rerender) render();
+}
 
 function enqueueAppleHealthSyncReturn(payload, { rerender = false } = {}) {
     if (!payload || typeof payload !== 'object') return false;
@@ -3532,6 +3632,7 @@ export async function uploadUserMediaFileWithProgress(file, folder = 'uploads', 
     const uid = getCurrentAuthUid();
     if (!uid) throw new Error('Нужна авторизация для загрузки файла');
 
+    if (isOfflineModeActive()) throw new Error('offline_media_upload_not_supported');
     const safeFolder = String(folder || 'uploads').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || 'uploads';
     const rawName = file.name || 'file';
     const safeName = rawName.replace(/[^\w.\-+()]/g, '_').slice(0, 180);
@@ -3587,23 +3688,46 @@ export async function deleteUserFirebaseStorageFileByDownloadUrl(downloadUrl) {
 // Дополнительно: прежняя загрузка в Cloudinary (оставлена для совместимости)
 // -----------------------------------------------------------
 export async function uploadFileToCloudinaryWithProgress(file, onProgress) {
+  if (isOfflineModeActive()) {
+    throw new Error('offline_media_upload_not_supported');
+  }
+
   const url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/upload`;
   const formData = new FormData();
   formData.append('file', file);
   formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
 
-  const res = await axios.post(url, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-    onUploadProgress: (event) => {
-      if (event.total && typeof onProgress === 'function') {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url, true);
+    xhr.responseType = 'json';
+
+    if (xhr.upload && typeof onProgress === 'function') {
+      xhr.upload.addEventListener('progress', (event) => {
+        if (!event.lengthComputable || !event.total) return;
         const percent = Math.round((event.loaded * 100) / event.total);
         onProgress(percent);
-      }
-    },
-  });
+      });
+    }
 
-  onProgress(100);
-  return res.data.secure_url;
+    xhr.addEventListener('load', () => {
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new Error(`cloudinary_upload_failed_${xhr.status}`));
+        return;
+      }
+
+      const body = xhr.response && typeof xhr.response === 'object'
+        ? xhr.response
+        : JSON.parse(xhr.responseText || '{}');
+
+      if (typeof onProgress === 'function') onProgress(100);
+      resolve(body.secure_url);
+    });
+
+    xhr.addEventListener('error', () => reject(new Error('cloudinary_upload_network_error')));
+    xhr.addEventListener('abort', () => reject(new Error('cloudinary_upload_aborted')));
+    xhr.send(formData);
+  });
 }
 
 
@@ -9528,10 +9652,8 @@ function openMenuModal() {
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
   if (!isCapacitorNativePlatform()) {
     try {
-      const swUrl = new URL('./sw.js', import.meta.url);
-      const scope = new URL('./', import.meta.url).href;
       navigator.serviceWorker
-        .register(swUrl.href, { scope })
+        .register('./sw.js', { scope: './' })
         .then(() => console.log('✅ Service Worker зарегистрирован'))
         .catch((err) => console.error('Ошибка регистрации SW', err));
     } catch (err) {
@@ -10350,6 +10472,25 @@ window.addEventListener('unhandledrejection', (event) => {
 runBootstrapStep('ensureAppViewportHeightBinding', ensureAppViewportHeightBinding);
 runBootstrapStep('ensureNativeKeyboardBottomNavBinding', ensureNativeKeyboardBottomNavBinding);
 runBootstrapStep('scheduleLocalBuildTrialCountdownTick', scheduleLocalBuildTrialCountdownTick);
+syncStatusUnsubscribe = subscribeSyncStatus(() => {
+    applyAppConnectivityState();
+});
+networkStatusUnsubscribe = subscribeNetworkStatus(() => {
+    applyAppConnectivityState();
+});
+void Promise.resolve()
+    .then(() => initNetworkMonitoring())
+    .then((cleanup) => {
+        if (typeof cleanup === 'function') {
+            networkMonitoringCleanup = cleanup;
+        }
+        applyAppConnectivityState();
+    })
+    .catch((error) => {
+        console.warn('[network] init failed:', error);
+        applyAppConnectivityState();
+    });
+applyAppConnectivityState();
 
 export function render() {
     const root = document.getElementById('root');
@@ -10368,6 +10509,7 @@ export function render() {
     root.innerHTML = '';
 
     renderTopBar();
+    syncTopBarSyncStatusIndicator();
 
     const openDropdown = document.querySelector('.training-dropdown');
     if (openDropdown) openDropdown.remove();

@@ -5,6 +5,7 @@
  * Отключение без правок по всему проекту: в script.js замените импорт на ./nav/bottom-nav.stub.js
  */
 
+import lottie from 'lottie-web';
 import { bottomNavMarkup } from './bottom-nav-markup.js';
 import { handleSupplementTableBottomNavAttempt, shouldBlockSupplementTablePageNavigation } from '../pages/supplement.js';
 
@@ -568,13 +569,11 @@ function setupProgramsIconAnimation() {
 }
 
 function setupLottieNavClick(containerId, btnId, jsonPath) {
-    const Lottie = window.lottie;
-    if (!Lottie) return;
     const container = document.getElementById(containerId);
     const btn = document.getElementById(btnId);
     if (!container || !btn) return;
 
-    const anim = Lottie.loadAnimation({
+    const anim = lottie.loadAnimation({
         container,
         renderer: 'svg',
         loop: false,
