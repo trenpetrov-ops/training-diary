@@ -32,6 +32,7 @@ import {
     setMealBottomNavOverlayMode,
     syncSupplementsBottomNavBadge
 } from '../nav/bottom-nav.js';
+import { createKeyedBackgroundWriter } from '../offline/background-write-queue.js';
 
 const SUPPLEMENTS_VIEW_MODE_KEY = 'trainingDiary:supplementsViewMode';
 const SUPPLEMENTS_TABLE_RANGE_KEY = 'trainingDiary:supplementsTableRange';
@@ -62,6 +63,7 @@ let supplementsCurrentViewMode = 'calendar';
 let supplementTableEditorDeferredScrollTimer = null;
 let supplementTableViewportSyncFrameId = 0;
 let supplementTableViewportSyncTimeoutId = 0;
+const supplementPlanWriter = createKeyedBackgroundWriter({ delayMs: 650 });
 
 const SUPPLEMENT_SHEET_TEXT_COLORS = ['#111827', '#d93c3c', '#0f766e', '#2563eb', '#7c3aed', '#b45309'];
 const SUPPLEMENT_SHEET_FILL_COLORS = ['', '#fff7cc', '#dff5df', '#dbeafe', '#f3e8ff', '#fee2e2'];
@@ -1268,7 +1270,10 @@ if (planData.supplements.length === 0 && planData.data.length === 0) {
                 (dayRecord.doses && dayRecord.doses[supName]) ? dayRecord.doses[supName] : '';
 
             doseInput.addEventListener('input', e => {
-                debouncedSaveDoseData(supName, dayIndex, e.target.value);
+                if (!state.supplementPlan?.data?.[dayIndex]) return;
+                state.supplementPlan.data[dayIndex].doses = state.supplementPlan.data[dayIndex].doses || {};
+                state.supplementPlan.data[dayIndex].doses[supName] = e.target.value;
+                debouncedSaveDoseData();
             });
 
             td.append(doseInput);
@@ -6366,6 +6371,21 @@ function getSupplementMonthTitle(date) {
     return `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
 }
 
+function queueSupplementPlanBackgroundSave(cycleRef, planData, options = {}) {
+    if (!cycleRef || !planData) return;
+
+    const snapshot = cloneSupplementPlanHistoryEntry(planData);
+    const delayMs = Number.isFinite(options.delayMs) ? Math.max(0, Number(options.delayMs)) : 650;
+    const errorMessage = options.errorMessage || 'Не удалось сохранить план добавок';
+
+    void supplementPlanWriter.schedule(`${cycleRef.path}::supplementPlan`, () => {
+        return updateDoc(cycleRef, { supplementPlan: snapshot });
+    }, { delayMs }).catch((error) => {
+        console.error('[supplement-save] failed:', error);
+        showToast(errorMessage);
+    });
+}
+
 async function updateSupplementPlanInFirestore(newPlan, options = {}) {
     const cycleRef = getCycleDocRef(); // 👈 теперь цикл, а не supplements
     if (!cycleRef) {
@@ -6491,16 +6511,16 @@ function formatSupplementWeeksWordRu(n) {
 }
 
 // Отложенное сохранение дозировки
-const debouncedSaveDoseData = debounce(async (supName, dayIndex, value) => {
-    const newPlan = JSON.parse(JSON.stringify(state.supplementPlan));
+const debouncedSaveDoseData = debounce(() => {
+    const cycleRef = getCycleDocRef();
+    if (!cycleRef || !state.supplementPlan) return;
 
-    if (newPlan && newPlan.data[dayIndex]) {
-        // Убедимся, что doses существует
-        newPlan.data[dayIndex].doses = newPlan.data[dayIndex].doses || {};
-        newPlan.data[dayIndex].doses[supName] = value;
-        await updateSupplementPlanInFirestore(newPlan);
-    }
-}, 700);
+    syncSupplementPlanHistoryWithState(state.supplementPlan, state.selectedCycleId);
+    queueSupplementPlanBackgroundSave(cycleRef, state.supplementPlan, {
+        delayMs: 650,
+        errorMessage: 'Не удалось сохранить дозировку'
+    });
+}, 120);
 
 // 🔥 НОВАЯ ЛОГИКА: Удаление последней недели (7 дней)
 async function removeLastWeek() {

@@ -51,6 +51,7 @@ import {
     deleteUserFirebaseStorageFileByDownloadUrl
 } from '../script.js';
 import { debounce } from './supplement.js';
+import { createKeyedBackgroundWriter } from '../offline/background-write-queue.js';
 import { resolveSwipePanAxis } from '../gestures.js';
 import { attachMonthCarouselSwipe } from '../calendar-month-carousel.js';
 import { bindSwipeBlock, closeSwipeRowVisual } from '../swipe-engine.js';
@@ -94,11 +95,69 @@ const MEAL_NO_GOAL_SUMMARY_VIEW_KEY = 'mealNoGoalSummaryView';
 let mealNoGoalSummaryCurrentMode = localStorage.getItem(MEAL_NO_GOAL_SUMMARY_VIEW_KEY) === 'current';
 const MEAL_GOAL_SUMMARY_VIEW_KEY = 'mealGoalSummaryView';
 let mealGoalSummaryCurrentMode = localStorage.getItem(MEAL_GOAL_SUMMARY_VIEW_KEY) === 'current';
+const mealsDocWriter = createKeyedBackgroundWriter({ delayMs: 420 });
 
 function syncMealAppChrome() {
     try {
         requestAppChromeSync();
     } catch (_) {}
+}
+
+function cloneMealItemsArray(items = []) {
+    return (Array.isArray(items) ? items : []).map((item) => ({ ...item }));
+}
+
+function normalizeMealsDataSnapshot(mealsData = {}) {
+    const normalized = {};
+    Object.keys(mealsData || {}).forEach((mealId) => {
+        if (!/^meal\d+$/.test(mealId)) return;
+        const items = cloneMealItemsArray(mealsData[mealId]);
+        if (items.length > 0) {
+            normalized[mealId] = items;
+        }
+    });
+    return normalized;
+}
+
+function applySelectedDateMealsData(mealsData = {}, dateStr = state.selectedDate) {
+    const normalized = normalizeMealsDataSnapshot(mealsData);
+    state.mealsData = normalized;
+    mealsDataLoadedDate = dateStr || null;
+    weekMealsPresenceCache = {};
+
+    if (dateStr) {
+        const monthKey = dateStr.slice(0, 7);
+        if (monthMealsPresenceCycleId === state.selectedCycleId && monthMealsPresenceCache[monthKey]) {
+            monthMealsPresenceCache[monthKey] = {
+                ...monthMealsPresenceCache[monthKey],
+                [dateStr]: hasAnyFoodInDoc(normalized)
+            };
+        }
+        updateCachedMonthMealsDailySummaryForDate(dateStr, normalized);
+    }
+
+    return normalized;
+}
+
+function queueMealsDataSave(cycleRef, dateStr, mealsData, options = {}) {
+    if (!cycleRef || !dateStr) return;
+
+    const snapshot = normalizeMealsDataSnapshot(mealsData);
+    const writerKey = `${cycleRef.path}::${dateStr}`;
+    const delayMs = Number.isFinite(options.delayMs) ? Math.max(0, Number(options.delayMs)) : 420;
+    const errorMessage = options.errorMessage || 'Не удалось сохранить изменения в питании';
+
+    void mealsDocWriter.schedule(writerKey, async () => {
+        const mealRef = doc(cycleRef, 'meals', dateStr);
+        if (hasAnyFoodInDoc(snapshot)) {
+            await setDoc(mealRef, snapshot);
+        } else {
+            await deleteDoc(mealRef);
+        }
+    }, { delayMs }).catch((error) => {
+        console.error('[meal-save] failed:', error);
+        showToast(errorMessage);
+    });
 }
 
 
@@ -1426,29 +1485,37 @@ async function syncSharedFoodToGlobalCatalogIfNeeded(foodId, patch) {
     }
 }
 
-async function addFoodSnapshotToCurrentMeal(food, grams) {
+function appendItemToSelectedMeal(item, mealId = state.currentMealId, options = {}) {
     const cycleRef = getCycleDocRef();
-    if (!cycleRef) return;
+    const dateStr = options.dateStr || state.selectedDate;
+    if (!cycleRef || !mealId || !dateStr || !item) return false;
 
-    const mealRef = doc(cycleRef, 'meals', state.selectedDate);
+    const nextMealsData = normalizeMealsDataSnapshot(state.mealsData || {});
+    const currentItems = cloneMealItemsArray(nextMealsData[mealId]);
+    currentItems.push({ ...item });
+    nextMealsData[mealId] = currentItems;
+    applySelectedDateMealsData(nextMealsData, dateStr);
+    queueMealsDataSave(cycleRef, dateStr, nextMealsData, options);
+    return true;
+}
 
-    await setDoc(mealRef, {
-        [state.currentMealId]: arrayUnion({
-            id: crypto.randomUUID(),
-            foodId: state.currentFoodId,
-            grams: Number(grams || food.defaultAmount || food.baseAmount || 100),
-
-            name: food.name || '',
-            description: food.description || '',
-            baseAmount: Number(food.baseAmount || 100),
-            baseUnit: food.baseUnit || 'г',
-
-            protein: Number(food.protein || 0),
-            fat: Number(food.fat || 0),
-            carbs: Number(food.carbs || 0),
-            calories: Number(food.calories || 0)
-        })
-    }, { merge: true });
+async function addFoodSnapshotToCurrentMeal(food, grams) {
+    appendItemToSelectedMeal({
+        id: crypto.randomUUID(),
+        foodId: state.currentFoodId,
+        grams: Number(grams || food.defaultAmount || food.baseAmount || 100),
+        name: food.name || '',
+        description: food.description || '',
+        baseAmount: Number(food.baseAmount || 100),
+        baseUnit: food.baseUnit || 'г',
+        protein: Number(food.protein || 0),
+        fat: Number(food.fat || 0),
+        carbs: Number(food.carbs || 0),
+        calories: Number(food.calories || 0)
+    }, state.currentMealId, {
+        delayMs: 260,
+        errorMessage: 'Не удалось сохранить продукт в приёме'
+    });
 }
 
 function parseMealDecimalInput(value, fallback = null) {
@@ -1459,8 +1526,7 @@ function parseMealDecimalInput(value, fallback = null) {
 }
 
 async function addQuickFoodToCurrentMeal(payload = {}) {
-    const cycleRef = getCycleDocRef();
-    if (!cycleRef || !state.currentMealId || !state.selectedDate) return false;
+    if (!state.currentMealId || !state.selectedDate) return false;
 
     const name = String(payload.name || '').trim();
     if (!name) return false;
@@ -1480,35 +1546,31 @@ async function addQuickFoodToCurrentMeal(payload = {}) {
             : Number((protein * 4 + fat * 9 + carbs * 4).toFixed(1))
     );
 
-    const mealRef = doc(cycleRef, 'meals', state.selectedDate);
-
-    await setDoc(mealRef, {
-        [state.currentMealId]: arrayUnion({
-            id: crypto.randomUUID(),
-            isQuickAdded: true,
-            hideWeightDisplay: !hasPortionSize,
-            planned: false,
-            name,
-            description: '',
-            grams: baseAmount,
-            baseAmount,
-            baseUnit,
-            protein,
-            fat,
-            carbs,
-            calories,
-            createdAt: Date.now()
-        })
-    }, { merge: true });
+    appendItemToSelectedMeal({
+        id: crypto.randomUUID(),
+        isQuickAdded: true,
+        hideWeightDisplay: !hasPortionSize,
+        planned: false,
+        name,
+        description: '',
+        grams: baseAmount,
+        baseAmount,
+        baseUnit,
+        protein,
+        fat,
+        carbs,
+        calories,
+        createdAt: Date.now()
+    }, state.currentMealId, {
+        delayMs: 260,
+        errorMessage: 'Не удалось сохранить быстрый продукт'
+    });
 
     return true;
 }
 
 async function addRecipeToCurrentMeal(recipe, servings) {
-    const cycleRef = getCycleDocRef();
-    if (!cycleRef || !state.currentMealId) return;
-
-    const mealRef = doc(cycleRef, 'meals', state.selectedDate);
+    if (!state.currentMealId) return;
 
     const baseServings = Math.max(0.1, Number(recipe.servings || 1));
     const currentServings = Math.max(0.1, Number(servings || baseServings));
@@ -1529,25 +1591,26 @@ async function addRecipeToCurrentMeal(recipe, servings) {
         calories: 0
     });
 
-    await setDoc(mealRef, {
-        [state.currentMealId]: arrayUnion({
-            id: crypto.randomUUID(),
-            recipeId: recipe.id,
-            isRecipe: true,
-            name: recipe.title || '',
-            description: recipe.description || '',
-            servings: currentServings,
-            baseServings,
-            grams: currentServings,
-            baseAmount: 1,
-            baseUnit: 'порц',
-            protein: totals.protein / currentServings,
-            fat: totals.fat / currentServings,
-            carbs: totals.carbs / currentServings,
-            calories: totals.calories / currentServings,
-            ingredients: ingredients
-        })
-    }, { merge: true });
+    appendItemToSelectedMeal({
+        id: crypto.randomUUID(),
+        recipeId: recipe.id,
+        isRecipe: true,
+        name: recipe.title || '',
+        description: recipe.description || '',
+        servings: currentServings,
+        baseServings,
+        grams: currentServings,
+        baseAmount: 1,
+        baseUnit: 'порц',
+        protein: totals.protein / currentServings,
+        fat: totals.fat / currentServings,
+        carbs: totals.carbs / currentServings,
+        calories: totals.calories / currentServings,
+        ingredients: ingredients
+    }, state.currentMealId, {
+        delayMs: 260,
+        errorMessage: 'Не удалось сохранить рецепт в приёме'
+    });
 
     const recipeRef = await getRecipeDocumentRef(recipe.id);
     if (recipeRef) {
@@ -1568,21 +1631,19 @@ function isMealPhotoItem(item = {}) {
 }
 
 async function addMealPhotoToCurrentMeal(mealId, photoUrl) {
-    const cycleRef = getCycleDocRef();
-    if (!cycleRef || !mealId || !state.selectedDate || !photoUrl) return;
+    if (!mealId || !state.selectedDate || !photoUrl) return;
 
-    const mealRef = doc(cycleRef, 'meals', state.selectedDate);
-
-    await setDoc(mealRef, {
-        [mealId]: arrayUnion({
-            id: crypto.randomUUID(),
-            isMealPhoto: true,
-            photoUrl: String(photoUrl).trim(),
-            name: 'Фото продукта',
-            planned: false,
-            createdAt: Date.now()
-        })
-    }, { merge: true });
+    appendItemToSelectedMeal({
+        id: crypto.randomUUID(),
+        isMealPhoto: true,
+        photoUrl: String(photoUrl).trim(),
+        name: 'Фото продукта',
+        planned: false,
+        createdAt: Date.now()
+    }, mealId, {
+        delayMs: 260,
+        errorMessage: 'Не удалось сохранить фото в приёме'
+    });
 }
 
 function getMealCameraIconMarkup() {
@@ -7258,26 +7319,22 @@ function openMealGoalSheet(targetKey) {
 // ================================ КОНЕЦ СТРАНИЦА ЦЕЛЬ
 
 async function addFoodToMealFromDetails(food, grams) {
-    const cycleRef = getCycleDocRef();
-    const mealRef = doc(cycleRef, 'meals', state.selectedDate);
-
-    await setDoc(mealRef, {
-        [state.currentMealId]: arrayUnion({
-            id: crypto.randomUUID(),
-            foodId: state.currentFoodId,
-            grams: Number(grams || food.defaultAmount || food.baseAmount || 100),
-
-            name: food.name || '',
-            description: food.description || '',
-            baseAmount: Number(food.baseAmount || 100),
-            baseUnit: food.baseUnit || 'г',
-
-            protein: Number(food.protein || 0),
-            fat: Number(food.fat || 0),
-            carbs: Number(food.carbs || 0),
-            calories: Number(food.calories || 0)
-        })
-    }, { merge: true });
+    appendItemToSelectedMeal({
+        id: crypto.randomUUID(),
+        foodId: state.currentFoodId,
+        grams: Number(grams || food.defaultAmount || food.baseAmount || 100),
+        name: food.name || '',
+        description: food.description || '',
+        baseAmount: Number(food.baseAmount || 100),
+        baseUnit: food.baseUnit || 'г',
+        protein: Number(food.protein || 0),
+        fat: Number(food.fat || 0),
+        carbs: Number(food.carbs || 0),
+        calories: Number(food.calories || 0)
+    }, state.currentMealId, {
+        delayMs: 260,
+        errorMessage: 'Не удалось сохранить продукт в приёме'
+    });
 }
 
 async function renderEditFood() {
@@ -10572,36 +10629,39 @@ async function cleanupEmptyMealsDoc(mealRef) {
 async function removeFoodFromMeal(mealId, index){
 
     const cycleRef = getCycleDocRef();
-    const mealRef = doc(cycleRef, 'meals', state.selectedDate);
+    if (!cycleRef || !state.selectedDate) return;
 
-    const snap = await getDoc(mealRef);
-    const data = snap.data();
-
-    const updated = [...(data[mealId] || [])];
+    const nextMealsData = normalizeMealsDataSnapshot(state.mealsData || {});
+    const updated = cloneMealItemsArray(nextMealsData[mealId]);
     const removed = updated[index];
-    if (removed && isMealPhotoItem(removed)) {
-        await deleteUserFirebaseStorageFileByDownloadUrl(removed.photoUrl);
-    }
-    updated.splice(index, 1);
+    if (!removed) return;
 
-    if (updated.length) {
-        await updateDoc(mealRef, { [mealId]: updated });
+    updated.splice(index, 1);
+    if (updated.length > 0) {
+        nextMealsData[mealId] = updated;
     } else {
-        await updateDoc(mealRef, { [mealId]: deleteField() });
-        await cleanupEmptyMealsDoc(mealRef);
+        delete nextMealsData[mealId];
+    }
+
+    applySelectedDateMealsData(nextMealsData);
+    queueMealsDataSave(cycleRef, state.selectedDate, nextMealsData, {
+        delayMs: 320,
+        errorMessage: 'Не удалось удалить продукт из приёма'
+    });
+
+    if (removed && isMealPhotoItem(removed)) {
+        void deleteUserFirebaseStorageFileByDownloadUrl(removed.photoUrl).catch((error) => {
+            console.warn('meal photo cleanup failed', error);
+        });
     }
 }
 
-
 async function updateFoodInMeal(mealId, itemIndex, newAmount) {
     const cycleRef = getCycleDocRef();
-    const mealRef = doc(cycleRef, 'meals', state.selectedDate);
+    if (!cycleRef || !state.selectedDate) return;
 
-    const snap = await getDoc(mealRef);
-    if (!snap.exists()) return;
-
-    const data = snap.data();
-    const items = [...(data[mealId] || [])];
+    const nextMealsData = normalizeMealsDataSnapshot(state.mealsData || {});
+    const items = cloneMealItemsArray(nextMealsData[mealId]);
 
     if (!items[itemIndex]) return;
 
@@ -10610,22 +10670,20 @@ async function updateFoodInMeal(mealId, itemIndex, newAmount) {
         grams: Number(newAmount || 0)
     };
 
-    await updateDoc(mealRef, {
-        [mealId]: items
+    nextMealsData[mealId] = items;
+    applySelectedDateMealsData(nextMealsData);
+    queueMealsDataSave(cycleRef, state.selectedDate, nextMealsData, {
+        delayMs: 320,
+        errorMessage: 'Не удалось сохранить изменения в приёме'
     });
 }
 
-
 async function updateOrMoveFoodInMeal(fromMealId, itemIndex, newAmount, toMealId) {
     const cycleRef = getCycleDocRef();
-    const mealRef = doc(cycleRef, 'meals', state.selectedDate);
+    if (!cycleRef || !state.selectedDate) return;
 
-    const snap = await getDoc(mealRef);
-    if (!snap.exists()) return;
-
-    const data = snap.data();
-
-    const fromItems = [...(data[fromMealId] || [])];
+    const nextMealsData = normalizeMealsDataSnapshot(state.mealsData || {});
+    const fromItems = cloneMealItemsArray(nextMealsData[fromMealId]);
     const item = fromItems[itemIndex];
     if (!item) return;
 
@@ -10636,23 +10694,34 @@ async function updateOrMoveFoodInMeal(fromMealId, itemIndex, newAmount, toMealId
 
     if (!toMealId || toMealId === fromMealId) {
         fromItems[itemIndex] = updatedItem;
-
-        await updateDoc(mealRef, {
-            [fromMealId]: fromItems
+        nextMealsData[fromMealId] = fromItems;
+        applySelectedDateMealsData(nextMealsData);
+        queueMealsDataSave(cycleRef, state.selectedDate, nextMealsData, {
+            delayMs: 320,
+            errorMessage: 'Не удалось сохранить изменения в приёме'
         });
         return;
     }
 
-    const toItems = [...(data[toMealId] || [])];
+    const toItems = cloneMealItemsArray(nextMealsData[toMealId]);
 
     fromItems.splice(itemIndex, 1);
     toItems.push(updatedItem);
 
-    await updateDoc(mealRef, {
-        [fromMealId]: fromItems,
-        [toMealId]: toItems
+    if (fromItems.length > 0) {
+        nextMealsData[fromMealId] = fromItems;
+    } else {
+        delete nextMealsData[fromMealId];
+    }
+    nextMealsData[toMealId] = toItems;
+
+    applySelectedDateMealsData(nextMealsData);
+    queueMealsDataSave(cycleRef, state.selectedDate, nextMealsData, {
+        delayMs: 320,
+        errorMessage: 'Не удалось сохранить изменения в приёме'
     });
 }
+
 // =================================================================
 // 🔍 ПОИСК
 // =================================================================
@@ -16152,9 +16221,6 @@ function prependRecipeCardToSearchDOM(recipe) {
 }
 
 async function addFoodToMeal(foodId) {
-    const cycleRef = getCycleDocRef();
-    const mealRef = doc(cycleRef, 'meals', state.selectedDate);
-
     const foodsMap = await getFoodsMap();
     const food = foodsMap[foodId];
 
@@ -16163,26 +16229,24 @@ async function addFoodToMeal(foodId) {
         return;
     }
 
-    await setDoc(mealRef, {
-        [state.currentMealId]: arrayUnion({
-            id: crypto.randomUUID(),
-            foodId,
-            grams: Number(food.defaultAmount || food.baseAmount || 100),
-
-            name: food.name || '',
-            description: food.description || '',
-            baseAmount: Number(food.baseAmount || 100),
-            baseUnit: food.baseUnit || 'г',
-
-            protein: Number(food.protein || 0),
-            fat: Number(food.fat || 0),
-            carbs: Number(food.carbs || 0),
-            calories: Number(food.calories || 0)
-        })
-    }, { merge: true });
+    appendItemToSelectedMeal({
+        id: crypto.randomUUID(),
+        foodId,
+        grams: Number(food.defaultAmount || food.baseAmount || 100),
+        name: food.name || '',
+        description: food.description || '',
+        baseAmount: Number(food.baseAmount || 100),
+        baseUnit: food.baseUnit || 'г',
+        protein: Number(food.protein || 0),
+        fat: Number(food.fat || 0),
+        carbs: Number(food.carbs || 0),
+        calories: Number(food.calories || 0)
+    }, state.currentMealId, {
+        delayMs: 260,
+        errorMessage: 'Не удалось сохранить продукт в приёме'
+    });
 }
 
-// функцию полного удаления продукта
 async function deleteFood(foodId) {
     const foodRef = await getFoodDocumentRef(foodId);
     if (!foodRef) return;

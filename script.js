@@ -77,6 +77,7 @@ import {
 } from "firebase/storage";
 import { initNetworkMonitoring, getNetworkStatusSnapshot, subscribeNetworkStatus, isNetworkOffline } from './offline/network-status.js';
 import { describeSyncStatus, getSyncStatusSnapshot, subscribeSyncStatus } from './offline/sync-status.js';
+import { createKeyedBackgroundWriter } from './offline/background-write-queue.js';
 
 document.addEventListener('contextmenu', (e) => e.preventDefault(), { capture: true });
 
@@ -303,6 +304,34 @@ let state = {
 
 };
 window.state = state;
+
+const programExercisesWriter = createKeyedBackgroundWriter({ delayMs: 420 });
+
+function cloneProgramExercisesSnapshot(exercises = []) {
+    return JSON.parse(JSON.stringify(Array.isArray(exercises) ? exercises : []));
+}
+
+function scheduleProgramExercisesSave(programId, exercises, options = {}) {
+    if (!programId) return Promise.resolve();
+
+    const snapshot = cloneProgramExercisesSnapshot(exercises);
+    const delayMs = Number.isFinite(options.delayMs) ? Math.max(0, Number(options.delayMs)) : 420;
+
+    return programExercisesWriter.schedule(
+        programId,
+        () => updateDoc(doc(getUserProgramsCollection(), programId), { exercises: snapshot }),
+        { delayMs }
+    );
+}
+
+function queueProgramExercisesSave(programId, exercises, options = {}) {
+    const errorMessage = options.errorMessage || 'Не удалось сохранить изменения тренировки';
+
+    void scheduleProgramExercisesSave(programId, exercises, options).catch((error) => {
+        console.error('[program-save] failed:', error);
+        showToast(errorMessage);
+    });
+}
 
 export function getAppNetworkStatus() {
     return state.networkStatus || getNetworkStatusSnapshot();
@@ -3503,8 +3532,9 @@ function openEditSetModal(programId, exerciseId, setIndex, currentSet) {
         ex.sets.splice(s0, s1 - s0 + 1, ...newSets);
 
         try {
-            await updateDoc(doc(getUserProgramsCollection(), fresh.id), {
-                exercises: fresh.exercises
+            queueProgramExercisesSave(fresh.id, fresh.exercises, {
+                delayMs: 280,
+                errorMessage: 'Не удалось сохранить подходы'
             });
             render();
         } catch (err) {
@@ -3915,8 +3945,8 @@ async function saveExerciseNote(programId, exerciseId, note, media = []) {
     const cleanedExercises = JSON.parse(JSON.stringify(program.exercises));
 
     try {
-        await updateDoc(doc(getUserProgramsCollection(), programId), {
-            exercises: cleanedExercises
+        queueProgramExercisesSave(programId, cleanedExercises, {
+            errorMessage: 'Не удалось сохранить комментарий'
         });
         showToast('Комментарий сохранён');
     } catch (err) {
@@ -4236,8 +4266,9 @@ async function finishSetReorder(saveChanges = true) {
   active.exercise.sets = nextGroups.flatMap((group) => JSON.parse(JSON.stringify(group.sets)));
 
   try {
-    await updateDoc(doc(getUserProgramsCollection(), active.selectedProgram.id), {
-      exercises: active.selectedProgram.exercises
+    queueProgramExercisesSave(active.selectedProgram.id, active.selectedProgram.exercises, {
+      delayMs: 240,
+      errorMessage: 'Не удалось сохранить порядок подходов'
     });
     render();
   } catch (error) {
@@ -5037,7 +5068,8 @@ function attachSwipeActions(swipeRoot, selectedProgram, exercise) {
     openConfirmModal('Удалить упражнение?', async () => {
       const progRef = doc(getUserProgramsCollection(), selectedProgram.id);
       const filtered = selectedProgram.exercises.filter(ex => ex.id !== exercise.id);
-      await updateDoc(progRef, { exercises: filtered });
+      selectedProgram.exercises = filtered;
+      queueProgramExercisesSave(selectedProgram.id, selectedProgram.exercises, { errorMessage: 'Не удалось удалить упражнение' });
       render();
     });
   });
@@ -5190,8 +5222,9 @@ async function finishExerciseReorder(saveChanges = true) {
     .filter(Boolean);
 
   try {
-    await updateDoc(doc(getUserProgramsCollection(), active.selectedProgram.id), {
-      exercises: active.selectedProgram.exercises
+    queueProgramExercisesSave(active.selectedProgram.id, active.selectedProgram.exercises, {
+      delayMs: 240,
+      errorMessage: 'Не удалось сохранить порядок упражнений'
     });
     render();
   } catch (error) {
@@ -5817,8 +5850,8 @@ exerciseHeader.addEventListener('click', () => {
                                 }
                             }
 
-                            await updateDoc(doc(getUserProgramsCollection(), selectedProgram.id), {
-                                exercises: selectedProgram.exercises
+                            queueProgramExercisesSave(selectedProgram.id, selectedProgram.exercises, {
+                                errorMessage: 'Не удалось сохранить изменения тренировки'
                             });
                             render();
                         });
@@ -5841,7 +5874,8 @@ exerciseHeader.addEventListener('click', () => {
 
                 if (currentExercise.sets.length === 0) {
                     currentExercise.sets.push({ weight: '', reps: '', isMain: false });
-                    updateDoc(doc(getUserProgramsCollection(), selectedProgram.id), { exercises: selectedProgram.exercises }).then(render);
+                    queueProgramExercisesSave(selectedProgram.id, selectedProgram.exercises, { errorMessage: 'Не удалось сохранить изменения тренировки' });
+                    render();
                     return;
                 }
 
@@ -5854,11 +5888,11 @@ exerciseHeader.addEventListener('click', () => {
                         isMain: lastSet.isMain || false,
                         continuation: false
                     });
-                    await updateDoc(doc(getUserProgramsCollection(), selectedProgram.id), { exercises: selectedProgram.exercises });
+                    queueProgramExercisesSave(selectedProgram.id, selectedProgram.exercises, { errorMessage: 'Не удалось сохранить изменения тренировки' });
                     render();
                 }, async () => {
                     currentExercise.sets.push({ weight: '', reps: '', isMain: false });
-                    await updateDoc(doc(getUserProgramsCollection(), selectedProgram.id), { exercises: selectedProgram.exercises });
+                    queueProgramExercisesSave(selectedProgram.id, selectedProgram.exercises, { errorMessage: 'Не удалось сохранить изменения тренировки' });
                     render();
                 });
             });
@@ -6279,7 +6313,7 @@ function openAddExerciseModal(program) {
         program.exercises = program.exercises || [];
         program.exercises.push(newExercise);
 
-        await updateDoc(doc(getUserProgramsCollection(), program.id), { exercises: program.exercises });
+        queueProgramExercisesSave(program.id, program.exercises, { errorMessage: 'Не удалось сохранить изменения тренировки' });
         document.body.removeChild(modal);
         render();
     });
@@ -6343,7 +6377,7 @@ function openExerciseMenuModal(program, exercise) {
             program.exercises = (program.exercises || []).filter(ex => ex.id !== exercise.id);
             state.expandedExerciseId = null;
             state.editingSetId = null;
-            await updateDoc(doc(getUserProgramsCollection(), program.id), { exercises: program.exercises });
+            queueProgramExercisesSave(program.id, program.exercises, { errorMessage: 'Не удалось сохранить изменения тренировки' });
             render(); // рендерим после удаления
         });
     });
@@ -6395,8 +6429,8 @@ function openExerciseMenuModal(program, exercise) {
           }
 
           exercise.name = nextName;
-          await updateDoc(doc(getUserProgramsCollection(), selectedProgram.id), {
-              exercises: selectedProgram.exercises
+          queueProgramExercisesSave(selectedProgram.id, selectedProgram.exercises, {
+              errorMessage: 'Не удалось сохранить изменения тренировки'
           });
           showToast('Обновлено');
           document.body.removeChild(overlay);
