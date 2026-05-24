@@ -4392,19 +4392,12 @@ function renderSupplementsCalendarView(contentContainer, planData) {
         const paddingTop = 10;
         const fixedParts = (headerRect.height || 0) + (weekdaysRect.height || 0) + paddingTop + paddingBottom;
         const nextHeight = Math.max(120, Math.floor((cardRect.height || 0) - fixedParts));
+        viewport.style.height = `${nextHeight}px`;
 
         const weeksCount = 6;
         const gridGap = 6;
         const availableForCells = Math.max(0, nextHeight - gridGap * (weeksCount - 1));
-        const rawCellHeight = Math.floor(availableForCells / weeksCount);
-        const nextCellHeight = rawCellHeight > 77
-            ? 77
-            : Math.max(44, rawCellHeight);
-        const nextViewportHeight = rawCellHeight > 77
-            ? nextCellHeight * weeksCount + gridGap * (weeksCount - 1)
-            : nextHeight;
-
-        viewport.style.height = `${nextViewportHeight}px`;
+        const nextCellHeight = Math.max(44, Math.floor(availableForCells / weeksCount));
         calendarCard.style.setProperty('--supplement-calendar-cell-height', `${nextCellHeight}px`);
     };
     const scheduleCalendarLayout = () => requestAnimationFrame(syncCalendarLayout);
