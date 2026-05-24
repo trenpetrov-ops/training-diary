@@ -1,5 +1,20 @@
-const CACHE_NAME = '__TD_CACHE_NAME__';
-const PRECACHE_URLS = __TD_PRECACHE_URLS__;
+const DEFAULT_CACHE_NAME = 'training-diary-dev';
+const DEFAULT_PRECACHE_URLS = [
+  './',
+  './index.html',
+  './manifest.json',
+  './styles.css',
+  './icons/icon-192.png',
+  './icons/icon-512.png'
+];
+const CACHE_NAME =
+  typeof self.__TD_CACHE_NAME__ === 'string' && self.__TD_CACHE_NAME__.trim()
+    ? self.__TD_CACHE_NAME__
+    : DEFAULT_CACHE_NAME;
+const PRECACHE_URLS =
+  Array.isArray(self.__TD_PRECACHE_URLS__) && self.__TD_PRECACHE_URLS__.length
+    ? self.__TD_PRECACHE_URLS__
+    : DEFAULT_PRECACHE_URLS;
 const APP_SHELL_URL = './index.html';
 
 function isCacheableResponse(response) {

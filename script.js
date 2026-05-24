@@ -4247,7 +4247,6 @@ async function finishSetReorder(saveChanges = true) {
     render();
   }
 }
-
 function attachSetReorderLongPress({ setRow, selectedProgram, exercise }) {
   if (!setRow || setRow.dataset.setReorderBound === '1') return;
   setRow.dataset.setReorderBound = '1';
@@ -9688,8 +9687,22 @@ function openMenuModal() {
 // ============================================================
 // 📦 Регистрация Service Worker и уведомления
 // ============================================================
-if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-  if (!isCapacitorNativePlatform()) {
+const isViteDevServer = Boolean(import.meta?.env?.DEV);
+
+async function syncWebServiceWorkerRegistration() {
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+  if (isCapacitorNativePlatform()) return;
+
+  try {
+    if (isViteDevServer) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations.map((registration) => registration.unregister()));
+      console.log('Service Worker disabled in Vite dev mode');
+      return;
+    }
+    await navigator.serviceWorker.register('./sw.js', { scope: './' });
+    console.log('Service Worker registered');
+    return;
     try {
       navigator.serviceWorker
         .register('./sw.js', { scope: './' })
@@ -9698,12 +9711,12 @@ if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
     } catch (err) {
       console.error('Ошибка регистрации SW', err);
     }
+  } catch (err) {
+    console.error('Service Worker registration failed', err);
   }
 }
 
-
-
-
+void syncWebServiceWorkerRegistration();
 
 // =================================================================
 // 🔄 ГЛАВНЫЙ РЕНДЕР: Определяет, что показать (ИСПРАВЛЕНО)

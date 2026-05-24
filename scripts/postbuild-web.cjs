@@ -70,9 +70,12 @@ const swOutPath = path.join(outDir, 'sw.js');
 if (fs.existsSync(swTemplatePath) && fs.existsSync(swOutPath)) {
   const cacheName = `training-diary-${buildStamp}`;
   const swTemplate = fs.readFileSync(swTemplatePath, 'utf8');
-  const patchedSw = swTemplate
-    .replace('__TD_CACHE_NAME__', cacheName)
-    .replace('__TD_PRECACHE_URLS__', JSON.stringify(precacheFiles, null, 2));
+  const swBootstrap = [
+    `self.__TD_CACHE_NAME__ = ${JSON.stringify(cacheName)};`,
+    `self.__TD_PRECACHE_URLS__ = ${JSON.stringify(precacheFiles, null, 2)};`,
+    ''
+  ].join('\n');
+  const patchedSw = `${swBootstrap}${swTemplate}`;
   fs.writeFileSync(swOutPath, patchedSw, 'utf8');
 }
 

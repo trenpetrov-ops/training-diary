@@ -4,7 +4,9 @@
   "private": true,
   "description": "Training Diary iOS wrapper",
   "scripts": {
+    "dev": "vite --config vite.config.mjs",
     "build": "vite build --config vite.config.mjs && node scripts/postbuild-web.cjs",
+    "preview": "npm run build && vite preview --config vite.config.mjs",
     "cap:copy": "npm run build && npx cap copy",
     "cap:ios:configure": "node scripts/configure-capacitor-ios.cjs",
     "cap:ios": "npm run build && npx cap sync ios && npm run cap:ios:configure"
