@@ -7478,18 +7478,12 @@ function syncJournalCalendarLayout(container, viewport, track) {
 
     // Заполняем всё доступное пространство до `journal-filters` (не перекрывая фикс-блок).
     const targetCalendarHeight = Math.max(220, Math.floor(available));
-    const rawViewportH = Math.max(180, Math.floor(targetCalendarHeight - Math.round(headerBlockH)));
-    const rawCellH = Math.floor(rawViewportH / safeWeeksCount);
-    const cellH = rawCellH > 69
-        ? 69
-        : Math.max(38, rawCellH);
-    const viewportH = rawCellH > 69
-        ? cellH * safeWeeksCount
-        : rawViewportH;
-    const finalCalendarHeight = Math.max(220, Math.round(headerBlockH + viewportH));
+    container.style.height = `${targetCalendarHeight}px`;
 
-    container.style.height = `${finalCalendarHeight}px`;
+    const viewportH = Math.max(180, Math.floor(targetCalendarHeight - Math.round(headerBlockH)));
     viewport.style.height = `${viewportH}px`;
+
+    const cellH = Math.max(38, Math.floor(viewportH / safeWeeksCount));
     container.style.setProperty('--journal-calendar-cell-height', `${cellH}px`);
 }
 
