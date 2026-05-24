@@ -29,14 +29,14 @@ function mountBottomNavMarkup() {
 
 function ensureBottomNavTrialCountdownNote() {
     const nav = document.querySelector('.navigation');
-    if (!nav) return null;
+    if (!nav || !document.body) return null;
 
-    let note = nav.querySelector('.navigation-trial-countdown');
+    let note = document.body.querySelector('.navigation-trial-countdown');
     if (!note) {
         note = document.createElement('div');
         note.className = 'navigation-trial-countdown';
         note.hidden = true;
-        nav.appendChild(note);
+        document.body.appendChild(note);
     }
 
     return note;
@@ -47,8 +47,20 @@ export function syncBottomNavTrialCountdown(text = '') {
     if (!note) return;
 
     const normalized = String(text || '').trim();
+    const nav = document.querySelector('.navigation');
+    const navStyles = nav ? window.getComputedStyle?.(nav) : null;
+    const isNavVisible = Boolean(
+        nav &&
+        navStyles &&
+        navStyles.display !== 'none' &&
+        navStyles.visibility !== 'hidden' &&
+        !nav.classList.contains('navigation--suppressed') &&
+        !nav.classList.contains('navigation--suppressed-fade-only') &&
+        !document.body.classList.contains('app-keyboard-visible')
+    );
+
     note.textContent = normalized;
-    note.hidden = !normalized;
+    note.hidden = !normalized || !isNavVisible;
 }
 
 let mealSearchNavOnBack = null;

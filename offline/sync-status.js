@@ -50,9 +50,6 @@ function normalizeError(error, context = 'write') {
 
 function onPendingWriteStarted() {
     state.pendingWrites += 1;
-    if (state.lastError) {
-        state.lastError = null;
-    }
     emit();
 }
 
@@ -112,6 +109,9 @@ export function trackFirestoreBackendPromise(promise, context = 'write') {
 
     promise
         .then(() => {
+            if (state.lastError) {
+                state.lastError = null;
+            }
             onPendingWriteFinished();
         })
         .catch((error) => {
@@ -125,15 +125,15 @@ export function trackFirestoreBackendPromise(promise, context = 'write') {
 export function describeSyncStatus(snapshot = buildSnapshot()) {
     switch (snapshot.status) {
         case 'offline-pending':
-            return 'Нет сети, изменения ждут синхронизации';
+            return 'Изменения сохранены на устройстве и отправятся, когда появится интернет';
         case 'offline':
-            return 'Нет сети';
+            return 'Нет интернета. Можно работать с уже загруженными данными';
         case 'syncing':
-            return 'Синхронизация...';
+            return 'Сохраняем изменения';
         case 'error':
         case 'offline-error':
-            return 'Ошибка синхронизации';
+            return 'Не удалось сохранить изменения. Проверьте интернет';
         default:
-            return 'Синхронизировано';
+            return 'Все изменения сохранены';
     }
 }

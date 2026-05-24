@@ -4,9 +4,30 @@ const path = require('path');
 const root = path.join(__dirname, '..');
 const outDir = path.join(root, 'www');
 const buildStamp = String(Date.now());
+const swTemplatePath = path.join(root, 'sw.js');
 
 const copyDirs = ['icons', 'icon-animations'];
 const copyFiles = ['manifest.json', 'sw.js'];
+
+function toPosixPath(value) {
+  return String(value || '').replace(/\\/g, '/');
+}
+
+function walkFiles(dirPath, bucket = []) {
+  if (!fs.existsSync(dirPath)) return bucket;
+
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      walkFiles(fullPath, bucket);
+      continue;
+    }
+    bucket.push(fullPath);
+  }
+
+  return bucket;
+}
 
 for (const dirName of copyDirs) {
   const src = path.join(root, dirName);
@@ -32,4 +53,27 @@ if (fs.existsSync(builtIndexPath)) {
   fs.writeFileSync(builtIndexPath, patchedHtml, 'utf8');
 }
 
-console.log('[postbuild-web] static assets copied ->', outDir, '| buildStamp =', buildStamp);
+const precacheFiles = walkFiles(outDir)
+  .map((fullPath) => path.relative(outDir, fullPath))
+  .map((relativePath) => `./${toPosixPath(relativePath)}`)
+  .filter((relativePath) => relativePath !== './sw.js')
+  .sort((a, b) => a.localeCompare(b, 'en'));
+
+if (!precacheFiles.includes('./')) {
+  precacheFiles.unshift('./');
+}
+if (!precacheFiles.includes('./index.html')) {
+  precacheFiles.unshift('./index.html');
+}
+
+const swOutPath = path.join(outDir, 'sw.js');
+if (fs.existsSync(swTemplatePath) && fs.existsSync(swOutPath)) {
+  const cacheName = `training-diary-${buildStamp}`;
+  const swTemplate = fs.readFileSync(swTemplatePath, 'utf8');
+  const patchedSw = swTemplate
+    .replace('__TD_CACHE_NAME__', cacheName)
+    .replace('__TD_PRECACHE_URLS__', JSON.stringify(precacheFiles, null, 2));
+  fs.writeFileSync(swOutPath, patchedSw, 'utf8');
+}
+
+console.log('[postbuild-web] static assets copied ->', outDir, '| buildStamp =', buildStamp, '| precache =', precacheFiles.length);

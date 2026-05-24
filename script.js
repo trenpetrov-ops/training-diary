@@ -76,7 +76,7 @@ import {
     deleteObject
 } from "firebase/storage";
 import { initNetworkMonitoring, getNetworkStatusSnapshot, subscribeNetworkStatus, isNetworkOffline } from './offline/network-status.js';
-import { clearSyncError, describeSyncStatus, getSyncStatusSnapshot, subscribeSyncStatus } from './offline/sync-status.js';
+import { describeSyncStatus, getSyncStatusSnapshot, subscribeSyncStatus } from './offline/sync-status.js';
 
 document.addEventListener('contextmenu', (e) => e.preventDefault(), { capture: true });
 
@@ -331,26 +331,40 @@ function shouldShowSyncStatusPill(snapshot = getAppSyncStatus()) {
 function getSyncStatusPillLabel(snapshot = getAppSyncStatus()) {
     switch (snapshot.status) {
         case 'offline-pending':
-            return `Офлайн · ${snapshot.pendingWrites}`;
+            return 'Ждёт сети';
         case 'offline':
             return 'Офлайн';
         case 'syncing':
-            return `Синк · ${snapshot.pendingWrites}`;
+            return 'Сохраняю…';
         case 'error':
         case 'offline-error':
-            return 'Ошибка синка';
+            return 'Не сохранено';
         default:
-            return 'Синхронизировано';
+            return 'Сохранено';
     }
 }
 
-function syncTopBarSyncStatusIndicator() {
-    const topBar = document.querySelector('.top-bar');
-    if (!topBar) return;
+function getSyncStatusPillTitle(snapshot = getAppSyncStatus()) {
+    const base = describeSyncStatus(snapshot);
+    if (snapshot.pendingWrites > 0) {
+        const count = snapshot.pendingWrites;
+        const noun = pluralizeRussianUnit(count, 'изменение', 'изменения', 'изменений');
+        return `${base}. В очереди ${count} ${noun}.`;
+    }
+    return base;
+}
 
-    let pill = topBar.querySelector('.top-bar-sync-status');
+function syncTopBarSyncStatusIndicator() {
+    const host = document.body;
+    if (!host) return;
+
+    let pill = host.querySelector('.top-bar-sync-status');
     const snapshot = getAppSyncStatus();
-    const shouldShow = shouldShowSyncStatusPill(snapshot) && Boolean(userId);
+    const shouldShow = shouldShowSyncStatusPill(snapshot)
+        && Boolean(userId)
+        && state.currentMode !== null
+        && state.currentPage !== 'auth'
+        && state.currentPage !== 'modeSelect';
 
     if (!shouldShow) {
         pill?.remove();
@@ -363,19 +377,15 @@ function syncTopBarSyncStatusIndicator() {
         pill.className = 'top-bar-sync-status';
         pill.addEventListener('click', () => {
             const current = getAppSyncStatus();
-            if (current.lastError) {
-                showToast(current.lastError.message || 'Ошибка синхронизации');
-                clearSyncError();
-                return;
-            }
-            showToast(describeSyncStatus(current));
+            showToast(getSyncStatusPillTitle(current));
         });
-        topBar.appendChild(pill);
+        host.appendChild(pill);
     }
 
     pill.className = `top-bar-sync-status top-bar-sync-status--${snapshot.status}`;
     pill.textContent = getSyncStatusPillLabel(snapshot);
-    pill.title = describeSyncStatus(snapshot);
+    pill.title = getSyncStatusPillTitle(snapshot);
+    pill.setAttribute('aria-label', pill.title);
 }
 
 function applyAppConnectivityState({ rerender = false } = {}) {
@@ -7469,12 +7479,18 @@ function syncJournalCalendarLayout(container, viewport, track) {
 
     // Заполняем всё доступное пространство до `journal-filters` (не перекрывая фикс-блок).
     const targetCalendarHeight = Math.max(220, Math.floor(available));
-    container.style.height = `${targetCalendarHeight}px`;
+    const rawViewportH = Math.max(180, Math.floor(targetCalendarHeight - Math.round(headerBlockH)));
+    const rawCellH = Math.floor(rawViewportH / safeWeeksCount);
+    const cellH = rawCellH > 69
+        ? 69
+        : Math.max(38, rawCellH);
+    const viewportH = rawCellH > 69
+        ? cellH * safeWeeksCount
+        : rawViewportH;
+    const finalCalendarHeight = Math.max(220, Math.round(headerBlockH + viewportH));
 
-    const viewportH = Math.max(180, Math.floor(targetCalendarHeight - Math.round(headerBlockH)));
+    container.style.height = `${finalCalendarHeight}px`;
     viewport.style.height = `${viewportH}px`;
-
-    const cellH = Math.max(38, Math.floor(viewportH / safeWeeksCount));
     container.style.setProperty('--journal-calendar-cell-height', `${cellH}px`);
 }
 
@@ -9841,6 +9857,7 @@ export function requestAppChromeSync() {
     requestAnimationFrame(() => {
         appChromeSyncQueued = false;
         void syncAppChrome();
+        syncTopBarSyncStatusIndicator();
     });
 }
 

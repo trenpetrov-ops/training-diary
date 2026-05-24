@@ -1,27 +1,66 @@
-const CACHE_NAME = 'training-diary-v7';
-const CACHE_URLS = [
-  './',
-  './index.html',
-  './manifest.json',
-  './icons/icon-192.png',
-  './icons/icon-512.png'
-];
+const CACHE_NAME = '__TD_CACHE_NAME__';
+const PRECACHE_URLS = __TD_PRECACHE_URLS__;
+const APP_SHELL_URL = './index.html';
 
-self.addEventListener('install', event => {
+function isCacheableResponse(response) {
+  return Boolean(response) && response.ok && (response.type === 'basic' || response.type === 'default');
+}
+
+async function putInCache(request, response) {
+  if (!isCacheableResponse(response)) return response;
+
+  const cache = await caches.open(CACHE_NAME);
+  await cache.put(request, response.clone());
+  return response;
+}
+
+async function fetchAndCache(request) {
+  const response = await fetch(request);
+  return putInCache(request, response);
+}
+
+async function handleNavigationRequest(request) {
+  try {
+    return await fetchAndCache(request);
+  } catch (error) {
+    return (
+      (await caches.match(request)) ||
+      (await caches.match(APP_SHELL_URL)) ||
+      (await caches.match('./'))
+    );
+  }
+}
+
+async function handleSameOriginAssetRequest(request) {
+  const cached = await caches.match(request);
+  if (cached) {
+    void fetchAndCache(request).catch(() => {});
+    return cached;
+  }
+
+  try {
+    return await fetchAndCache(request);
+  } catch (error) {
+    return caches.match(request);
+  }
+}
+
+self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(CACHE_URLS))
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS))
   );
   self.skipWaiting();
 });
 
-self.addEventListener('activate', event => {
+self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then(keys =>
+    caches.keys().then((keys) =>
       Promise.all(
-        keys.map(key => {
+        keys.map((key) => {
           if (key !== CACHE_NAME) {
             return caches.delete(key);
           }
+          return Promise.resolve();
         })
       )
     )
@@ -29,18 +68,17 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
-self.addEventListener('fetch', event => {
-  if (event.request.method !== 'GET') return;
+self.addEventListener('fetch', (event) => {
+  const { request } = event;
+  if (!request || request.method !== 'GET') return;
 
-  event.respondWith(
-    fetch(event.request)
-      .then(response => {
-        const responseClone = response.clone();
-        caches.open(CACHE_NAME).then(cache => {
-          cache.put(event.request, responseClone);
-        });
-        return response;
-      })
-      .catch(() => caches.match(event.request))
-  );
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin) return;
+
+  if (request.mode === 'navigate') {
+    event.respondWith(handleNavigationRequest(request));
+    return;
+  }
+
+  event.respondWith(handleSameOriginAssetRequest(request));
 });
