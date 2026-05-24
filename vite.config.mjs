@@ -8,6 +8,7 @@ export default defineConfig({
         outDir: 'www',
         emptyOutDir: true,
         target: 'es2020',
+        cssMinify: false,
         rollupOptions: {
             input: resolve(process.cwd(), 'index.html')
         }
