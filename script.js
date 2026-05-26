@@ -312,8 +312,6 @@ let state = {
     selectedDate: null,
     reportHtmlCache: null,
     selectedJournalRecord: null,
-    loadedClientIdForCycles: null,
-    cyclesLoaded: false,
     selectedClientTrainerAccess: null,
     ownLinkedTrainersAccess: [],
     isProgramsLoading: false,
@@ -339,32 +337,6 @@ function queueProgramExercisesSave(programId, exercises, options = {}) {
         onError: (_error, errorMessage) => {
             showToast(errorMessage);
         }
-    });
-
-    authScreenEl?.addEventListener('pointerdown', (event) => {
-        const target = event.target;
-        if (!(target instanceof Element)) return;
-        if (target.closest('input, textarea, select')) return;
-        blurActiveAuthField();
-    }, true);
-
-    authScreenEl?.addEventListener('keydown', (event) => {
-        if (event.key !== 'Enter') return;
-        const target = event.target;
-        if (!(target instanceof HTMLElement)) return;
-        if (!target.matches('input, textarea, select')) return;
-        if (!authScreenEl.contains(target)) return;
-
-        const fields = getVisibleAuthFields();
-        const currentIndex = fields.indexOf(target);
-        if (currentIndex === -1) return;
-
-        event.preventDefault();
-        const nextIndex = currentIndex + 1;
-        if (focusAuthFieldByIndex(nextIndex)) return;
-
-        blurActiveAuthField();
-        authLoginBtn.click();
     });
 }
 
@@ -692,8 +664,6 @@ function resetClientScopedState() {
     resetCycleScopedState();
     state.selectedClientId = null;
     state.cycles = [];
-    state.loadedClientIdForCycles = null;
-    state.cyclesLoaded = false;
     state.selectedClientTrainerAccess = null;
     state.journal = [];
     state.selectedJournalCategory = '';
@@ -7602,75 +7572,9 @@ function getNearestRecord(records) {
   return pastRecords[0] || null; // последняя прошедшая
 }
 
-// 🔄 Проверяем и загружаем циклы для личного режима (own)
-if (state.currentMode === 'own' && !state.cyclesLoaded) {
-  console.log("🔄 Загружаю личные циклы...");
-  state.cyclesLoaded = true;
-
-  loadUserCycles()
-    .then(async (cycles) => {
-      state.cycles = cycles;
-      console.log("✅ Личные циклы подгружены:", cycles);
-
-      if (!state.selectedCycleId && cycles.length > 0) {
-        const userId = auth.currentUser?.uid;
-        const appId = db._databaseId?.projectId || "training-diary-51bcb";
-        const journalRef = collection(db, "artifacts", appId, "users", userId, "journal");
-
-        const jSnap = await getDocs(journalRef);
-        const records = jSnap.docs.map(d => d.data());
-        console.log("📒 Найдено записей в журнале:", records.length);
-
-        const nearestRecord = getNearestRecord(records);
-
-        if (nearestRecord) {
-          const foundCycle = cycles.find(c => c.name === nearestRecord.cycleName);
-          if (foundCycle) {
-            applyCycleSelection(foundCycle);
-            console.log("🧭 Ближайшая тренировка:", nearestRecord.date, "→ Цикл:", foundCycle.name);
-          } else {
-            console.warn("⚠️ Цикл из ближайшей тренировки не найден:", nearestRecord.cycleName);
-          }
-        } else {
-          const lastCycle = cycles[cycles.length - 1];
-          applyCycleSelection(lastCycle);
-          console.log("📘 Установлен личный цикл по умолчанию:", lastCycle.name);
-        }
-      }
-
-      // ✅ вызываем рендер только один раз — после всех обновлений
-      render();
-    })
-    .catch(err => console.error("❌ Ошибка при загрузке личных циклов:", err));
-}
-
-
-
-// 🔄 Проверяем и загружаем циклы для клиента, если это персональный режим
-if (state.currentMode === 'personal' && state.selectedClientId) {
-  if (state.loadedClientIdForCycles !== state.selectedClientId) {
-    console.log("🔄 Загружаю циклы для клиента:", state.selectedClientId);
-    state.loadedClientIdForCycles = state.selectedClientId; // один раз на выбранную карточку клиента
-    loadClientCycles(state.selectedClientId)
-      .then(cycles => {
-        state.cycles = cycles;
-        console.log("✅ Циклы клиента подгружены:", cycles);
-
-        // 🛠 Не перезаписываем, если уже выбран цикл
-        if (!state.selectedCycleId && cycles.length > 0) {
-          const lastCycle = cycles[cycles.length - 1];
-          applyCycleSelection(lastCycle);
-          console.log('📘 Установлен цикл по умолчанию:', lastCycle.name);
-        }
-
-        render(); // перерисовываем только один раз
-      })
-      .catch(err => {
-        console.error("❌ Ошибка при загрузке циклов клиента:", err);
-      });
-    return;
-  }
-}
+// Циклы и связанные данные теперь загружаются только через attachCycleDataListeners()/setupDynamicListeners().
+// Старый одноразовый loadUserCycles/loadClientCycles здесь убран, чтобы не было гонки между
+// getDocs-подгрузкой и snapshot-потоком, из-за которой экран циклов периодически показывал пустой список.
 
 
 
@@ -11228,6 +11132,13 @@ function blurActiveAuthField() {
     if (!(active instanceof HTMLElement)) return;
     if (!authScreenEl?.contains(active)) return;
     active.blur();
+    if (document.activeElement instanceof HTMLElement && authScreenEl.contains(document.activeElement)) {
+        document.activeElement.blur();
+    }
+    const keyboardPlugin = window.Capacitor?.Plugins?.Keyboard;
+    if (typeof keyboardPlugin?.hide === 'function') {
+        Promise.resolve(keyboardPlugin.hide()).catch(() => {});
+    }
 }
 
 function focusAuthFieldByIndex(index) {
@@ -11359,6 +11270,20 @@ if (authToggleBtn && authLoginBtn) {
     });
 
     authScreenEl?.addEventListener('pointerdown', (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        if (target.closest('input, textarea, select')) return;
+        blurActiveAuthField();
+    }, true);
+
+    authScreenEl?.addEventListener('touchstart', (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        if (target.closest('input, textarea, select')) return;
+        blurActiveAuthField();
+    }, true);
+
+    authScreenEl?.addEventListener('click', (event) => {
         const target = event.target;
         if (!(target instanceof Element)) return;
         if (target.closest('input, textarea, select')) return;
