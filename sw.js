@@ -16,6 +16,9 @@ const PRECACHE_URLS =
     ? self.__TD_PRECACHE_URLS__
     : DEFAULT_PRECACHE_URLS;
 const APP_SHELL_URL = './index.html';
+const IS_LOCAL_DEV_HOST = ['127.0.0.1', 'localhost'].includes(
+  String(self.location?.hostname || '').trim().toLowerCase()
+);
 
 function isCacheableResponse(response) {
   return Boolean(response) && response.ok && (response.type === 'basic' || response.type === 'default');
@@ -41,7 +44,8 @@ async function handleNavigationRequest(request) {
     return (
       (await caches.match(request)) ||
       (await caches.match(APP_SHELL_URL)) ||
-      (await caches.match('./'))
+      (await caches.match('./')) ||
+      Response.error()
     );
   }
 }
@@ -56,7 +60,7 @@ async function handleSameOriginAssetRequest(request) {
   try {
     return await fetchAndCache(request);
   } catch (error) {
-    return caches.match(request);
+    return (await caches.match(request)) || Response.error();
   }
 }
 
@@ -84,6 +88,7 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  if (IS_LOCAL_DEV_HOST) return;
   const { request } = event;
   if (!request || request.method !== 'GET') return;
 

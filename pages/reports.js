@@ -1,9 +1,8 @@
 import {
-    addDoc,
-    deleteDoc,
-    doc,
-    updateDoc
-} from "../offline/firestore-ops.js";
+    createReport,
+    deleteReportDocument,
+    updateReport
+} from '../offline/repositories/reports-repository.js';
 import {
     getTodayDateString,
     getReportsCollection,
@@ -895,11 +894,10 @@ async function saveProgressReport(reportData, reportId = null) {
 
     try {
         if (reportId) {
-            const docRef = doc(reportsCollection, reportId);
-            await updateDoc(docRef, reportData);
+            await updateReport(reportsCollection, reportId, reportData);
             showToast('Отчет о прогрессе обновлен!');
         } else {
-            await addDoc(reportsCollection, reportData);
+            await createReport(reportsCollection, reportData);
             showToast('Отчет о прогрессе сохранен!');
         }
     } catch (error) {
@@ -918,7 +916,7 @@ async function deleteReport(reportId) {
     }
     try {
         // 🔥 В реальном приложении здесь должна быть логика удаления фото из Storage
-        await deleteDoc(doc(reportsCollection, reportId));
+        await deleteReportDocument(reportsCollection, reportId);
         showToast('Отчет удален.');
     } catch (error) {
         console.error("Ошибка удаления отчета:", error);

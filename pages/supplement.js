@@ -32,7 +32,10 @@ import {
     setMealBottomNavOverlayMode,
     syncSupplementsBottomNavBadge
 } from '../nav/bottom-nav.js';
-import { createKeyedBackgroundWriter } from '../offline/background-write-queue.js';
+import {
+    queueSupplementPlanSave,
+    saveSupplementPlanDocument
+} from '../offline/repositories/supplements-repository.js';
 
 const SUPPLEMENTS_VIEW_MODE_KEY = 'trainingDiary:supplementsViewMode';
 const SUPPLEMENTS_TABLE_RANGE_KEY = 'trainingDiary:supplementsTableRange';
@@ -63,7 +66,6 @@ let supplementsCurrentViewMode = 'calendar';
 let supplementTableEditorDeferredScrollTimer = null;
 let supplementTableViewportSyncFrameId = 0;
 let supplementTableViewportSyncTimeoutId = 0;
-const supplementPlanWriter = createKeyedBackgroundWriter({ delayMs: 650 });
 
 const SUPPLEMENT_SHEET_TEXT_COLORS = ['#111827', '#d93c3c', '#0f766e', '#2563eb', '#7c3aed', '#b45309'];
 const SUPPLEMENT_SHEET_FILL_COLORS = ['', '#fff7cc', '#dff5df', '#dbeafe', '#f3e8ff', '#fee2e2'];
@@ -6372,6 +6374,16 @@ function getSupplementMonthTitle(date) {
 }
 
 function queueSupplementPlanBackgroundSave(cycleRef, planData, options = {}) {
+    queueSupplementPlanSave(cycleRef, cloneSupplementPlanHistoryEntry(planData), {
+        ...options,
+        onError: (error, errorMessage) => {
+            console.error('[supplement-save] failed:', error);
+            showToast(errorMessage);
+        }
+    });
+}
+
+function queueSupplementPlanBackgroundSaveLegacy(cycleRef, planData, options = {}) {
     if (!cycleRef || !planData) return;
 
     const snapshot = cloneSupplementPlanHistoryEntry(planData);
@@ -6412,7 +6424,7 @@ async function updateSupplementPlanInFirestore(newPlan, options = {}) {
             return true;
         }
         rememberCurrentSupplementTableScroll();
-        await updateDoc(cycleRef, { supplementPlan: sanitizedPlan });
+        await saveSupplementPlanDocument(cycleRef, sanitizedPlan);
         state.supplementPlan = sanitizedPlan;
         syncSupplementsBottomNavBadge(sanitizedPlan);
         if (options.historyMode === 'apply-history' && Number.isInteger(options.historyIndex)) {

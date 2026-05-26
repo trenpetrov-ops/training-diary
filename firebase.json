@@ -30,6 +30,10 @@
         "function": "appleHealthImport"
       },
       {
+        "source": "/api/session/claim",
+        "function": "claimExclusiveSession"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

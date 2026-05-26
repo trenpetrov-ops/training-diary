@@ -40,6 +40,7 @@ import {
     onAuthStateChanged,
     createUserWithEmailAndPassword,
     signInWithEmailAndPassword,
+    signInWithCustomToken,
     signOut
 } from "firebase/auth";
 import {
@@ -77,7 +78,21 @@ import {
 } from "firebase/storage";
 import { initNetworkMonitoring, getNetworkStatusSnapshot, subscribeNetworkStatus, isNetworkOffline } from './offline/network-status.js';
 import { describeSyncStatus, getSyncStatusSnapshot, subscribeSyncStatus } from './offline/sync-status.js';
-import { createKeyedBackgroundWriter } from './offline/background-write-queue.js';
+import {
+    createProgram,
+    deleteProgram,
+    queueProgramExercisesSave as queueProgramExercisesSaveViaRepository,
+    updateProgramDocument
+} from './offline/repositories/programs-repository.js';
+import { createClient, deleteClient, updateClient } from './offline/repositories/clients-repository.js';
+import { createCycle, deleteCycle, updateCycle } from './offline/repositories/cycles-repository.js';
+import {
+    createJournalRecord,
+    deleteJournalRecord,
+    deleteJournalRecordsByIds,
+    replacePlannedTrainingWithCompleted,
+    updateJournalRecord
+} from './offline/repositories/journal-repository.js';
 
 document.addEventListener('contextmenu', (e) => e.preventDefault(), { capture: true });
 
@@ -107,6 +122,9 @@ const FIRESTORE_PERSISTENT_CACHE_BYTES = 100 * 1024 * 1024;
 
 // Используем projectId в качестве уникального ID приложения для структуры базы
 const appId = firebaseConfig.projectId;
+const EXCLUSIVE_SESSION_DOC_ID = 'authSession';
+const EXCLUSIVE_SESSION_DEVICE_ID_KEY = `trainingDiary:exclusiveSessionDeviceId:${appId}`;
+const EXCLUSIVE_SESSION_NOTICE_KEY = `trainingDiary:exclusiveSessionNotice:${appId}`;
 const initialAuthToken = null;
 const APPLE_HEALTH_CAPACITOR_CALLBACK_SCHEME = 'App';
 
@@ -212,6 +230,16 @@ let reportsUnsubscribe = () => {};
 let networkMonitoringCleanup = () => {};
 let syncStatusUnsubscribe = () => {};
 let networkStatusUnsubscribe = () => {};
+let authSessionUnsubscribe = () => {};
+let exclusiveSessionMeta = null;
+let exclusiveSessionClaimPromise = null;
+let exclusiveSessionClaimFingerprint = '';
+let exclusiveSessionInFlightFingerprint = '';
+let exclusiveSessionSignOutPromise = null;
+let exclusiveSessionReauthPromise = null;
+let exclusiveSessionWasOnline = getNetworkStatusSnapshot().online !== false;
+let exclusiveSessionWriteLockState = null;
+let exclusiveSessionReadOnlyOverlay = null;
 
 
 
@@ -305,7 +333,14 @@ let state = {
 };
 window.state = state;
 
-const programExercisesWriter = createKeyedBackgroundWriter({ delayMs: 420 });
+function queueProgramExercisesSave(programId, exercises, options = {}) {
+    queueProgramExercisesSaveViaRepository(getUserProgramsCollection(), programId, exercises, {
+        ...options,
+        onError: (_error, errorMessage) => {
+            showToast(errorMessage);
+        }
+    });
+}
 
 function cloneProgramExercisesSnapshot(exercises = []) {
     return JSON.parse(JSON.stringify(Array.isArray(exercises) ? exercises : []));
@@ -324,7 +359,7 @@ function scheduleProgramExercisesSave(programId, exercises, options = {}) {
     );
 }
 
-function queueProgramExercisesSave(programId, exercises, options = {}) {
+function queueProgramExercisesSaveLegacy(programId, exercises, options = {}) {
     const errorMessage = options.errorMessage || 'Не удалось сохранить изменения тренировки';
 
     void scheduleProgramExercisesSave(programId, exercises, options).catch((error) => {
@@ -351,6 +386,16 @@ export function isOfflineMediaUploadUnsupportedError(error) {
 
 export function getOfflineMediaUploadUnavailableMessage() {
     return 'Офлайн-режим: фото и видео пока можно добавлять только при наличии интернета';
+}
+
+export function getOnlineOnlyFeatureMessage(featureLabel = 'Эта функция') {
+    return `${featureLabel} доступна только онлайн`;
+}
+
+function throwIfOnlineOnlyFeatureOffline(featureLabel) {
+    if (isOfflineModeActive()) {
+        throw new Error(getOnlineOnlyFeatureMessage(featureLabel));
+    }
 }
 
 function shouldShowSyncStatusPill(snapshot = getAppSyncStatus()) {
@@ -1096,12 +1141,17 @@ export function isCapacitorNativePlatform() {
     );
 }
 
+function isLocalDevelopmentHost() {
+    const hostname = String(window.location?.hostname || '').trim().toLowerCase();
+    return hostname === '127.0.0.1' || hostname === 'localhost';
+}
+
 export function resolveServerApiUrl(path = '') {
     const normalizedPath = String(path || '').startsWith('/')
         ? String(path || '')
         : `/${String(path || '')}`;
 
-    if (!isCapacitorNativePlatform()) {
+    if (!isCapacitorNativePlatform() && !isLocalDevelopmentHost()) {
         return normalizedPath;
     }
 
@@ -1251,6 +1301,395 @@ function getUserHealthDailyDocRef(uid, dateStr) {
 export function getCurrentUserPrivateDocRef(docId, uid = getCurrentAuthUid()) {
     if (!uid || !docId) return null;
     return getUserPrivateDocRef(uid, docId);
+}
+
+function readExclusiveSessionDeviceId() {
+    try {
+        return String(window.localStorage?.getItem?.(EXCLUSIVE_SESSION_DEVICE_ID_KEY) || '').trim();
+    } catch (_) {
+        return '';
+    }
+}
+
+function createExclusiveSessionDeviceId() {
+    try {
+        if (window.crypto?.randomUUID) {
+            return `td-${window.crypto.randomUUID()}`;
+        }
+        const bytes = new Uint8Array(16);
+        window.crypto.getRandomValues(bytes);
+        return `td-${bytesToHex(bytes)}`;
+    } catch (_) {
+        return `td-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    }
+}
+
+function getOrCreateExclusiveSessionDeviceId() {
+    const existing = readExclusiveSessionDeviceId();
+    if (existing) return existing;
+    const next = createExclusiveSessionDeviceId();
+    try {
+        window.localStorage?.setItem?.(EXCLUSIVE_SESSION_DEVICE_ID_KEY, next);
+    } catch (_) {}
+    return next;
+}
+
+function persistExclusiveSessionNotice(message) {
+    const normalized = String(message || '').trim();
+    if (!normalized) return;
+    try {
+        window.localStorage?.setItem?.(EXCLUSIVE_SESSION_NOTICE_KEY, normalized);
+    } catch (_) {}
+}
+
+function consumeExclusiveSessionNotice() {
+    try {
+        const message = String(window.localStorage?.getItem?.(EXCLUSIVE_SESSION_NOTICE_KEY) || '').trim();
+        if (message) {
+            window.localStorage?.removeItem?.(EXCLUSIVE_SESSION_NOTICE_KEY);
+        }
+        return message;
+    } catch (_) {
+        return '';
+    }
+}
+
+function showPendingExclusiveSessionNotice() {
+    const message = consumeExclusiveSessionNotice();
+    if (!message) return;
+    window.setTimeout(() => showToast(message), 120);
+}
+
+function syncExclusiveSessionWriteGuard() {
+    if (exclusiveSessionWriteLockState?.blocked) {
+        window.__TRAINING_DIARY_WRITE_GUARD__ = () => ({
+            blocked: true,
+            message: exclusiveSessionWriteLockState.message || ''
+        });
+        return;
+    }
+    try {
+        delete window.__TRAINING_DIARY_WRITE_GUARD__;
+    } catch (_) {
+        window.__TRAINING_DIARY_WRITE_GUARD__ = undefined;
+    }
+}
+
+function ensureExclusiveSessionReadOnlyOverlay(message) {
+    const normalized = String(message || '').trim()
+        || 'Аккаунт открыт на другом телефоне. Это устройство переведено в режим только чтения.';
+
+    let overlay = exclusiveSessionReadOnlyOverlay;
+    if (!overlay || !overlay.isConnected) {
+        overlay = document.createElement('div');
+        overlay.className = 'exclusive-session-overlay';
+        overlay.style.cssText = [
+            'position:fixed',
+            'inset:0',
+            'z-index:1000001',
+            'display:flex',
+            'align-items:center',
+            'justify-content:center',
+            'padding:24px',
+            'background:rgba(10,16,28,0.52)',
+            'backdrop-filter:blur(10px)',
+            '-webkit-backdrop-filter:blur(10px)'
+        ].join(';');
+
+        const card = document.createElement('div');
+        card.style.cssText = [
+            'width:min(92vw,380px)',
+            'padding:20px 18px',
+            'border-radius:18px',
+            'background:#ffffff',
+            'box-shadow:0 20px 44px rgba(15,23,42,0.22)',
+            'text-align:left',
+            'color:#111827'
+        ].join(';');
+
+        const title = document.createElement('div');
+        title.textContent = 'Сессия перенесена';
+        title.style.cssText = 'font-size:18px;font-weight:700;line-height:1.2;margin-bottom:10px;';
+
+        const body = document.createElement('div');
+        body.className = 'exclusive-session-overlay__body';
+        body.style.cssText = 'font-size:14px;line-height:1.45;color:#4b5563;white-space:pre-wrap;';
+
+        card.append(title, body);
+        overlay.append(card);
+        document.body.append(overlay);
+        exclusiveSessionReadOnlyOverlay = overlay;
+    }
+
+    const body = overlay.querySelector('.exclusive-session-overlay__body');
+    if (body) {
+        body.textContent = `${normalized}\n\nИзменения уже заблокированы. Выполняем выход из аккаунта...`;
+    }
+
+    return overlay;
+}
+
+function activateExclusiveSessionReadOnly(message) {
+    exclusiveSessionWriteLockState = {
+        blocked: true,
+        message: String(message || '').trim()
+            || 'Аккаунт открыт на другом телефоне. Изменения на этом устройстве заблокированы.'
+    };
+    syncExclusiveSessionWriteGuard();
+    ensureExclusiveSessionReadOnlyOverlay(exclusiveSessionWriteLockState.message);
+}
+
+function clearExclusiveSessionReadOnly() {
+    exclusiveSessionWriteLockState = null;
+    syncExclusiveSessionWriteGuard();
+    try {
+        exclusiveSessionReadOnlyOverlay?.remove();
+    } catch (_) {}
+    exclusiveSessionReadOnlyOverlay = null;
+}
+
+function getExclusiveSessionPlatform() {
+    return isCapacitorNativePlatform() ? 'capacitor' : 'web';
+}
+
+function getExclusiveSessionDeviceLabel() {
+    const platform = getExclusiveSessionPlatform();
+    const userAgent = String(window.navigator?.userAgent || '').trim().replace(/\s+/g, ' ');
+    if (!userAgent) return platform;
+    return `${platform}:${userAgent.slice(0, 96)}`;
+}
+
+function clearExclusiveSessionRuntime() {
+    exclusiveSessionMeta = null;
+    exclusiveSessionClaimPromise = null;
+    exclusiveSessionClaimFingerprint = '';
+    exclusiveSessionInFlightFingerprint = '';
+    exclusiveSessionReauthPromise = null;
+}
+
+function teardownExclusiveSessionListener() {
+    try {
+        authSessionUnsubscribe();
+    } catch (_) {}
+    authSessionUnsubscribe = () => {};
+}
+
+async function readExclusiveSessionTokenMeta(user = auth.currentUser, { forceRefresh = false } = {}) {
+    if (!user) return null;
+    const tokenResult = await user.getIdTokenResult(forceRefresh);
+    const claimAuthTime = Number(tokenResult?.claims?.auth_time || 0);
+    const parsedAuthTime = Number.isFinite(claimAuthTime) && claimAuthTime > 0
+        ? Math.floor(claimAuthTime)
+        : Math.floor(new Date(tokenResult?.authTime || Date.now()).getTime() / 1000);
+    const token = String(tokenResult?.token || await user.getIdToken(forceRefresh) || '').trim();
+
+    return {
+        uid: user.uid,
+        token,
+        authTime: parsedAuthTime,
+        deviceId: getOrCreateExclusiveSessionDeviceId()
+    };
+}
+
+async function ensureExclusiveSessionMeta(user = auth.currentUser, options = {}) {
+    const meta = await readExclusiveSessionTokenMeta(user, options);
+    exclusiveSessionMeta = meta;
+    return meta;
+}
+
+async function reauthenticateExclusiveSessionWithCustomToken(customToken) {
+    const normalized = String(customToken || '').trim();
+    if (!normalized) return null;
+    if (exclusiveSessionReauthPromise) {
+        return exclusiveSessionReauthPromise;
+    }
+
+    exclusiveSessionReauthPromise = (async () => {
+        clearExclusiveSessionRuntime();
+        return signInWithCustomToken(auth, normalized);
+    })();
+
+    try {
+        return await exclusiveSessionReauthPromise;
+    } finally {
+        if (exclusiveSessionReauthPromise) {
+            exclusiveSessionReauthPromise = null;
+        }
+    }
+}
+
+function isExclusiveSessionSnapshotStale(snapshotData, meta = exclusiveSessionMeta) {
+    if (!snapshotData || !meta) return false;
+    const remoteMinAuthTime = Number(snapshotData.minAuthTime || 0);
+    const remoteDeviceId = String(snapshotData.activeDeviceId || '').trim();
+    if (remoteMinAuthTime > meta.authTime) return true;
+    return remoteMinAuthTime === meta.authTime && Boolean(remoteDeviceId) && remoteDeviceId !== meta.deviceId;
+}
+
+async function forceSignOutForExclusiveSession(message) {
+    if (exclusiveSessionSignOutPromise) {
+        return exclusiveSessionSignOutPromise;
+    }
+
+    const normalizedMessage = String(message || '').trim()
+        || 'Аккаунт открыт на другом телефоне. Это устройство вышло из системы, чтобы не перезаписать данные.';
+    persistExclusiveSessionNotice(normalizedMessage);
+
+    exclusiveSessionSignOutPromise = (async () => {
+        teardownExclusiveSessionListener();
+        clearExclusiveSessionRuntime();
+        activateExclusiveSessionReadOnly(normalizedMessage);
+        try {
+            showToast(normalizedMessage);
+        } catch (_) {}
+        await new Promise((resolve) => window.setTimeout(resolve, 900));
+        try {
+            await signOut(auth);
+        } catch (error) {
+            console.warn('[session] forced signOut failed:', error);
+        } finally {
+            exclusiveSessionSignOutPromise = null;
+        }
+    })();
+
+    return exclusiveSessionSignOutPromise;
+}
+
+async function ensureExclusiveSessionClaim(user = auth.currentUser, options = {}) {
+    if (!user) return null;
+    if (exclusiveSessionSignOutPromise) return null;
+    if (!options.ignoreOfflineGuard && getAppNetworkStatus().online === false) {
+        return { ok: false, skipped: 'offline' };
+    }
+
+    const meta = await ensureExclusiveSessionMeta(user, { forceRefresh: options.forceTokenRefresh === true });
+    if (!meta?.token || !meta?.uid || !Number.isFinite(meta.authTime) || meta.authTime <= 0) {
+        throw new Error('exclusive_session_missing_token');
+    }
+
+    const fingerprint = `${meta.uid}:${meta.authTime}:${meta.deviceId}`;
+    if (!options.force && exclusiveSessionClaimFingerprint === fingerprint) {
+        return { ok: true, cached: true, deviceId: meta.deviceId, authTime: meta.authTime };
+    }
+    if (!options.force && exclusiveSessionClaimPromise && exclusiveSessionInFlightFingerprint === fingerprint) {
+        return exclusiveSessionClaimPromise;
+    }
+
+    exclusiveSessionInFlightFingerprint = fingerprint;
+    const inFlight = (async () => {
+        const response = await fetch(resolveServerApiUrl('/api/session/claim'), {
+            method: 'POST',
+            headers: {
+                'content-type': 'application/json',
+                authorization: `Bearer ${meta.token}`
+            },
+            body: JSON.stringify({
+                deviceId: meta.deviceId,
+                platform: getExclusiveSessionPlatform(),
+                deviceLabel: getExclusiveSessionDeviceLabel()
+            })
+        });
+
+        let payload = null;
+        try {
+            payload = await response.json();
+        } catch (_) {
+            payload = null;
+        }
+
+        if (response.status === 409 && payload?.error === 'stale_session') {
+            await forceSignOutForExclusiveSession(
+                'Аккаунт открыт на другом телефоне. Это устройство вышло из системы, чтобы не перезаписать данные.'
+            );
+            return payload;
+        }
+
+        if (!response.ok) {
+            throw new Error(payload?.error || `exclusive_session_claim_${response.status}`);
+        }
+
+        if (payload?.reauthCustomToken) {
+            await reauthenticateExclusiveSessionWithCustomToken(payload.reauthCustomToken);
+            return {
+                ...payload,
+                reauthenticated: true
+            };
+        }
+
+        exclusiveSessionClaimFingerprint = fingerprint;
+        return payload;
+    })();
+
+    exclusiveSessionClaimPromise = inFlight;
+    try {
+        return await inFlight;
+    } finally {
+        if (exclusiveSessionClaimPromise === inFlight) {
+            exclusiveSessionClaimPromise = null;
+            exclusiveSessionInFlightFingerprint = '';
+        }
+    }
+}
+
+async function handleExclusiveSessionSnapshot(user, snapshot) {
+    if (!user?.uid || auth.currentUser?.uid !== user.uid || exclusiveSessionSignOutPromise) {
+        return;
+    }
+
+    const meta = exclusiveSessionMeta?.uid === user.uid
+        ? exclusiveSessionMeta
+        : await ensureExclusiveSessionMeta(user).catch((error) => {
+            console.warn('[session] meta bootstrap failed:', error);
+            return null;
+        });
+
+    if (!meta) return;
+
+    if (!snapshot.exists()) {
+        if (getAppNetworkStatus().online !== false) {
+            void ensureExclusiveSessionClaim(user, { reason: 'missing_snapshot' }).catch((error) => {
+                console.warn('[session] claim after missing snapshot failed:', error);
+            });
+        }
+        return;
+    }
+
+    const data = snapshot.data() || {};
+    if (isExclusiveSessionSnapshotStale(data, meta)) {
+        await forceSignOutForExclusiveSession(
+            'Аккаунт открыт на другом телефоне. Это устройство вышло из системы, чтобы не перезаписать данные.'
+        );
+        return;
+    }
+
+    const remoteMinAuthTime = Number(data.minAuthTime || 0);
+    const remoteDeviceId = String(data.activeDeviceId || '').trim();
+    if (getAppNetworkStatus().online !== false && (!remoteDeviceId || remoteMinAuthTime < meta.authTime)) {
+        void ensureExclusiveSessionClaim(user, { reason: 'stale_snapshot' }).catch((error) => {
+            console.warn('[session] claim after stale snapshot failed:', error);
+        });
+    }
+}
+
+function attachExclusiveSessionListener(user = auth.currentUser) {
+    teardownExclusiveSessionListener();
+    if (!user?.uid) return;
+
+    const ref = getCurrentUserPrivateDocRef(EXCLUSIVE_SESSION_DOC_ID, user.uid);
+    if (!ref) return;
+
+    authSessionUnsubscribe = onSnapshot(ref, (snapshot) => {
+        void handleExclusiveSessionSnapshot(user, snapshot);
+    }, (error) => {
+        console.warn('[session] authSession listener failed:', error);
+    });
+}
+
+function maybeClaimExclusiveSessionAfterReconnect() {
+    if (!auth.currentUser || getAppNetworkStatus().online === false) return;
+    void ensureExclusiveSessionClaim(auth.currentUser, { reason: 'reconnect' }).catch((error) => {
+        console.warn('[session] reconnect claim failed:', error);
+    });
 }
 
 export function getCurrentUserHealthDailyDocRef(dateStr, uid = getCurrentAuthUid()) {
@@ -1582,9 +2021,9 @@ async function syncTrainerClientCardsFromAcceptedInvites() {
                 if (!inv.exists()) continue;
                 const st = inv.data()?.status;
                 if (st === 'accepted') {
-                    await updateDoc(doc(getClientsCollection(), c.id), { linkStatus: 'active' });
+                    await updateClient(getClientsCollection(), c.id, { linkStatus: 'active' });
                 } else if (st === 'rejected') {
-                    await deleteDoc(doc(getClientsCollection(), c.id));
+                    await deleteClient(getClientsCollection(), c.id);
                 }
                 continue;
             }
@@ -1594,7 +2033,7 @@ async function syncTrainerClientCardsFromAcceptedInvites() {
                 const linkedSnap = await getDoc(linkedRef);
                 const isLinked = linkedSnap.exists() && linkedSnap.data()?.active === true;
                 if (!isLinked) {
-                    await deleteDoc(doc(getClientsCollection(), c.id));
+                    await deleteClient(getClientsCollection(), c.id);
                 }
             }
         } catch (e) {
@@ -1604,6 +2043,7 @@ async function syncTrainerClientCardsFromAcceptedInvites() {
 }
 
 async function createTrainerInviteByPublicCode(codeRaw) {
+    throwIfOnlineOnlyFeatureOffline('Связь клиент-тренер');
     const trainerUid = userId;
     if (!trainerUid) throw new Error('Не авторизован');
     const code = normalizePublicCodeInput(codeRaw);
@@ -1651,6 +2091,7 @@ async function createTrainerInviteByPublicCode(codeRaw) {
 }
 
 export async function fetchPendingTrainerInvites() {
+    throwIfOnlineOnlyFeatureOffline('Связь клиент-тренер');
     if (!userId) return [];
     const invitesCol = collection(db, 'artifacts', appId, 'users', userId, 'trainerInvites');
     const q = query(invitesCol, where('status', '==', 'pending'));
@@ -1659,6 +2100,7 @@ export async function fetchPendingTrainerInvites() {
 }
 
 export async function acceptTrainerInviteClient(inviteId) {
+    throwIfOnlineOnlyFeatureOffline('Связь клиент-тренер');
     if (!userId) throw new Error('Не авторизован');
     const invRef = doc(db, 'artifacts', appId, 'users', userId, 'trainerInvites', inviteId);
     const snap = await getDoc(invRef);
@@ -1685,6 +2127,7 @@ export async function acceptTrainerInviteClient(inviteId) {
 }
 
 export async function rejectTrainerInviteClient(inviteId) {
+    throwIfOnlineOnlyFeatureOffline('Связь клиент-тренер');
     if (!userId) throw new Error('Не авторизован');
     const invRef = doc(db, 'artifacts', appId, 'users', userId, 'trainerInvites', inviteId);
     const snap = await getDoc(invRef);
@@ -1694,6 +2137,7 @@ export async function rejectTrainerInviteClient(inviteId) {
 }
 
 export async function fetchLinkedTrainersForClient() {
+    throwIfOnlineOnlyFeatureOffline('Связь клиент-тренер');
     if (!userId) return [];
 
     const linkedCol = collection(db, 'artifacts', appId, 'users', userId, 'linkedTrainers');
@@ -1753,6 +2197,7 @@ export async function fetchLinkedTrainersForClient() {
 }
 
 export async function saveLinkedTrainerCycleAccess(trainerUid, options = {}) {
+    throwIfOnlineOnlyFeatureOffline('Связь клиент-тренер');
     if (!userId) throw new Error('Не авторизован');
 
     const normalizedTrainerUid = String(trainerUid || '').trim();
@@ -1809,6 +2254,7 @@ export async function saveLinkedTrainerCycleAccess(trainerUid, options = {}) {
 }
 
 export async function disconnectLinkedTrainerClient(trainerUid) {
+    throwIfOnlineOnlyFeatureOffline('Связь клиент-тренер');
     if (!userId) throw new Error('Не авторизован');
 
     const normalizedTrainerUid = String(trainerUid || '').trim();
@@ -1894,6 +2340,10 @@ function openAddClientChoiceModal() {
     };
 
     byCode.addEventListener('click', () => {
+        if (isOfflineModeActive()) {
+            showToast(getOnlineOnlyFeatureMessage('Связь клиент-тренер'));
+            return;
+        }
         close();
         openAddClientByPublicCodeModal();
     });
@@ -1951,7 +2401,7 @@ function openAddClientByNameModal() {
             return;
         }
         try {
-            await addDoc(getClientsCollection(), { name, createdAt: Date.now() });
+            await createClient(getClientsCollection(), { name, createdAt: Date.now() });
             showToast('Клиент добавлен');
             close();
             render();
@@ -2397,7 +2847,7 @@ function openClientMenuModal(client) {
     deleteBtn.addEventListener('click', async () => {
         document.body.removeChild(modal);
         openConfirmModal("Удалить этого клиента?", async () => {
-            await deleteDoc(doc(getClientsCollection(), client.id));
+            await deleteClient(getClientsCollection(), client.id);
             if (state.selectedClientId === client.id) {
                 resetClientScopedState();
                 setupDynamicListeners();
@@ -2446,7 +2896,7 @@ function openEditClientModal(client) {
             return;
         }
         try {
-            await updateDoc(doc(getClientsCollection(), client.id), { name: newName });
+            await updateClient(getClientsCollection(), client.id, { name: newName });
             document.body.removeChild(modal);
         } catch (error) {
             console.error("Ошибка при обновлении клиента:", error);
@@ -2669,20 +3119,11 @@ function renderCyclesPage() {
             }
             try {
                 if (state.currentMode === 'personal' && linkedUid) {
-                    const batch = writeBatch(db);
-                    const cycleRef = doc(getUserCyclesCollection());
-                    batch.set(cycleRef, newCycle);
-                    const linkedRef = getLinkedTrainerDocRef(linkedUid, userId);
-                    const linkedSnap = await getDoc(linkedRef);
-                    if (linkedSnap.exists() && linkedSnap.data()?.fullCycleAccess !== true) {
-                        batch.update(linkedRef, {
-                            allowedCycleIds: arrayUnion(cycleRef.id),
-                            accessUpdatedAt: serverTimestamp()
-                        });
-                    }
-                    await batch.commit();
+                    await createCycle(db, getUserCyclesCollection(), newCycle, {
+                        linkedTrainerAccessRef: getLinkedTrainerDocRef(linkedUid, userId)
+                    });
                 } else {
-                    await addDoc(getUserCyclesCollection(), newCycle);
+                    await createCycle(db, getUserCyclesCollection(), newCycle);
                 }
             } catch (error) {
                 console.error("Ошибка при добавлении цикла:", error);
@@ -2729,7 +3170,7 @@ function openCycleMenuModal(cycle) {
     deleteBtn.addEventListener('click', () => {
         document.body.removeChild(modal);
         openConfirmModal("Удалить этот цикл?", async () => {
-            await deleteDoc(doc(getUserCyclesCollection(), cycle.id));
+            await deleteCycle(getUserCyclesCollection(), cycle.id);
         });
     });
 
@@ -2778,7 +3219,7 @@ function openEditCycleModal(cycle) {
             return;
         }
         try {
-            await updateDoc(doc(getUserCyclesCollection(), cycle.id), { name: newName });
+            await updateCycle(getUserCyclesCollection(), cycle.id, { name: newName });
             document.body.removeChild(modal);
         } catch (error) {
             console.error("Ошибка при обновлении цикла:", error);
@@ -2945,7 +3386,7 @@ function renderProgramsInCyclePage() {
                     trainingNote: ''
                 };
                 try {
-                    await addDoc(getUserProgramsCollection(), newProgram);
+                    await createProgram(getUserProgramsCollection(), newProgram);
                 } catch (error) {
                     console.error("Ошибка при добавлении программы:", error);
                     showToast('Ошибка сохранения. Проверьте правила Firebase!');
@@ -2953,7 +3394,7 @@ function renderProgramsInCyclePage() {
             },
             async (programCopy) => {
                 try {
-                    await addDoc(getUserProgramsCollection(), programCopy);
+                    await createProgram(getUserProgramsCollection(), programCopy);
                     showToast('Программа скопирована');
                 } catch (error) {
                     console.error("Ошибка при копировании программы:", error);
@@ -2992,7 +3433,7 @@ function openProgramMenuModal(program) {
     deleteBtn.addEventListener('click', () => {
         document.body.removeChild(modal);
         openConfirmModal("Удалить эту программу?", async () => {
-            await deleteDoc(doc(getUserProgramsCollection(), program.id));
+            await deleteProgram(getUserProgramsCollection(), program.id);
             if (state.selectedProgramIdForDetails === program.id) {
                 state.selectedProgramIdForDetails = null;
             }
@@ -3044,7 +3485,7 @@ function openEditProgramModal(program) {
             return;
         }
         try {
-            await updateDoc(doc(getUserProgramsCollection(), program.id), { name: newName });
+            await updateProgramDocument(getUserProgramsCollection(), program.id, { name: newName });
             document.body.removeChild(modal);
         } catch (error) {
             console.error("Ошибка при обновлении программы:", error);
@@ -3908,7 +4349,7 @@ async function saveTrainingNote(programId, note, media = []) {
     program.trainingMedia = media;
 
     try {
-        await updateDoc(doc(getUserProgramsCollection(), programId), {
+        await updateProgramDocument(getUserProgramsCollection(), programId, {
             trainingNote: note,
             trainingMedia: media
         });
@@ -6182,6 +6623,15 @@ contentContainer.append(commentWrapper);
       try {
         const journalCollection = getUserJournalCollection();
         const todayStr = new Date().toLocaleDateString('ru-RU');
+        await replacePlannedTrainingWithCompleted(db, journalCollection, todayStr, trainingRecord);
+        showToast('РўСЂРµРЅРёСЂРѕРІРєР° СЃРѕС…СЂР°РЅРµРЅР° РІ РґРЅРµРІРЅРёРєРµ!');
+        const legacyOrigin = state.programDetailsOrigin;
+        state.programDetailsOrigin = null;
+        state.currentPage = legacyOrigin === 'journal' ? 'journal' : 'programsInCycle';
+        state.selectedProgramIdForDetails = null;
+        state.expandedExerciseId = null;
+        render();
+        return;
 
         // 🧹 Проверяем, есть ли на сегодня запланированная тренировка — если есть, удаляем
         const q = query(
@@ -6193,11 +6643,11 @@ contentContainer.append(commentWrapper);
 
         for (const docSnap of qSnap.docs) {
           console.log("🗑 Удаляю запланированную тренировку на сегодня:", docSnap.id);
-          await deleteDoc(docSnap.ref);
+          console.debug('legacy journal cleanup skipped', docSnap.id);
         }
 
         // 💾 Теперь сохраняем завершённую тренировку
-        await addDoc(journalCollection, {
+        const legacyCompletedRecord = ({
           ...trainingRecord,
           isPlanned: false, // помечаем как завершённую
         });
@@ -6786,7 +7236,7 @@ function deleteSelectedJournalRecordFromDetails() {
 
     openConfirmModal('Удалить эту тренировку?', async () => {
         try {
-            await deleteDoc(doc(getUserJournalCollection(), record.id));
+            await deleteJournalRecord(getUserJournalCollection(), record.id);
             showToast('Тренировка удалена');
             state.selectedJournalRecord = null;
             render();
@@ -7776,7 +8226,7 @@ function renderJournalCalendarMonthPage(page, monthDate, journalRecords) {
                     openConfirmModal(
                         `Удалить запланированную тренировку "${dayRecords[0].programName}"?`,
                         async () => {
-                            await deleteDoc(doc(getUserJournalCollection(), dayRecords[0].id));
+                            await deleteJournalRecord(getUserJournalCollection(), dayRecords[0].id);
                             showToast('Тренировка удалена!');
                             render();
                         }
@@ -7877,7 +8327,7 @@ function openPlanTrainingDropdown(cell, dateStr) {
             li.className = 'training-dropdown-item';
             li.textContent = program.name;
             li.addEventListener('click', async () => {
-                await addDoc(getUserJournalCollection(), {
+                await createJournalRecord(getUserJournalCollection(), {
                     date: dateStr,
                     cycleName: currentCycleName,
                     programName: program.name,
@@ -8000,7 +8450,7 @@ function openTrainingDropdown(cell, dayRecords) {
         deleteLi.addEventListener('click', async () => {
             if (confirm('Удалить запланированную тренировку?')) {
                 for (const rec of dayRecords.filter(r => r.isPlanned)) {
-                    await deleteDoc(doc(getUserJournalCollection(), rec.id));  // Удаление записи из дневника
+                    await deleteJournalRecord(getUserJournalCollection(), rec.id);  // Удаление записи из дневника
                 }
                 showToast('План удалён');
                 dropdown.remove();
@@ -8735,7 +9185,7 @@ function renderJournalRecordDetails(container) {
     const deleteTraining = () => {
         openConfirmModal('Удалить эту тренировку?', async () => {
             try {
-                await deleteDoc(doc(getUserJournalCollection(), record.id));
+                await deleteJournalRecord(getUserJournalCollection(), record.id);
                 showToast('Тренировка удалена');
                 state.selectedJournalRecord = null;
                 render();
@@ -8788,7 +9238,7 @@ editBtn.addEventListener('click', () => {
     const formatted = `${day}.${month}.${year}`;
 
     try {
-      await updateDoc(doc(getUserJournalCollection(), record.id), { date: formatted });
+      await updateJournalRecord(getUserJournalCollection(), record.id, { date: formatted });
       showToast('Дата обновлена!');
       render();
     } catch (e) {
@@ -9298,7 +9748,11 @@ function attachCycleDataListeners() {
                 const { plan: nextPlan, changed } = sanitizeSupplementPlan(rawPlan);
                 state.supplementPlan = nextPlan;
                 syncSupplementsBottomNavBadge(nextPlan);
-                if (changed && cycleRef) {
+                const canPersistSupplementPlanCleanup =
+                    state.currentMode === 'own'
+                    || (state.currentMode === 'personal' && state.selectedClientId && !getActiveLinkedClientUid());
+
+                if (changed && cycleRef && canPersistSupplementPlanCleanup) {
                     updateDoc(cycleRef, { supplementPlan: nextPlan }).catch((error) => {
                         console.error('Supplement plan cleanup failed:', error);
                     });
@@ -9716,6 +10170,7 @@ function openMenuModal() {
 // 📦 Регистрация Service Worker и уведомления
 // ============================================================
 const isViteDevServer = Boolean(import.meta?.env?.DEV);
+const DEV_SW_RESET_FLAG = 'trainingDiary:devSwReset:v1';
 
 async function syncWebServiceWorkerRegistration() {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
@@ -9725,6 +10180,24 @@ async function syncWebServiceWorkerRegistration() {
     if (isViteDevServer) {
       const registrations = await navigator.serviceWorker.getRegistrations();
       await Promise.all(registrations.map((registration) => registration.unregister()));
+      try {
+        const cacheKeys = await window.caches?.keys?.();
+        if (Array.isArray(cacheKeys) && cacheKeys.length) {
+          await Promise.all(cacheKeys.map((key) => window.caches.delete(key)));
+        }
+      } catch (_) {}
+
+      const hasController = Boolean(navigator.serviceWorker.controller);
+      if (hasController && !window.sessionStorage?.getItem?.(DEV_SW_RESET_FLAG)) {
+        try {
+          window.sessionStorage?.setItem?.(DEV_SW_RESET_FLAG, '1');
+        } catch (_) {}
+        window.location.reload();
+        return;
+      }
+      try {
+        window.sessionStorage?.removeItem?.(DEV_SW_RESET_FLAG);
+      } catch (_) {}
       console.log('Service Worker disabled in Vite dev mode');
       return;
     }
@@ -10558,6 +11031,12 @@ syncStatusUnsubscribe = subscribeSyncStatus(() => {
 });
 networkStatusUnsubscribe = subscribeNetworkStatus(() => {
     applyAppConnectivityState();
+    const snapshot = getAppNetworkStatus();
+    const isOnline = snapshot.online !== false;
+    if (isOnline && !exclusiveSessionWasOnline) {
+        maybeClaimExclusiveSessionAfterReconnect();
+    }
+    exclusiveSessionWasOnline = isOnline;
 });
 void Promise.resolve()
     .then(() => initNetworkMonitoring())
@@ -10739,6 +11218,14 @@ if (authToggleBtn && authLoginBtn) {
                 }
 
                 const cred = await createUserWithEmailAndPassword(auth, email, password);
+                await ensureExclusiveSessionClaim(cred.user, {
+                    reason: 'register',
+                    forceTokenRefresh: true,
+                    ignoreOfflineGuard: true
+                });
+                if (auth.currentUser?.uid !== cred.user.uid) {
+                    return;
+                }
                 const code = await createUserProfileAndAssignCode(cred.user.uid, {
                     firstName,
                     lastName,
@@ -10817,10 +11304,25 @@ onAuthStateChanged(auth, async (user) => {
     try {
 
     unsubscribeAll();
+    teardownExclusiveSessionListener();
 
     if (user) {
+        clearExclusiveSessionReadOnly();
         userId = user.uid;
         console.log('🔑 Пользователь вошёл:', userId);
+
+        await ensureExclusiveSessionMeta(user).catch((error) => {
+            console.warn('[session] initial token bootstrap failed:', error);
+            return null;
+        });
+        attachExclusiveSessionListener(user);
+        const sessionClaim = await ensureExclusiveSessionClaim(user, { reason: 'bootstrap' }).catch((error) => {
+            console.warn('[session] bootstrap claim failed:', error);
+            return null;
+        });
+        if (sessionClaim?.error === 'stale_session' || sessionClaim?.reauthenticated || auth.currentUser?.uid !== user.uid) {
+            return;
+        }
 
         try {
             await refreshUserProfileFromServer();
@@ -10839,6 +11341,8 @@ onAuthStateChanged(auth, async (user) => {
 
     } else {
         userId = null;
+        clearExclusiveSessionReadOnly();
+        clearExclusiveSessionRuntime();
         state.currentMode = null;
         state.selectedClientId = null;
         state.currentPage = 'auth';
@@ -10850,6 +11354,9 @@ onAuthStateChanged(auth, async (user) => {
     render();
 
     // ❗ Даем приложению дорендериться → и скрываем загрузку
+    if (!user) {
+        showPendingExclusiveSessionNotice();
+    }
     } catch (error) {
         console.error('[bootstrap] onAuthStateChanged failed:', error);
         showBootstrapFallbackScreen(user);

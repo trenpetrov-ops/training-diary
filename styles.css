@@ -1338,7 +1338,7 @@ textarea.comment-input {
     width: 100%;
     min-height: 96px;
     padding: 10px;
-    border: 1px solid #ccc;
+    border: 1px solid #d6d8dd;
     border-radius: 8px;
     box-sizing: border-box;
     font-size: 15px;
@@ -1349,9 +1349,9 @@ textarea.comment-input {
     /* transition: all 0.2s ease; */
 }
 textarea.comment-input:focus {
-    /* border-color: #3f7ae0; */
+    border-color: #3f85d2;
     background-color: #fff;
-    box-shadow: inset 0 0 0 0.5px #a9a9a9;
+    box-shadow: none;
 }
 .media-thumb {
     border: 1px solid #b6b6b6;
@@ -2891,7 +2891,12 @@ div#journal-content {
     height: 5px;
     border-radius: 50%;
     background-color: #007aff;
-    margin: 9px auto 0 auto;
+    margin: 0 auto;
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    right: 0;
+    top: 50%;
 }
 .calendar-cell.today.has-training .day-number::after, .calendar-cell.today.planned .day-number::after {
     position: absolute;
@@ -8588,7 +8593,7 @@ button#select-own-mode .mode-icon svg {
         color: #111;
         box-sizing: border-box;
         outline: none;
-        transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+
     }
     .create-food-input.is-locked {
         background: #f1f3f7;
@@ -8654,7 +8659,7 @@ button#select-own-mode .mode-icon svg {
         user-select: none;
     }
     .create-food-picker-wrap.open .create-food-picker-field {
-        border-color: #535353;
+        border-color: #3f85d2;
         background: #fff;
     }
     .create-food-picker-value {
@@ -9163,7 +9168,7 @@ button#select-own-mode .mode-icon svg {
     }
     .meal-search-panel-search {
         padding: 11px 18px 0px;
-        background: #f3f2f8;
+        background: #eeeff3;
     }
     .meal-search-tab-panel .meal-search-box {
         margin: 0;
@@ -9221,17 +9226,7 @@ button#select-own-mode .mode-icon svg {
         /* margin-top: 26px; */
     }
     .meal-search-screen--fill .meal-search-section-head {
-        /* position: absolute; */
-        /* top: 6px; */
-        /* left: 7px; */
-        /* right: 7px; */
-        /* z-index: 25; */
-        /* flex-shrink: 0; */
-        /* margin-top: 0; */
-        /* margin-bottom: 0; */
-        /* background: #f3f2f8; */
-        /* align-items: flex-start; */
-        /* gap: 8px; */
+
     }
     .meal-search-screen--fill .meal-search-section-head .meal-search-actions {
         display: flex;
@@ -9251,11 +9246,7 @@ button#select-own-mode .mode-icon svg {
         font-size: 11px;
         line-height: 1.2;
     }
-    /* Ð“Ð¾Ñ€Ð¸Ð·Ð¾Ð½Ñ‚Ð°Ð»ÑŒÐ½Ñ‹Ðµ Ð²ÐºÐ»Ð°Ð´ÐºÐ¸: Ð¿Ð°Ð½ÐµÐ»Ð¸ Ð² DOM; paging Ð±Ð»Ð¸Ð¶Ðµ Ðº UIScrollView (mandatory snap, web.dev + WebKit).
-   JS-Ñ€ÐµÐ¶Ð¸Ð¼ Ñ‚Ð°Ð±Ð¾Ð²: TAB_SYNC_ANCHOR_B (Â«Ð¯ÐºÐ¾Ñ€ÑŒÂ») â€” ÑÐ¼. pages/meal.js renderMealSearch */
-    /* Ð“Ð¾Ñ€Ð¸Ð·Ð¾Ð½Ñ‚Ð°Ð»ÑŒÐ½Ñ‹Ð¹ paging Ð² Ð´ÑƒÑ…Ðµ UIScrollView (WebKit + web.dev scroll-snap):
-   mandatory + Ñ€Ð°Ð²Ð½Ñ‹Ðµ Ð´Ð¾Ñ‡ÐµÑ€Ð½Ð¸Ðµ Â«ÑÑ‚Ñ€Ð°Ð½Ð¸Ñ†Ñ‹Â» â†’ ÑÐ½Ð°Ð¿ Ð½Ð° ÐºÐ¾Ð¼Ð¿Ð¾Ð·Ð¸Ñ‚Ð¾Ñ€Ðµ; Ð±ÐµÐ· CSS smooth Ð½Ð°
-   Ð¿Ð¾Ð»ÑŒÐ·Ð¾Ð²Ð°Ñ‚ÐµÐ»ÑŒÑÐºÐ¾Ð¼ Ð¶ÐµÑÑ‚Ðµ (Ð¸Ð½ÐµÑ€Ñ†Ð¸Ñ Ð·Ð°Ð´Ð°Ñ‘Ñ‚ÑÑ WebKit, Ð½Ðµ scroll-behavior). */
+
     .meal-search-tab-carousel {
         display: flex;
         overflow-x: auto;
@@ -9487,6 +9478,7 @@ button#select-own-mode .mode-icon svg {
     .meal-search-input: focus {
         outline: none!important;
         box-shadow: none;
+        border: none;
     }
     .meal-search-input:: placeholder {
         color: #b1b1b8;
@@ -14493,9 +14485,11 @@ button.action-btn.action-plan span.action-plan-text svg {
     color: #111;
     box-sizing: border-box;
     outline: none;
-    transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
     text-align: center;
     box-shadow: none;
+}
+.create-food-input:focus{
+    border-color: #3f85d2;
 }
 .create-food-input.is-locked {
     background: #f4f5f8;
@@ -14559,7 +14553,7 @@ button.action-btn.action-plan span.action-plan-text svg {
     user-select: none;
 }
 .create-food-picker-wrap.open .create-food-picker-field {
-    border-color: #535353;
+    border-color: #3f85d2;
     background: #fff;
 }
 .create-food-picker-value {
@@ -15101,7 +15095,7 @@ button.delete-food-from-meal-btn {
 }
 .meal-search-panel-search {
     padding: 11px 18px 0px;
-    background: #f3f2f8;
+    background: #eeeff3;
 }
 .meal-search-tab-panel .meal-search-box {
     margin: 0;
@@ -15532,15 +15526,15 @@ button.delete-food-from-meal-btn {
     background: white;
     padding: 0 20px;
     margin: 12px auto 7px auto;
-    border: 0.5px solid #bcbcbc;
-    /* transition: gap 0.18s ease, padding 0.18s ease; */
+    border: 0.5px solid #d1d1d1;
+
     justify-content: flex-end;
 }
 .meal-search-panel-search {
     display: flex;
     align-items: center;
     gap: 0;
-    transition: gap 0.18s ease;
+
     flex-direction: row-reverse;
 }
 .meal-search-panel-search--clear-visible {
@@ -15556,10 +15550,13 @@ button.delete-food-from-meal-btn {
 }
 .meal-search-clear-btn--tab {
     display: none;
-    width: 28px;
-    height: 28px;
-    flex: 0 0 28px;
+    width: 36px;
+    height: 39px;
+    flex: 0 0 39px;
     color: #cd3931;
+    border: 0.5px solid #d1d1d1;
+    border-radius: 50%;
+    background: white;
 }
 .meal-search-panel-search--clear-visible .meal-search-clear-btn--tab {
     display: inline-flex;
@@ -15602,6 +15599,7 @@ button.delete-food-from-meal-btn {
 .meal-search-input:focus {
     outline: none!important;
     box-shadow: none;
+    border: none !important;
 }
 .meal-search-input::placeholder {
     color: #b1b1b8;
@@ -16371,6 +16369,8 @@ span.meal-search-meal-arrow svg {
     width: 72px;
     border: 1px solid #d6d8dd;
 }
+
+
 button.food-meal-select-btn {
     padding: 11px 14px;
     border: 0.5px solid #d7d7dc;

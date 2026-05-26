@@ -3,6 +3,7 @@ import {
     showToast,
     render,
     openConfirmModal,
+    isOfflineModeActive,
     createAppleHealthImportToken,
     getAppleHealthImportSettings,
     saveCabinetUserProfile,
@@ -16,6 +17,9 @@ import {
     fetchOwnCyclesForClientAccess,
     saveLinkedTrainerCycleAccess
 } from '../script.js';
+
+const APPLE_HEALTH_ONLINE_ONLY_MESSAGE = 'Apple Health доступен только онлайн. Подключитесь к интернету и повторите.';
+const TRAINER_LINK_ONLINE_ONLY_MESSAGE = 'Связь клиент-тренер доступна только онлайн. Подключитесь к интернету и повторите.';
 
 function formatProfileDateTime(value) {
     if (!value) return '—';
@@ -245,6 +249,7 @@ export function renderProfilePage() {
     const hasCore = !!(p && p.firstName && p.lastName && p.birthDate);
     const hasCode = !!(p && p.publicCode);
     const showForm = !hasCode || !hasCore || state.profileCabinetEditing;
+    const isOffline = isOfflineModeActive();
 
     if (showForm) {
         const hint = createElement('p', 'muted profile-cabinet-hint');
@@ -408,6 +413,10 @@ export function renderProfilePage() {
     const createAppleHealthTokenBtn = createElement('button', 'btn btn-primary profile-apple-health-create-btn', 'Создать токен для Apple Health');
     createAppleHealthTokenBtn.type = 'button';
     createAppleHealthTokenBtn.onclick = async () => {
+        if (isOffline) {
+            showToast(APPLE_HEALTH_ONLINE_ONLY_MESSAGE);
+            return;
+        }
         createAppleHealthTokenBtn.disabled = true;
         try {
             const result = await createAppleHealthImportToken();
@@ -422,6 +431,10 @@ export function renderProfilePage() {
         }
     };
 
+    if (isOffline) {
+        createAppleHealthTokenBtn.disabled = true;
+    }
+
     appleHealthActions.append(createAppleHealthTokenBtn);
     appleHealthCard.append(
         appleHealthTitle,
@@ -432,7 +445,10 @@ export function renderProfilePage() {
     );
     wrap.appendChild(appleHealthCard);
 
-    getAppleHealthImportSettings()
+    if (isOffline) {
+        appleHealthStatus.textContent = APPLE_HEALTH_ONLINE_ONLY_MESSAGE;
+    } else {
+        getAppleHealthImportSettings()
         .then((settings) => {
             appleHealthStatus.textContent = settings?.tokenHash
                 ? `Токен настроен: ${formatProfileDateTime(settings.updatedAt)}`
@@ -443,13 +459,20 @@ export function renderProfilePage() {
             appleHealthStatus.textContent = 'Не удалось проверить настройки Apple Health.';
         });
 
+    }
+
     const linkedTrainersBlock = createElement('div', 'profile-linked-trainers-block');
     const linkedTrainersTitle = createElement('h3', 'profile-linked-trainers-title', 'Тренер');
     const linkedTrainersList = createElement('div', 'profile-linked-trainers-list');
     linkedTrainersBlock.append(linkedTrainersTitle, linkedTrainersList);
     wrap.appendChild(linkedTrainersBlock);
 
-    fetchLinkedTrainersForClient()
+    if (isOffline) {
+        linkedTrainersList.replaceChildren(
+            createElement('p', 'muted profile-linked-trainers-empty', TRAINER_LINK_ONLINE_ONLY_MESSAGE)
+        );
+    } else {
+        fetchLinkedTrainersForClient()
         .then((trainers) => {
             linkedTrainersList.replaceChildren();
             linkedTrainersTitle.textContent = trainers.length > 1 ? 'Тренеры' : 'Тренер';
@@ -535,6 +558,7 @@ export function renderProfilePage() {
                 createElement('p', 'muted profile-linked-trainers-empty', 'Не удалось загрузить данные тренера.')
             );
         });
+    }
 
     const invitesTitle = createElement('h3', 'profile-invites-title');
     invitesTitle.textContent = 'Приглашения от тренеров';
@@ -548,7 +572,10 @@ export function renderProfilePage() {
     const invitesList = createElement('div', 'profile-invites-list');
     wrap.appendChild(invitesList);
 
-    fetchPendingTrainerInvites()
+    if (isOffline) {
+        invitesList.replaceChildren(createElement('p', 'muted', TRAINER_LINK_ONLINE_ONLY_MESSAGE));
+    } else {
+        fetchPendingTrainerInvites()
         .then((invites) => {
             invitesList.replaceChildren();
             if (!invites.length) {
@@ -604,6 +631,7 @@ export function renderProfilePage() {
                 createElement('p', 'muted', 'Не удалось загрузить приглашения. Проверьте правила Firestore.')
             );
         });
+    }
 
     root.appendChild(wrap);
 }

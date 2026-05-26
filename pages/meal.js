@@ -51,7 +51,27 @@ import {
     deleteUserFirebaseStorageFileByDownloadUrl
 } from '../script.js';
 import { debounce } from './supplement.js';
-import { createKeyedBackgroundWriter } from '../offline/background-write-queue.js';
+import {
+    cloneMealItemsArray,
+    clearMealGoalConfig,
+    hasAnyFoodInMealsSnapshot,
+    normalizeMealsDataSnapshot,
+    queueMealsDataSave as queueMealsDataSaveViaRepository,
+    saveMealGoalConfigPatch,
+    saveMealsDataDocument,
+    updateMealsDataDocument
+} from '../offline/repositories/meals-repository.js';
+import {
+    createMealLibraryFood,
+    createMealLibraryRecipe,
+    deleteGlobalMealFoodRecord,
+    deleteMealLibraryFood,
+    deleteMealLibraryRecipe,
+    setGlobalMealFoodRecord,
+    updateGlobalMealFoodRecord,
+    updateMealLibraryFood,
+    updateMealLibraryRecipe
+} from '../offline/repositories/meal-library-repository.js';
 import { resolveSwipePanAxis } from '../gestures.js';
 import { attachMonthCarouselSwipe } from '../calendar-month-carousel.js';
 import { bindSwipeBlock, closeSwipeRowVisual } from '../swipe-engine.js';
@@ -91,32 +111,16 @@ let cleanupMealMacrosBorderObserver = null;
 let cleanupTopBarMealBorderObserver = null;
 let weekMealsPresenceCache = {};
 let mealsDataLoadedDate = null;
+const APPLE_HEALTH_ONLINE_ONLY_MESSAGE = 'Apple Health доступен только онлайн. Подключитесь к интернету и повторите.';
+const GLOBAL_CATALOG_ONLINE_ONLY_MESSAGE = 'Общая база продуктов доступна только онлайн. В офлайн-режиме используйте ваши локальные продукты и рецепты.';
 const MEAL_NO_GOAL_SUMMARY_VIEW_KEY = 'mealNoGoalSummaryView';
 let mealNoGoalSummaryCurrentMode = localStorage.getItem(MEAL_NO_GOAL_SUMMARY_VIEW_KEY) === 'current';
 const MEAL_GOAL_SUMMARY_VIEW_KEY = 'mealGoalSummaryView';
 let mealGoalSummaryCurrentMode = localStorage.getItem(MEAL_GOAL_SUMMARY_VIEW_KEY) === 'current';
-const mealsDocWriter = createKeyedBackgroundWriter({ delayMs: 420 });
-
 function syncMealAppChrome() {
     try {
         requestAppChromeSync();
     } catch (_) {}
-}
-
-function cloneMealItemsArray(items = []) {
-    return (Array.isArray(items) ? items : []).map((item) => ({ ...item }));
-}
-
-function normalizeMealsDataSnapshot(mealsData = {}) {
-    const normalized = {};
-    Object.keys(mealsData || {}).forEach((mealId) => {
-        if (!/^meal\d+$/.test(mealId)) return;
-        const items = cloneMealItemsArray(mealsData[mealId]);
-        if (items.length > 0) {
-            normalized[mealId] = items;
-        }
-    });
-    return normalized;
 }
 
 function applySelectedDateMealsData(mealsData = {}, dateStr = state.selectedDate) {
@@ -130,7 +134,7 @@ function applySelectedDateMealsData(mealsData = {}, dateStr = state.selectedDate
         if (monthMealsPresenceCycleId === state.selectedCycleId && monthMealsPresenceCache[monthKey]) {
             monthMealsPresenceCache[monthKey] = {
                 ...monthMealsPresenceCache[monthKey],
-                [dateStr]: hasAnyFoodInDoc(normalized)
+                [dateStr]: hasAnyFoodInMealsSnapshot(normalized)
             };
         }
         updateCachedMonthMealsDailySummaryForDate(dateStr, normalized);
@@ -140,9 +144,60 @@ function applySelectedDateMealsData(mealsData = {}, dateStr = state.selectedDate
 }
 
 function queueMealsDataSave(cycleRef, dateStr, mealsData, options = {}) {
+    queueMealsDataSaveViaRepository(cycleRef, dateStr, mealsData, {
+        ...options,
+        onError: (error, errorMessage) => {
+            console.error('[meal-save] failed:', error);
+            showToast(errorMessage);
+        }
+    });
+}
+
+async function saveSelectedDateMealsData(cycleRef, dateStr, mealsData, options = {}) {
+    await saveMealsDataDocument(cycleRef, dateStr, mealsData, options);
+}
+
+async function saveSelectedMealItems(mealId, items, options = {}) {
+    const cycleRef = getCycleDocRef();
+    const dateStr = options.dateStr || state.selectedDate;
+    if (!cycleRef || !dateStr || !mealId) return;
+
+    const preserveEmptyMealIds = new Set(
+        (Array.isArray(options.preserveEmptyMealIds) ? options.preserveEmptyMealIds : [])
+            .map((value) => String(value || '').trim())
+            .filter(Boolean)
+    );
+    const nextMealsData = normalizeMealsDataSnapshot(state.mealsData || {}, {
+        preserveEmptyMealIds: [...preserveEmptyMealIds]
+    });
+    const nextItems = cloneMealItemsArray(items);
+
+    if (nextItems.length > 0 || preserveEmptyMealIds.has(mealId)) {
+        nextMealsData[mealId] = nextItems;
+    } else {
+        delete nextMealsData[mealId];
+    }
+
+    applySelectedDateMealsData(nextMealsData, dateStr);
+    await saveSelectedDateMealsData(cycleRef, dateStr, nextMealsData, {
+        preserveEmptyMealIds: [...preserveEmptyMealIds]
+    });
+}
+
+async function deleteMealSectionAndPersist(mealId) {
+    const cycleRef = getCycleDocRef();
+    if (!cycleRef || !state.selectedDate || !mealId) return;
+
+    const nextMealsData = normalizeMealsDataSnapshot(state.mealsData || {});
+    delete nextMealsData[mealId];
+    applySelectedDateMealsData(nextMealsData);
+    await saveSelectedDateMealsData(cycleRef, state.selectedDate, nextMealsData);
+}
+
+function queueMealsDataSaveLegacy(cycleRef, dateStr, mealsData, options = {}) {
     if (!cycleRef || !dateStr) return;
 
-    const snapshot = normalizeMealsDataSnapshot(mealsData);
+    const snapshot = normalizeMealsDataSnapshotLegacy(mealsData);
     const writerKey = `${cycleRef.path}::${dateStr}`;
     const delayMs = Number.isFinite(options.delayMs) ? Math.max(0, Number(options.delayMs)) : 420;
     const errorMessage = options.errorMessage || 'Не удалось сохранить изменения в питании';
@@ -1281,7 +1336,7 @@ async function saveFoodEntity(foodId, payload) {
 
     const foodRef = await getFoodDocumentRef(foodId);
     if (!foodRef) return null;
-    await updateDoc(foodRef, cleanPayload);
+    await updateMealLibraryFood(foodRef, cleanPayload);
     await syncSharedFoodToGlobalCatalogIfNeeded(foodId, cleanPayload);
 
     if (foodsMapCache && foodsMapLibraryKey === getMealLibraryContextKey()) {
@@ -1425,6 +1480,9 @@ function buildGlobalCatalogImportPayload(row = {}, catalogId, defaultAmount = nu
 }
 
 async function ensureGlobalCatalogFoodSaved(row = {}, catalogId, defaultAmount = null) {
+    if (isOfflineModeActive()) {
+        throw new Error('global_catalog_offline_unavailable');
+    }
     const existingId = await findLocalFoodIdByGlobalCatalogId(catalogId);
     if (existingId) return existingId;
 
@@ -1437,7 +1495,7 @@ async function unlinkLocalFoodFromGlobalCatalog(foodId) {
     if (!libCol || !id) return;
 
     const libRef = doc(libCol, id);
-    await updateDoc(libRef, {
+    await updateMealLibraryFood(libRef, {
         sharedGlobalCatalogId: deleteField(),
         sharedGlobalSharedAt: deleteField(),
         sharedGlobalCreatedByUid: deleteField()
@@ -1472,14 +1530,13 @@ async function syncSharedFoodToGlobalCatalogIfNeeded(foodId, patch) {
         const sharedId = getFoodGlobalCatalogId(data);
         if (!sharedId) return;
 
-        const gRef = doc(gCol, sharedId);
         const upd = { ...(patch || {}) };
         if (upd.name != null) {
             upd.nameLower = normalizeSearchText(upd.name);
             upd.searchTokens = buildMealSearchTokens(upd.name);
         }
         if (upd.defaultAmount != null) upd.defaultAmount = Number(upd.defaultAmount || 0);
-        await updateDoc(gRef, upd);
+        await updateGlobalMealFoodRecord(gCol, sharedId, upd);
     } catch (e) {
         console.warn('syncSharedFoodToGlobalCatalogIfNeeded failed', e?.code || e);
     }
@@ -1614,7 +1671,7 @@ async function addRecipeToCurrentMeal(recipe, servings) {
 
     const recipeRef = await getRecipeDocumentRef(recipe.id);
     if (recipeRef) {
-        await updateDoc(recipeRef, { defaultServings: currentServings });
+        await updateMealLibraryRecipe(recipeRef, { defaultServings: currentServings });
     }
     if (recipesCache && recipesCacheLibraryKey === getMealLibraryContextKey()) {
         const cached = recipesCache.find(r => r && r.id === recipe.id);
@@ -2529,11 +2586,16 @@ async function handleAddMealSection() {
     const newMealId = `meal${nextNumber}`;
 
     const cycleRef = getCycleDocRef();
-    const mealRef = doc(cycleRef, 'meals', state.selectedDate);
+    if (!cycleRef || !state.selectedDate) return;
 
-    await setDoc(mealRef, {
-        [newMealId]: []
-    }, { merge: true });
+    const nextMealsData = normalizeMealsDataSnapshot(state.mealsData || {}, {
+        preserveEmptyMealIds: [newMealId]
+    });
+    nextMealsData[newMealId] = [];
+    applySelectedDateMealsData(nextMealsData);
+    await saveSelectedDateMealsData(cycleRef, state.selectedDate, nextMealsData, {
+        preserveEmptyMealIds: [newMealId]
+    });
 }
 
 /** Не открывать поиск дважды за один жест (pointer pure-tap + click) для той же карточки. */
@@ -2751,13 +2813,7 @@ function createMealCard(meal) {
             e.stopPropagation();
 
             openConfirmModal(`Удалить ${meal.name}?`, async () => {
-                const cycleRef = getCycleDocRef();
-                const mealRef = doc(cycleRef, 'meals', state.selectedDate);
-
-                await updateDoc(mealRef, {
-                    [meal.id]: deleteField()
-                });
-                await cleanupEmptyMealsDoc(mealRef);
+                await deleteMealSectionAndPersist(meal.id);
 
                 delete mealOpenState[getMealOpenKey(state.selectedDate, meal.id)];
                 localStorage.setItem('mealOpenState', JSON.stringify(mealOpenState));
@@ -2950,16 +3006,10 @@ async function copyMealFromAnotherDay(targetMealId, sourceDate, sourceMealId) {
         return;
     }
 
-    const targetRef = doc(cycleRef, 'meals', state.selectedDate);
-    const targetSnap = await getDoc(targetRef);
-    const targetData = targetSnap.exists() ? targetSnap.data() : {};
-
+    const targetData = normalizeMealsDataSnapshot(state.mealsData || {});
     const targetItems = Array.isArray(targetData[targetMealId]) ? targetData[targetMealId] : [];
     const copiedItems = cloneMealItemsForCopy(sourceItems);
-
-    await setDoc(targetRef, {
-        [targetMealId]: [...targetItems, ...copiedItems]
-    }, { merge: true });
+    await saveSelectedMealItems(targetMealId, [...targetItems, ...copiedItems]);
 
     showToast('Еда скопирована');
 }
@@ -4502,6 +4552,16 @@ function renderMealBurnedSummaryStubPage() {
             return;
         }
 
+        if (isOfflineModeActive()) {
+            syncBtn.disabled = true;
+            setNotice('muted', APPLE_HEALTH_ONLINE_ONLY_MESSAGE);
+            renderMessageCard(
+                'Apple Health доступен только онлайн',
+                'Подключитесь к интернету, чтобы загрузить данные из Apple Health и запустить синхронизацию через Shortcut.'
+            );
+            return;
+        }
+
         syncBtn.disabled = false;
         renderLoading();
 
@@ -4535,6 +4595,12 @@ function renderMealBurnedSummaryStubPage() {
     }
 
     syncBtn.onclick = () => {
+        if (isOfflineModeActive()) {
+            setNotice('muted', APPLE_HEALTH_ONLINE_ONLY_MESSAGE);
+            showToast(APPLE_HEALTH_ONLINE_ONLY_MESSAGE);
+            return;
+        }
+
         const result = launchAppleHealthShortcut({
             date: dateStr,
             target: 'mealBurned'
@@ -5281,9 +5347,7 @@ async function saveMealGoalToCycle() {
             }
         };
 
-        await setDoc(cycleRef, {
-            mealGoalConfig: nextConfig
-        }, { merge: true });
+        await saveMealGoalConfigPatch(cycleRef, nextConfig);
 
         patchMealGoalConfigInLocalState(nextConfig);
 
@@ -5343,13 +5407,11 @@ async function saveMealGoalToCycle() {
             weekdayPresets: nextWeekdayPresets
         });
 
-        await setDoc(cycleRef, {
-            mealGoalConfig: {
-                ...currentConfig,
-                weekdayPresets: nextWeekdayPresets,
-                intervalPreset: deleteField()
-            }
-        }, { merge: true });
+        await saveMealGoalConfigPatch(cycleRef, {
+            ...currentConfig,
+            weekdayPresets: nextWeekdayPresets,
+            intervalPreset: deleteField()
+        });
 
         patchMealGoalConfigInLocalState(nextConfig);
 
@@ -5410,13 +5472,11 @@ async function saveMealGoalToCycle() {
             weekdayPresets: []
         });
 
-        await setDoc(cycleRef, {
-            mealGoalConfig: {
-                ...currentConfig,
-                intervalPreset: nextConfig.intervalPreset,
-                weekdayPresets: []
-            }
-        }, { merge: true });
+        await saveMealGoalConfigPatch(cycleRef, {
+            ...currentConfig,
+            intervalPreset: nextConfig.intervalPreset,
+            weekdayPresets: []
+        });
 
         patchMealGoalConfigInLocalState(nextConfig);
 
@@ -5433,9 +5493,7 @@ async function saveMealGoalToCycle() {
 async function clearMealGoalFromCycle() {
     const cycleRef = getCycleDocRef();
 
-    await updateDoc(cycleRef, {
-        mealGoalConfig: deleteField()
-    });
+    await clearMealGoalConfig(cycleRef);
 
     state.mealGoal = null;
 }
@@ -5681,12 +5739,10 @@ function renderSavedMealGoalPresets() {
                 const nextConfig = { ...current };
                 delete nextConfig.baseGoal;
 
-                await setDoc(cycleRef, {
-                    mealGoalConfig: {
-                        ...current,
-                        baseGoal: deleteField()
-                    }
-                }, { merge: true });
+                await saveMealGoalConfigPatch(cycleRef, {
+                    ...current,
+                    baseGoal: deleteField()
+                });
 
                 patchMealGoalConfigInLocalState(nextConfig);
 
@@ -5715,12 +5771,10 @@ function renderSavedMealGoalPresets() {
                     weekdayPresets: filtered
                 };
 
-                await setDoc(cycleRef, {
-                    mealGoalConfig: {
-                        ...current,
-                        weekdayPresets: filtered
-                    }
-                }, { merge: true });
+                await saveMealGoalConfigPatch(cycleRef, {
+                    ...current,
+                    weekdayPresets: filtered
+                });
 
                 patchMealGoalConfigInLocalState(nextConfig);
 
@@ -5764,12 +5818,10 @@ function renderSavedMealGoalPresets() {
                     const nextConfig = { ...current };
                     delete nextConfig.intervalPreset;
 
-                    await setDoc(cycleRef, {
-                        mealGoalConfig: {
-                            ...current,
-                            intervalPreset: deleteField()
-                        }
-                    }, { merge: true });
+                    await saveMealGoalConfigPatch(cycleRef, {
+                        ...current,
+                        intervalPreset: deleteField()
+                    });
 
                     patchMealGoalConfigInLocalState(nextConfig);
 
@@ -7719,7 +7771,7 @@ async function renderEditFood() {
             calories: Number(calories.value)
         };
 
-        await updateDoc(foodRef, updatedFood);
+        await updateMealLibraryFood(foodRef, updatedFood);
         await syncSharedFoodToGlobalCatalogIfNeeded(state.currentFoodId, updatedFood);
 
         if (foodsMapCache && foodsMapLibraryKey === getMealLibraryContextKey()) {
@@ -7995,6 +8047,13 @@ async function renderFoodDetails() {
         const gid = String(state.currentFoodId || '').trim();
         if (!gCol || !gid) {
             showToast('Запись каталога не найдена');
+            state.mealView = 'search';
+            renderMealSearch();
+            return;
+        }
+
+        if (isOfflineModeActive()) {
+            showToast(GLOBAL_CATALOG_ONLINE_ONLY_MESSAGE);
             state.mealView = 'search';
             renderMealSearch();
             return;
@@ -8760,7 +8819,7 @@ async function renderFoodDetails() {
                     }
 
                     try {
-                        await deleteDoc(doc(gCol, sharedId));
+                        await deleteGlobalMealFoodRecord(gCol, sharedId);
                         await unlinkLocalFoodFromGlobalCatalog(currentId);
                         showToast('Удалено из общей базы');
                         returnToFoodSearchAfterDelete();
@@ -8798,7 +8857,7 @@ async function renderFoodDetails() {
                     }
 
                     try {
-                        await deleteDoc(doc(gCol, sharedId));
+                        await deleteGlobalMealFoodRecord(gCol, sharedId);
                     } catch (e) {
                         console.error(e);
                         showToast('Нет прав удалить из общей базы (доступно только создателю)');
@@ -8984,8 +9043,8 @@ async function renderFoodDetails() {
                     };
 
                     // Используем стабильный id = id продукта в библиотеке, чтобы потом легко синхронизировать изменения.
-                    await setDoc(doc(gCol, fid), payload, { merge: true });
-                    await updateDoc(libRef, {
+                    await setGlobalMealFoodRecord(gCol, fid, payload, { merge: true });
+                    await updateMealLibraryFood(libRef, {
                         sharedGlobalCatalogId: fid,
                         sharedGlobalSharedAt: Date.now(),
                         sharedGlobalCreatedByUid: uid
@@ -9044,7 +9103,7 @@ async function renderFoodDetails() {
             delGlobalBtn.onclick = () => {
                 openConfirmModal('Удалить эту запись из общей базы для всех пользователей?', async () => {
                     try {
-                        await deleteDoc(doc(gCol, gid));
+                        await deleteGlobalMealFoodRecord(gCol, gid);
                         const localFoodId = await findLocalFoodIdByGlobalCatalogId(gid);
                         if (localFoodId) {
                             await unlinkLocalFoodFromGlobalCatalog(localFoodId);
@@ -9325,19 +9384,20 @@ async function renderRecipeDetails() {
 
                         if (!toMealId || toMealId === mealDetailsId) {
                             fromItems[mealItemIndex] = updatedItem;
-                            await updateDoc(mealRef, { [mealDetailsId]: fromItems });
+                            await saveSelectedMealItems(mealDetailsId, fromItems);
                         } else {
                             const toItems = [...(data[toMealId] || [])];
                             fromItems.splice(mealItemIndex, 1);
                             toItems.push(updatedItem);
-
-                            const updatePayload = { [toMealId]: toItems };
+                            const nextMealsData = normalizeMealsDataSnapshot(state.mealsData || {});
+                            nextMealsData[toMealId] = toItems;
                             if (fromItems.length) {
-                                updatePayload[mealDetailsId] = fromItems;
+                                nextMealsData[mealDetailsId] = fromItems;
                             } else {
-                                updatePayload[mealDetailsId] = deleteField();
+                                delete nextMealsData[mealDetailsId];
                             }
-                            await updateDoc(mealRef, updatePayload);
+                            applySelectedDateMealsData(nextMealsData);
+                            await saveSelectedDateMealsData(cycleRef, state.selectedDate, nextMealsData);
                         }
                     }
                 }
@@ -9500,7 +9560,7 @@ async function renderRecipeDetails() {
             try {
                 inlineSaveBtn.disabled = true;
 
-                await updateDoc(recipeRef, {
+                await updateMealLibraryRecipe(recipeRef, {
                     servings: String(newAmount)
                 });
 
@@ -9674,19 +9734,13 @@ async function renderRecipeDetails() {
                 const cycleRef = getCycleDocRef();
                 if (!cycleRef) return;
 
-                const mealRef = doc(cycleRef, 'meals', state.selectedDate);
                 const mealItems = Array.isArray(state.mealsData?.[mealDetailsId])
                     ? [...state.mealsData[mealDetailsId]]
                     : [];
 
                 mealItems.splice(mealItemIndex, 1);
 
-                if (mealItems.length) {
-                    await updateDoc(mealRef, { [mealDetailsId]: mealItems });
-                } else {
-                    await updateDoc(mealRef, { [mealDetailsId]: deleteField() });
-                    await cleanupEmptyMealsDoc(mealRef);
-                }
+                await saveSelectedMealItems(mealDetailsId, mealItems);
 
                 showToast('Рецепт удалён из приема');
                 state.recipeServingsDraft = null;
@@ -12824,6 +12878,12 @@ function renderMealSearch() {
             if (existing) existing.remove();
         }
 
+        if (isOfflineModeActive()) {
+            if (requestId !== loadRequestId) return;
+            listBase.innerHTML = `<div class="meal-search-empty">${GLOBAL_CATALOG_ONLINE_ONLY_MESSAGE}</div>`;
+            return;
+        }
+
         const gCol = getGlobalFoodCatalogCollection();
         if (!gCol) {
             if (requestId !== loadRequestId) return;
@@ -12931,6 +12991,10 @@ function renderMealSearch() {
                 e.stopPropagation();
                 try {
                     addBtn.disabled = true;
+                    if (isOfflineModeActive()) {
+                        showToast(GLOBAL_CATALOG_ONLINE_ONLY_MESSAGE);
+                        return;
+                    }
                     const snapRow = await getDoc(doc(gCol, catalogId));
                     if (!snapRow.exists()) {
                         showToast('Запись не найдена');
@@ -12962,6 +13026,10 @@ function renderMealSearch() {
     function openGlobalCatalogItemDetails(catalogFoodId) {
         const id = String(catalogFoodId || '').trim();
         if (!id) return;
+        if (isOfflineModeActive()) {
+            showToast(GLOBAL_CATALOG_ONLINE_ONLY_MESSAGE);
+            return;
+        }
 
         saveMealPageScroll();
         mealScrollRestorePending = true;
@@ -14867,7 +14935,7 @@ function renderCreateRecipe() {
 
         try {
             saveBtn.disabled = true;
-            const newRecipeRef = await addDoc(recipesCol, recipePayload);
+            const newRecipeRef = await createMealLibraryRecipe(recipesCol, recipePayload);
 
             // Invalidate recipe cache so search/history picks up the new recipe immediately.
             recipesCache = null;
@@ -15245,7 +15313,7 @@ async function renderEditRecipe() {
         }
         try {
             saveBtn.disabled = true;
-            await updateDoc(recipeWriteRef, updatedRecipePayload);
+            await updateMealLibraryRecipe(recipeWriteRef, updatedRecipePayload);
 
             showToast('Изменения сохранены');
             state.recipeDraft = createEmptyRecipeDraft();
@@ -15697,12 +15765,7 @@ function createMealFoodSwipeItem({ item, index, mealId, food }) {
 
             mealItems.splice(index, 1);
 
-            if (mealItems.length) {
-                await updateDoc(mealRef, { [mealId]: mealItems });
-            } else {
-                await updateDoc(mealRef, { [mealId]: deleteField() });
-                await cleanupEmptyMealsDoc(mealRef);
-            }
+            await saveSelectedMealItems(mealId, mealItems);
         });
     };
     deleteSlot.append(deleteBtn);
@@ -15747,7 +15810,7 @@ function createMealFoodSwipeItem({ item, index, mealId, food }) {
                 planned: nextPlanned
             };
 
-            await updateDoc(mealRef, { [mealId]: mealItems });
+            await saveSelectedMealItems(mealId, mealItems);
 
             isPlanned = nextPlanned;
 
@@ -15862,7 +15925,7 @@ function createMealPhotoSwipeItem({ item, index, mealId }) {
                 planned: nextPlanned
             };
 
-            await updateDoc(mealRef, { [mealId]: mealItems });
+            await saveSelectedMealItems(mealId, mealItems);
 
             isPlanned = nextPlanned;
 
@@ -16107,7 +16170,7 @@ async function addFood(food, opts = {}) {
         createdAt: Date.now()
     };
 
-    const docRef = await addDoc(libCol, payload);
+    const docRef = await createMealLibraryFood(libCol, payload);
 
     if (foodsMapCache && foodsMapLibraryKey === getMealLibraryContextKey()) {
         foodsMapCache[docRef.id] = payload;
@@ -16123,7 +16186,7 @@ async function updateFoodDefaultAmount(foodId, defaultAmount) {
     if (!foodRef) return;
 
     const patch = { defaultAmount: Number(defaultAmount || 0) };
-    await updateDoc(foodRef, patch);
+    await updateMealLibraryFood(foodRef, patch);
     await syncSharedFoodToGlobalCatalogIfNeeded(foodId, patch);
 
     if (foodsMapCache && foodsMapLibraryKey === getMealLibraryContextKey() && foodsMapCache[foodId]) {
@@ -16251,7 +16314,7 @@ async function deleteFood(foodId) {
     const foodRef = await getFoodDocumentRef(foodId);
     if (!foodRef) return;
 
-    await deleteDoc(foodRef);
+    await deleteMealLibraryFood(foodRef);
 
     if (foodsMapCache && foodsMapLibraryKey === getMealLibraryContextKey()) {
         delete foodsMapCache[foodId];
@@ -16267,7 +16330,7 @@ async function deleteRecipe(recipeId) {
     const recipeRef = await getRecipeDocumentRef(recipeId);
     if (!recipeRef) return;
 
-    await deleteDoc(recipeRef);
+    await deleteMealLibraryRecipe(recipeRef);
 
     if (recipesCache && recipesCacheLibraryKey === getMealLibraryContextKey()) {
         recipesCache = recipesCache.filter(r => r && r.id !== recipeId);

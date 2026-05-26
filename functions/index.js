@@ -201,6 +201,22 @@ function withCors(req, res) {
   return false;
 }
 
+function readBearerToken(req) {
+  const authHeader = String(req.headers.authorization || '');
+  const tokenMatch = authHeader.match(/^Bearer\s+(.+)$/i);
+  return tokenMatch?.[1]?.trim() || '';
+}
+
+function normalizeSessionString(value, maxLength = 160) {
+  return String(value || '').trim().slice(0, maxLength);
+}
+
+function getUserAuthSessionRef(uid) {
+  return admin
+    .firestore()
+    .doc(`artifacts/${APP_ARTIFACT_ID}/users/${uid}/private/authSession`);
+}
+
 function isIsoDayString(value) {
   return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '').trim());
 }
@@ -405,6 +421,108 @@ exports.appleHealthImport = onRequest(
         ok: false,
         error: 'internal_error'
       });
+    }
+  }
+);
+
+exports.claimExclusiveSession = onRequest(
+  {
+    region: 'us-central1'
+  },
+  async (req, res) => {
+    if (withCors(req, res)) return;
+    if (req.method !== 'POST') {
+      return jsonResponse(res, 405, { ok: false, error: 'method_not_allowed' });
+    }
+
+    try {
+      const token = readBearerToken(req);
+      if (!token) {
+        return jsonResponse(res, 401, { ok: false, error: 'missing_token' });
+      }
+
+      const decoded = await admin.auth().verifyIdToken(token);
+      const uid = normalizeSessionString(decoded?.uid, 128);
+      const authTime = Number(decoded?.auth_time || 0);
+      const deviceId = normalizeSessionString(req.body?.deviceId, 160);
+      const platform = normalizeSessionString(req.body?.platform, 80);
+      const deviceLabel = normalizeSessionString(req.body?.deviceLabel, 120);
+
+      if (!uid || !Number.isFinite(authTime) || authTime <= 0) {
+        return jsonResponse(res, 401, { ok: false, error: 'invalid_token' });
+      }
+      if (!deviceId) {
+        return jsonResponse(res, 400, { ok: false, error: 'missing_device_id' });
+      }
+
+      const sessionRef = getUserAuthSessionRef(uid);
+      const claimResult = await admin.firestore().runTransaction(async (tx) => {
+        const snap = await tx.get(sessionRef);
+        const current = snap.exists ? (snap.data() || {}) : {};
+        const currentMinAuthTime = Number(current.minAuthTime || 0);
+        const currentDeviceId = normalizeSessionString(current.activeDeviceId, 160);
+
+        if (currentMinAuthTime > authTime) {
+          return {
+            ok: false,
+            error: 'stale_session',
+            activeDeviceId: currentDeviceId || null,
+            minAuthTime: currentMinAuthTime || 0
+          };
+        }
+
+        const version = (Number(current.version || 0) || 0) + 1;
+        const tookOver = Boolean(currentDeviceId && currentDeviceId !== deviceId);
+        const payload = {
+          activeDeviceId: deviceId,
+          minAuthTime: authTime,
+          version,
+          lastSeenAt: admin.firestore.FieldValue.serverTimestamp(),
+          claimedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+
+        if (!snap.exists) {
+          payload.createdAt = admin.firestore.FieldValue.serverTimestamp();
+        }
+        if (platform) {
+          payload.platform = platform;
+        }
+        if (deviceLabel) {
+          payload.deviceLabel = deviceLabel;
+        }
+
+        tx.set(sessionRef, payload, { merge: true });
+
+        return {
+          ok: true,
+          deviceId,
+          authTime,
+          version,
+          tookOver,
+          previousDeviceId: tookOver ? currentDeviceId : null
+        };
+      });
+
+      if (!claimResult.ok) {
+        return jsonResponse(res, 409, claimResult);
+      }
+
+      if (claimResult.tookOver) {
+        await admin.auth().revokeRefreshTokens(uid);
+        claimResult.reauthCustomToken = await admin.auth().createCustomToken(uid);
+        claimResult.revokedOtherSessions = true;
+      } else {
+        claimResult.revokedOtherSessions = false;
+      }
+
+      return jsonResponse(res, 200, claimResult);
+    } catch (error) {
+      if (String(error?.code || '').startsWith('auth/')) {
+        return jsonResponse(res, 401, { ok: false, error: 'invalid_token' });
+      }
+      console.error('claimExclusiveSession failed', error);
+      return jsonResponse(res, 500, { ok: false, error: 'internal_error' });
     }
   }
 );
