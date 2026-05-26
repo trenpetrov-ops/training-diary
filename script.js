@@ -340,6 +340,32 @@ function queueProgramExercisesSave(programId, exercises, options = {}) {
             showToast(errorMessage);
         }
     });
+
+    authScreenEl?.addEventListener('pointerdown', (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        if (target.closest('input, textarea, select')) return;
+        blurActiveAuthField();
+    }, true);
+
+    authScreenEl?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        if (!target.matches('input, textarea, select')) return;
+        if (!authScreenEl.contains(target)) return;
+
+        const fields = getVisibleAuthFields();
+        const currentIndex = fields.indexOf(target);
+        if (currentIndex === -1) return;
+
+        event.preventDefault();
+        const nextIndex = currentIndex + 1;
+        if (focusAuthFieldByIndex(nextIndex)) return;
+
+        blurActiveAuthField();
+        authLoginBtn.click();
+    });
 }
 
 function cloneProgramExercisesSnapshot(exercises = []) {
@@ -11183,6 +11209,94 @@ window.hideStatusBarEverywhere = hideStatusBarEverywhere;
 let isLoginMode = true;
 const authToggleBtn = document.getElementById('auth-toggle-btn');
 const authLoginBtn = document.getElementById('auth-login-btn');
+const authScreenEl = document.getElementById('auth-screen');
+const AUTH_LOGIN_FIELD_IDS = ['auth-email', 'auth-password'];
+const AUTH_REGISTER_FIELD_IDS = ['auth-first-name', 'auth-last-name', 'auth-patronymic', 'auth-birth-date', 'auth-email', 'auth-password'];
+
+function getAuthFieldIdsInOrder() {
+    return isLoginMode ? AUTH_LOGIN_FIELD_IDS : AUTH_REGISTER_FIELD_IDS;
+}
+
+function getVisibleAuthFields() {
+    return getAuthFieldIdsInOrder()
+        .map((fieldId) => document.getElementById(fieldId))
+        .filter((field) => field && !field.disabled && field.offsetParent !== null);
+}
+
+function blurActiveAuthField() {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLElement)) return;
+    if (!authScreenEl?.contains(active)) return;
+    active.blur();
+}
+
+function focusAuthFieldByIndex(index) {
+    const field = getVisibleAuthFields()[index];
+    if (!field) return false;
+    field.focus();
+    return true;
+}
+
+function updateAuthKeyboardHints() {
+    const fields = getVisibleAuthFields();
+    fields.forEach((field, index) => {
+        const isLast = index === fields.length - 1;
+        field.setAttribute('enterkeyhint', isLast ? 'go' : 'next');
+        if (field.id === 'auth-email') {
+            field.setAttribute('autocapitalize', 'none');
+            field.setAttribute('autocorrect', 'off');
+            field.setAttribute('spellcheck', 'false');
+        }
+    });
+}
+
+async function handleAuthSubmit() {
+    const email = document.getElementById('auth-email').value.trim();
+    const password = document.getElementById('auth-password').value;
+    try {
+        if (isLoginMode) {
+            await signInWithEmailAndPassword(auth, email, password);
+            showToast('Р’С…РѕРґ РІС‹РїРѕР»РЅРµРЅ СѓСЃРїРµС€РЅРѕ!');
+        } else {
+            const firstName = document.getElementById('auth-first-name')?.value?.trim() || '';
+            const lastName = document.getElementById('auth-last-name')?.value?.trim() || '';
+            const patronymic = document.getElementById('auth-patronymic')?.value?.trim() || '';
+            const birthDate = document.getElementById('auth-birth-date')?.value || '';
+
+            if (!firstName || !lastName || !patronymic || !birthDate) {
+                showToast('Р—Р°РїРѕР»РЅРёС‚Рµ РёРјСЏ, С„Р°РјРёР»РёСЋ, РѕС‚С‡РµСЃС‚РІРѕ Рё РґР°С‚Сѓ СЂРѕР¶РґРµРЅРёСЏ.');
+                return;
+            }
+            if (!email || !password) {
+                showToast('РЈРєР°Р¶РёС‚Рµ email Рё РїР°СЂРѕР»СЊ.');
+                return;
+            }
+
+            const cred = await createUserWithEmailAndPassword(auth, email, password);
+            await ensureExclusiveSessionClaim(cred.user, {
+                reason: 'register',
+                forceTokenRefresh: true,
+                ignoreOfflineGuard: true
+            });
+            if (auth.currentUser?.uid !== cred.user.uid) {
+                return;
+            }
+            const code = await createUserProfileAndAssignCode(cred.user.uid, {
+                firstName,
+                lastName,
+                patronymic,
+                birthDate
+            });
+            await refreshUserProfileFromServer();
+            render();
+            showPostRegistrationModal(code);
+        }
+    } catch (error) {
+        console.error("РћС€РёР±РєР° Р°СѓС‚РµРЅС‚РёС„РёРєР°С†РёРё:", error);
+        showToast('РћС€РёР±РєР°: ' + (error.message.includes('auth/invalid-credential') ? 'РќРµРІРµСЂРЅС‹Р№ email РёР»Рё РїР°СЂРѕР»СЊ.' : error.message));
+    }
+}
+
 if (authToggleBtn && authLoginBtn) {
     authToggleBtn.addEventListener('click', () => {
         isLoginMode = !isLoginMode;
@@ -11191,9 +11305,11 @@ if (authToggleBtn && authLoginBtn) {
         const titleEl = document.querySelector('.auth-box__title') || document.querySelector('.auth-box h3');
         if (titleEl) titleEl.textContent = isLoginMode ? 'Вход в Дневник' : 'Регистрация';
         syncAuthRegisterFieldsVisibility(isLoginMode);
+        updateAuthKeyboardHints();
     });
 
     syncAuthRegisterFieldsVisibility(isLoginMode);
+    updateAuthKeyboardHints();
 
     authLoginBtn.addEventListener('click', async () => {
         const email = document.getElementById('auth-email').value.trim();
@@ -11240,6 +11356,32 @@ if (authToggleBtn && authLoginBtn) {
             console.error("Ошибка аутентификации:", error);
             showToast('Ошибка: ' + (error.message.includes('auth/invalid-credential') ? 'Неверный email или пароль.' : error.message));
         }
+    });
+
+    authScreenEl?.addEventListener('pointerdown', (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        if (target.closest('input, textarea, select')) return;
+        blurActiveAuthField();
+    }, true);
+
+    authScreenEl?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        if (!target.matches('input, textarea, select')) return;
+        if (!authScreenEl.contains(target)) return;
+
+        const fields = getVisibleAuthFields();
+        const currentIndex = fields.indexOf(target);
+        if (currentIndex === -1) return;
+
+        event.preventDefault();
+        const nextIndex = currentIndex + 1;
+        if (focusAuthFieldByIndex(nextIndex)) return;
+
+        blurActiveAuthField();
+        authLoginBtn.click();
     });
 }
 
