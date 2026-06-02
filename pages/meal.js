@@ -38,6 +38,7 @@ import {
     openConfirmModal,
     openDateModal,
     openMediaFullScreen,
+    applyOfflineMediaSource,
     renderTopBar,
     ensureCycleSelected,
     render,
@@ -45,9 +46,9 @@ import {
     requestAppChromeSync,
     showToast,
     isOfflineModeActive,
-    isOfflineMediaUploadUnsupportedError,
-    getOfflineMediaUploadUnavailableMessage,
-    uploadUserMediaFileWithProgress,
+    bindPendingMediaUrlsToTarget,
+    flushPendingMediaUploadQueue,
+    uploadUserMediaFileOrQueueWithProgress,
     deleteUserFirebaseStorageFileByDownloadUrl
 } from '../script.js';
 import { debounce } from './supplement.js';
@@ -111,12 +112,17 @@ let cleanupMealMacrosBorderObserver = null;
 let cleanupTopBarMealBorderObserver = null;
 let weekMealsPresenceCache = {};
 let mealsDataLoadedDate = null;
+let __activeMealSectionReorder = null;
+const MEAL_ORDER_CACHE_PREFIX = 'mealOrderCache:';
+const MEAL_NOTES_FIELD = 'mealNotes';
 const APPLE_HEALTH_ONLINE_ONLY_MESSAGE = 'Apple Health доступен только онлайн. Подключитесь к интернету и повторите.';
+const MEAL_ACTIVITY_SUMMARY_ONLINE_ONLY_MESSAGE = 'Сводка активности доступна только онлайн. Подключитесь к интернету и повторите.';
 const GLOBAL_CATALOG_ONLINE_ONLY_MESSAGE = 'Общая база продуктов доступна только онлайн. В офлайн-режиме используйте ваши локальные продукты и рецепты.';
 const MEAL_NO_GOAL_SUMMARY_VIEW_KEY = 'mealNoGoalSummaryView';
 let mealNoGoalSummaryCurrentMode = localStorage.getItem(MEAL_NO_GOAL_SUMMARY_VIEW_KEY) === 'current';
 const MEAL_GOAL_SUMMARY_VIEW_KEY = 'mealGoalSummaryView';
 let mealGoalSummaryCurrentMode = localStorage.getItem(MEAL_GOAL_SUMMARY_VIEW_KEY) === 'current';
+const MEAL_NOTE_MAX_LENGTH = 40;
 function syncMealAppChrome() {
     try {
         requestAppChromeSync();
@@ -128,6 +134,7 @@ function applySelectedDateMealsData(mealsData = {}, dateStr = state.selectedDate
     state.mealsData = normalized;
     mealsDataLoadedDate = dateStr || null;
     weekMealsPresenceCache = {};
+    syncCachedMealOrderForDate(normalized, dateStr);
 
     if (dateStr) {
         const monthKey = dateStr.slice(0, 7);
@@ -141,6 +148,132 @@ function applySelectedDateMealsData(mealsData = {}, dateStr = state.selectedDate
     }
 
     return normalized;
+}
+
+function normalizeMealOrderIds(orderedMealIds = []) {
+    return Array.from(new Set(
+        (Array.isArray(orderedMealIds) ? orderedMealIds : [])
+            .map((mealId) => String(mealId || '').trim())
+            .filter((mealId) => /^meal\d+$/.test(mealId))
+    ));
+}
+
+function getMealOrderCacheKey(cycleId = state.selectedCycleId, dateStr = state.selectedDate) {
+    const normalizedCycleId = String(cycleId || '').trim();
+    const normalizedDate = String(dateStr || '').trim();
+    if (!normalizedCycleId || !normalizedDate) return '';
+    return `${MEAL_ORDER_CACHE_PREFIX}${normalizedCycleId}::${normalizedDate}`;
+}
+
+function readCachedMealOrder(cycleId = state.selectedCycleId, dateStr = state.selectedDate) {
+    const storageKey = getMealOrderCacheKey(cycleId, dateStr);
+    if (!storageKey) return [];
+
+    try {
+        const raw = localStorage.getItem(storageKey);
+        if (!raw) return [];
+        return normalizeMealOrderIds(JSON.parse(raw));
+    } catch (_) {
+        return [];
+    }
+}
+
+function writeCachedMealOrder(orderedMealIds = [], cycleId = state.selectedCycleId, dateStr = state.selectedDate) {
+    const storageKey = getMealOrderCacheKey(cycleId, dateStr);
+    if (!storageKey) return;
+
+    const normalizedOrder = normalizeMealOrderIds(orderedMealIds);
+
+    try {
+        if (!normalizedOrder.length) {
+            localStorage.removeItem(storageKey);
+            return;
+        }
+
+        const nextRaw = JSON.stringify(normalizedOrder);
+        if (localStorage.getItem(storageKey) === nextRaw) return;
+        localStorage.setItem(storageKey, nextRaw);
+    } catch (_) {}
+}
+
+function syncCachedMealOrderForDate(mealsData = {}, dateStr = state.selectedDate, cycleId = state.selectedCycleId) {
+    const hasMealFields = Object.keys(mealsData || {}).some((key) => /^meal\d+$/.test(key));
+    const hasExplicitOrder = Array.isArray(mealsData?.mealOrder) && mealsData.mealOrder.length > 0;
+
+    if (!hasMealFields && !hasExplicitOrder) return [];
+
+    const orderedMealIds = getMealKeysFromData(mealsData || {});
+    writeCachedMealOrder(orderedMealIds, cycleId, dateStr);
+    return orderedMealIds;
+}
+
+function normalizeMealSectionNoteValue(note) {
+    return String(note ?? '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, MEAL_NOTE_MAX_LENGTH);
+}
+
+function getMealNotesMap(mealsData = {}) {
+    const source = mealsData?.[MEAL_NOTES_FIELD];
+    if (!source || typeof source !== 'object' || Array.isArray(source)) {
+        return {};
+    }
+
+    const normalized = {};
+    Object.keys(source).forEach((mealId) => {
+        if (!/^meal\d+$/.test(mealId)) return;
+        const note = normalizeMealSectionNoteValue(source[mealId]);
+        if (!note) return;
+        normalized[mealId] = note;
+    });
+    return normalized;
+}
+
+function getMealSectionNote(mealsData = {}, mealId = '') {
+    const normalizedMealId = String(mealId || '').trim();
+    if (!normalizedMealId) return '';
+    return getMealNotesMap(mealsData)[normalizedMealId] || '';
+}
+
+function setMealSectionNoteInSnapshot(mealsData = {}, mealId, note) {
+    const normalizedMealId = String(mealId || '').trim();
+    const preserveEmptyMealIds = getMealKeysFromData(mealsData || {});
+    const nextMealsData = normalizeMealsDataSnapshot(mealsData || {}, {
+        preserveEmptyMealIds
+    });
+
+    if (!normalizedMealId) return nextMealsData;
+
+    const nextNotes = getMealNotesMap(nextMealsData);
+    const normalizedNote = normalizeMealSectionNoteValue(note);
+    if (normalizedNote) {
+        nextNotes[normalizedMealId] = normalizedNote;
+    } else {
+        delete nextNotes[normalizedMealId];
+    }
+
+    if (Object.keys(nextNotes).length > 0) {
+        nextMealsData[MEAL_NOTES_FIELD] = nextNotes;
+    } else {
+        delete nextMealsData[MEAL_NOTES_FIELD];
+    }
+
+    return nextMealsData;
+}
+
+function syncMealSectionNoteDom(mealId, note) {
+    const headerNoteEl = document.getElementById(`${mealId}-header-note`);
+    if (!headerNoteEl) return;
+
+    const normalizedNote = normalizeMealSectionNoteValue(note);
+    headerNoteEl.textContent = normalizedNote;
+
+    if (normalizedNote) {
+        headerNoteEl.title = normalizedNote;
+    } else {
+        headerNoteEl.removeAttribute('title');
+    }
 }
 
 function queueMealsDataSave(cycleRef, dateStr, mealsData, options = {}) {
@@ -184,12 +317,113 @@ async function saveSelectedMealItems(mealId, items, options = {}) {
     });
 }
 
+async function saveMealSectionNote(mealId, note) {
+    const cycleRef = getCycleDocRef();
+    const dateStr = state.selectedDate;
+    if (!cycleRef || !dateStr || !mealId) return;
+
+    const preserveEmptyMealIds = getMealKeysFromData(state.mealsData || {});
+    const previousMealsData = normalizeMealsDataSnapshot(state.mealsData || {}, {
+        preserveEmptyMealIds
+    });
+    const nextMealsData = setMealSectionNoteInSnapshot(state.mealsData || {}, mealId, note);
+
+    applySelectedDateMealsData(nextMealsData, dateStr);
+    syncMealSectionNoteDom(mealId, note);
+
+    try {
+        await saveSelectedDateMealsData(cycleRef, dateStr, nextMealsData, {
+            preserveEmptyMealIds
+        });
+    } catch (error) {
+        applySelectedDateMealsData(previousMealsData, dateStr);
+        syncMealSectionNoteDom(mealId, getMealSectionNote(previousMealsData, mealId));
+        throw error;
+    }
+}
+
+function openMealSectionNoteModal(meal) {
+    if (!meal?.id) return;
+
+    const currentNote = getMealSectionNote(state.mealsData || {}, meal.id);
+    const overlay = createElement('div', 'modal-overlay active');
+    const modal = createElement('div', 'modal-content modal-compact modal-text-input');
+    modal.style.maxWidth = '420px';
+    modal.style.width = 'calc(100% - 32px)';
+
+    const title = createElement('h3', 'modal-title', 'Комментарий к приему');
+    const textarea = document.createElement('textarea');
+    textarea.className = 'comment-input meal-note-modal-input';
+    textarea.rows = 3;
+    textarea.placeholder = 'Например: после тренировки, перед тренировкой, 18:30';
+    textarea.maxLength = MEAL_NOTE_MAX_LENGTH;
+    textarea.value = currentNote;
+    const hint = createElement('p', 'muted', `Ограничение: до ${MEAL_NOTE_MAX_LENGTH} символов`);
+
+    const controls = createElement('div', 'modal-controls');
+    const cancelBtn = createElement('button', 'btn btn-secondary cancel-btn', 'Отмена');
+    const saveBtn = createElement('button', 'btn btn-primary', 'Сохранить');
+    controls.append(cancelBtn, saveBtn);
+
+    modal.append(title, textarea, hint, controls);
+    overlay.append(modal);
+    document.body.append(overlay);
+
+    const close = () => {
+        overlay.classList.remove('active');
+        setTimeout(() => overlay.remove(), 180);
+    };
+
+    overlay.addEventListener('click', (event) => {
+        if (event.target === overlay) {
+            close();
+        }
+    });
+
+    cancelBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        close();
+    });
+
+    saveBtn.addEventListener('click', async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const nextNote = normalizeMealSectionNoteValue(textarea.value);
+        saveBtn.disabled = true;
+        cancelBtn.disabled = true;
+        textarea.disabled = true;
+
+        try {
+            await saveMealSectionNote(meal.id, nextNote);
+            close();
+        } catch (error) {
+            console.error('Не удалось сохранить комментарий к приему:', error);
+            showToast('Не удалось сохранить комментарий к приему');
+            saveBtn.disabled = false;
+            cancelBtn.disabled = false;
+            textarea.disabled = false;
+            textarea.focus();
+        }
+    });
+
+}
+
 async function deleteMealSectionAndPersist(mealId) {
     const cycleRef = getCycleDocRef();
     if (!cycleRef || !state.selectedDate || !mealId) return;
 
     const nextMealsData = normalizeMealsDataSnapshot(state.mealsData || {});
     delete nextMealsData[mealId];
+    nextMealsData.mealOrder = getMealKeysFromData(state.mealsData || {}).filter((id) => id !== mealId);
+    const nextNotes = getMealNotesMap(nextMealsData);
+    delete nextNotes[mealId];
+    if (Object.keys(nextNotes).length > 0) {
+        nextMealsData[MEAL_NOTES_FIELD] = nextNotes;
+    } else {
+        delete nextMealsData[MEAL_NOTES_FIELD];
+    }
     applySelectedDateMealsData(nextMealsData);
     await saveSelectedDateMealsData(cycleRef, state.selectedDate, nextMealsData);
 }
@@ -432,6 +666,11 @@ function applyWeekRowPresence(presence = {}, root = mealMainEl) {
 
 function getMealKeysFromData(mealsData = {}) {
     const defaultKeys = ['meal1', 'meal2', 'meal3'];
+    const explicitOrder = Array.isArray(mealsData?.mealOrder)
+        ? mealsData.mealOrder
+            .map((mealId) => String(mealId || '').trim())
+            .filter((mealId) => /^meal\d+$/.test(mealId))
+        : [];
 
     const extraKeys = Object.keys(mealsData)
         .filter(key => /^meal\d+$/.test(key))
@@ -442,7 +681,35 @@ function getMealKeysFromData(mealsData = {}) {
             return aNum - bNum;
         });
 
-    return [...defaultKeys, ...extraKeys];
+    const knownKeys = Array.from(new Set([...defaultKeys, ...extraKeys, ...explicitOrder]));
+    const ordered = [];
+    const seen = new Set();
+
+    explicitOrder.forEach((mealId) => {
+        if (!knownKeys.includes(mealId) || seen.has(mealId)) return;
+        seen.add(mealId);
+        ordered.push(mealId);
+    });
+
+    knownKeys.forEach((mealId) => {
+        if (seen.has(mealId)) return;
+        seen.add(mealId);
+        ordered.push(mealId);
+    });
+
+    return ordered;
+}
+
+function applyMealOrderToMealsSnapshot(mealsData = {}, orderedMealIds = []) {
+    const nextMealsData = normalizeMealsDataSnapshot(mealsData || {}, {
+        preserveEmptyMealIds: orderedMealIds
+    });
+    nextMealsData.mealOrder = Array.from(new Set(
+        (Array.isArray(orderedMealIds) ? orderedMealIds : [])
+            .map((mealId) => String(mealId || '').trim())
+            .filter((mealId) => /^meal\d+$/.test(mealId))
+    ));
+    return nextMealsData;
 }
 
 function formatLocalDate(date) {
@@ -1689,11 +1956,12 @@ function isMealPhotoItem(item = {}) {
 
 async function addMealPhotoToCurrentMeal(mealId, photoUrl) {
     if (!mealId || !state.selectedDate || !photoUrl) return;
+    const normalizedUrl = String(photoUrl).trim();
 
     appendItemToSelectedMeal({
         id: crypto.randomUUID(),
         isMealPhoto: true,
-        photoUrl: String(photoUrl).trim(),
+        photoUrl: normalizedUrl,
         name: 'Фото продукта',
         planned: false,
         createdAt: Date.now()
@@ -1701,6 +1969,17 @@ async function addMealPhotoToCurrentMeal(mealId, photoUrl) {
         delayMs: 260,
         errorMessage: 'Не удалось сохранить фото в приёме'
     });
+
+    if (normalizedUrl.startsWith('local-media://')) {
+        const cycleRef = getCycleDocRef();
+        if (cycleRef) {
+            await bindPendingMediaUrlsToTarget([normalizedUrl], {
+                type: 'meal-photo',
+                docPath: doc(cycleRef, 'meals', state.selectedDate).path,
+                mealId
+            });
+        }
+    }
 }
 
 function getMealCameraIconMarkup() {
@@ -1794,10 +2073,6 @@ function openMealPhotoCaptureFlow(mealId) {
     };
 
     const openPicker = () => {
-        if (isOfflineModeActive()) {
-            showToast(getOfflineMediaUploadUnavailableMessage(), 'error');
-            return;
-        }
         fileInput.value = '';
         fileInput.click();
     };
@@ -1841,20 +2116,16 @@ function openMealPhotoCaptureFlow(mealId) {
             saveBtn.disabled = true;
 
             try {
-                const uploadedUrl = await uploadUserMediaFileWithProgress(currentFile, 'meal-photos', (percent) => {
-                    saveBtn.textContent = percent >= 100 ? 'Сохранение...' : `Загрузка ${percent}%`;
+                const uploadedUrl = await uploadUserMediaFileOrQueueWithProgress(currentFile, 'meal-photos', (percent) => {
+                    saveBtn.textContent = percent >= 100 ? 'Сохранение...' : ('Загрузка ' + percent + '%');
                 });
 
                 await addMealPhotoToCurrentMeal(mealId, uploadedUrl);
                 closeFlow();
-                showToast('Фото добавлено в прием');
+                showToast(uploadedUrl.startsWith('local-media://') ? 'Фото сохранено на устройстве и будет загружено, когда появится интернет.' : 'Фото добавлено в приём.');
             } catch (error) {
                 console.error(error);
-                showToast(
-                    isOfflineMediaUploadUnsupportedError(error)
-                        ? getOfflineMediaUploadUnavailableMessage()
-                        : 'Не удалось сохранить фото'
-                );
+                showToast('Не удалось сохранить фото.');
                 retakeBtn.disabled = false;
                 saveBtn.disabled = false;
                 saveBtn.textContent = 'Сохранить';
@@ -2140,7 +2411,7 @@ function renderMealMacrosImmediately() {
     }
 
     const localMealsData = state.mealsData || {};
-    const mealKeys = Object.keys(localMealsData).filter(key => /^meal\d+$/.test(key));
+    const mealKeys = getMealKeysFromData(localMealsData);
 
     if (mealKeys.length > 0) {
         const { total } = calcMealsTotalsFast(localMealsData);
@@ -2539,7 +2810,110 @@ async function getWeekMealsPresence(weekDates) {
 }
 
 function getMealKeysForRender() {
-    return getMealKeysFromData(state.mealsData || {});
+    const mealsData = state.mealsData || {};
+    const hasSnapshotStructure =
+        Array.isArray(mealsData?.mealOrder) && mealsData.mealOrder.length > 0
+        || Object.keys(mealsData).some((key) => /^meal\d+$/.test(key));
+
+    if (hasSnapshotStructure) {
+        return getMealKeysFromData(mealsData);
+    }
+
+    const cachedMealOrder = readCachedMealOrder();
+    if (cachedMealOrder.length) {
+        return getMealKeysFromData({ mealOrder: cachedMealOrder });
+    }
+
+    return getMealKeysFromData(mealsData);
+}
+
+function getMealWeekPresenceForRender(weekDates = []) {
+    const weekPresence = readWeekMealsPresenceCache(weekDates) || normalizeWeekPresenceForDates(weekDates);
+
+    if (state.selectedDate && mealsDataLoadedDate === state.selectedDate && state.mealsData) {
+        weekPresence[state.selectedDate] = hasAnyFoodInDoc(state.mealsData);
+    }
+
+    return weekPresence;
+}
+
+function renderMealWeekRowContent(weekRow, weekDates = [], todayStr, weekPresence = {}) {
+    if (!weekRow) return;
+
+    weekRow.innerHTML = '';
+
+    weekDates.forEach((date) => {
+        const dayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+        const d = new Date(`${date}T00:00:00`);
+        const dayIndex = (d.getDay() + 6) % 7;
+        const dateStr = formatLocalDate(d);
+        const hasFood = !!weekPresence[dateStr];
+
+        const item = createElement('button', 'week-day-item');
+        item.type = 'button';
+        item.dataset.date = dateStr;
+
+        const circle = createElement('div', 'week-day-circle');
+        const check = createElement('div', 'week-day-check', WEEK_DAY_CHECK_MARK);
+        circle.append(check);
+
+        const label = createElement('div', 'week-day-name', dayNames[dayIndex]);
+        item.append(circle, label);
+
+        if (dateStr === state.selectedDate) item.classList.add('active');
+        if (dateStr === todayStr) item.classList.add('today');
+        if (hasFood) item.classList.add('has-food');
+
+        item.onclick = () => switchMealDate(dateStr);
+        weekRow.append(item);
+    });
+}
+
+function refreshMealMainScreenForDateChange() {
+    if (!mealMainEl) return false;
+    const contentContainer = mealMainEl.querySelector('.meal-page');
+    if (!contentContainer) return false;
+
+    const currentCycle = state.cycles?.find((c) => c.id === state.selectedCycleId);
+    if (!currentCycle) return false;
+
+    const weekDates = getWeekDates(state.selectedDate);
+    const todayStr = formatLocalDate(new Date());
+    const weekPresence = getMealWeekPresenceForRender(weekDates);
+
+    const weekTitle = contentContainer.querySelector('#week-strip-title');
+    if (weekTitle) {
+        weekTitle.textContent = getSelectedDayTitle(state.selectedDate);
+    }
+
+    const goTodayBtn = contentContainer.querySelector('#week-strip-today-btn');
+    if (goTodayBtn) {
+        goTodayBtn.style.display = state.selectedDate === todayStr ? 'none' : 'inline-flex';
+        goTodayBtn.onclick = () => switchMealDate(todayStr);
+    }
+
+    const weekRow = contentContainer.querySelector('.week-row');
+    renderMealWeekRowContent(weekRow, weekDates, todayStr, weekPresence);
+    applyWeekRowPresence(weekPresence, contentContainer);
+
+    const mealKeys = getMealKeysForRender();
+    syncMealSectionStructure({ mealOrder: mealKeys });
+    renderMealsFromData({ mealOrder: mealKeys }, null);
+    renderMealMacrosImmediately();
+
+    bindMealCalendarButton();
+    scheduleMealRootScrollAvailabilitySync();
+
+    const expectedWeekCacheKey = getWeekPresenceCacheKey(weekDates);
+    getWeekMealsPresence(weekDates).then((presence) => {
+        const currentWeekDates = getWeekDates(state.selectedDate);
+        if (expectedWeekCacheKey !== getWeekPresenceCacheKey(currentWeekDates)) return;
+        applyWeekRowPresence(presence);
+    });
+
+    getFoodsMap();
+    subscribeMeals();
+    return true;
 }
 
 function switchMealDate(newDate) {
@@ -2554,7 +2928,7 @@ function switchMealDate(newDate) {
     state.mealsData = {};
     mealsDataLoadedDate = null;
 
-    // ❗ 3. перерисовываем экран
+    // ❗ 3. мягко обновляем текущий экран meal, не пересобирая его целиком
     renderMealMainScreen();
 }
 
@@ -2574,6 +2948,406 @@ function animateMealArrow(arrow, isOpen) {
     }
 }
 
+function closeAllOpenMealSwipes() {
+    document.querySelectorAll('.meal-swipe.open, .food-swipe.food-swipe--meal-item.open, .food-swipe.food-swipe--meal-item.open-left').forEach((el) => {
+        closeSwipeRowVisual(el);
+    });
+}
+
+function getMealSectionLayoutItems(parentEl, excludeEl = null) {
+    return [...(parentEl?.querySelectorAll('.meal-swipe.meal-swipe--inline-header') || [])]
+        .filter((el) => el !== excludeEl);
+}
+
+function createMealSectionReorderPlaceholder(itemEl) {
+    const placeholderEl = document.createElement('div');
+    placeholderEl.className = 'meal-section-reorder-placeholder';
+    const rect = itemEl.getBoundingClientRect();
+    placeholderEl.style.height = `${Math.max(1, Math.round(rect.height))}px`;
+    return placeholderEl;
+}
+
+function createMealSectionReorderGhost(itemEl, rect) {
+    const ghostEl = itemEl.cloneNode(true);
+    ghostEl.classList.add('meal-section-reorder-ghost');
+    ghostEl.style.width = `${Math.round(rect.width)}px`;
+    ghostEl.style.height = `${Math.round(rect.height)}px`;
+    ghostEl.style.left = '0px';
+    ghostEl.style.top = '0px';
+    document.body.appendChild(ghostEl);
+    return ghostEl;
+}
+
+function getMealSectionPlaceholderIndex(parentEl, placeholderEl, draggedEl) {
+    const layoutItems = getMealSectionLayoutItems(parentEl, draggedEl);
+    let el = placeholderEl?.nextElementSibling || null;
+    while (el && (!(el instanceof HTMLElement) || el.style.display === 'none')) {
+        el = el.nextElementSibling;
+    }
+    if (!el || !el.classList?.contains('meal-swipe')) return layoutItems.length;
+    const index = layoutItems.indexOf(el);
+    return index < 0 ? layoutItems.length : index;
+}
+
+function updateMealSectionReorderVisual(active) {
+    if (!active?.itemEl || !active?.parentEl || !active?.placeholderEl) return;
+    const currentIndex = getMealSectionPlaceholderIndex(active.parentEl, active.placeholderEl, active.itemEl);
+    const lastIndex = getMealSectionLayoutItems(active.parentEl, active.itemEl).length;
+    active.itemEl.classList.toggle('meal-swipe--can-move-up', currentIndex > 0);
+    active.itemEl.classList.toggle('meal-swipe--can-move-down', currentIndex >= 0 && currentIndex < lastIndex);
+}
+
+function clampMealSectionGhostToViewport(ghostEl, x, y) {
+    const ghostWidth = ghostEl?.offsetWidth || 0;
+    const ghostHeight = ghostEl?.offsetHeight || 0;
+    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+    return {
+        x: Math.max(0, Math.min(Math.max(0, viewportWidth - ghostWidth), Math.round(x))),
+        y: Math.max(0, Math.min(Math.max(0, viewportHeight - ghostHeight), Math.round(y)))
+    };
+}
+
+function updateMealSectionReorderGhostPos(active, clientX, clientY) {
+    if (!active?.ghostEl || !active.placeholderEl) return;
+    const placeholderRect = active.placeholderEl.getBoundingClientRect();
+    const ghostWidth = active.ghostEl.offsetWidth || placeholderRect.width || 0;
+    const ghostHeight = active.ghostEl.offsetHeight || placeholderRect.height || 0;
+    const lift = typeof active.mealGhostLiftPx === 'number' ? active.mealGhostLiftPx : -6;
+    const maxVerticalOffset = Math.min(22, Math.min(placeholderRect.width, placeholderRect.height) * 0.2);
+    const centerX = placeholderRect.left + placeholderRect.width / 2;
+    const centerY = placeholderRect.top + placeholderRect.height / 2;
+    const startY = active.mealStartY ?? clientY;
+    let verticalOffset = (clientY - startY) + lift;
+    if (verticalOffset > maxVerticalOffset) verticalOffset = maxVerticalOffset;
+    if (verticalOffset < -maxVerticalOffset) verticalOffset = -maxVerticalOffset;
+    const rawX = centerX - ghostWidth / 2;
+    const rawY = centerY - ghostHeight / 2 + verticalOffset;
+    const { x, y } = clampMealSectionGhostToViewport(active.ghostEl, rawX, rawY);
+    active.ghostEl.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+}
+
+function moveMealSectionInReorder(active, direction) {
+    if (!active?.placeholderEl || !active?.parentEl || !direction) return false;
+
+    const parentEl = active.parentEl;
+    const layoutItems = getMealSectionLayoutItems(parentEl, active.itemEl);
+    const currentIndex = getMealSectionPlaceholderIndex(parentEl, active.placeholderEl, active.itemEl);
+    const nextIndex = currentIndex + direction;
+
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex > layoutItems.length) return false;
+
+    if (direction < 0) {
+        const beforeEl = layoutItems[nextIndex];
+        if (beforeEl) parentEl.insertBefore(active.placeholderEl, beforeEl);
+    } else if (nextIndex >= layoutItems.length) {
+        parentEl.appendChild(active.placeholderEl);
+    } else {
+        const beforeEl = layoutItems[nextIndex];
+        if (beforeEl) parentEl.insertBefore(active.placeholderEl, beforeEl);
+    }
+
+    active.didChange = true;
+    updateMealSectionReorderVisual(active);
+    return true;
+}
+
+async function finishMealSectionReorder(saveChanges = true) {
+    const active = __activeMealSectionReorder;
+    if (!active) return;
+
+    __activeMealSectionReorder = null;
+
+    if (active.ghostEl) {
+        active.ghostEl.remove();
+        active.ghostEl = null;
+    }
+
+    if (active.placeholderEl?.parentElement) {
+        active.parentEl.insertBefore(active.itemEl, active.placeholderEl);
+        active.placeholderEl.remove();
+        active.placeholderEl = null;
+    }
+
+    active.itemEl.style.opacity = '';
+    active.itemEl.style.pointerEvents = '';
+    active.itemEl.style.display = '';
+    active.itemEl.classList.remove(
+        'meal-swipe--reorder-active',
+        'meal-swipe--can-move-up',
+        'meal-swipe--can-move-down',
+        'meal-swipe--dragging-source'
+    );
+    if (active.headerEl) {
+        active.headerEl.dataset.suppressClick = '0';
+    }
+    document.documentElement.classList.remove('meal-reorder-lock');
+    document.body.classList.remove('meal-reorder-lock');
+
+    if (!saveChanges || !active.didChange) return;
+
+    const orderedMealIds = getMealSectionLayoutItems(active.parentEl).map((el) => el.dataset.mealId).filter(Boolean);
+    const cycleRef = getCycleDocRef();
+    const dateStr = state.selectedDate;
+    if (!cycleRef || !dateStr || !orderedMealIds.length) {
+        syncMealSectionStructure(state.mealsData || {});
+        renderMeals(state.mealsData || {});
+        scheduleMealRootScrollAvailabilitySync();
+        return;
+    }
+
+    const previousMealsData = applyMealOrderToMealsSnapshot(state.mealsData || {}, getMealKeysFromData(state.mealsData || {}));
+    const nextMealsData = applyMealOrderToMealsSnapshot(state.mealsData || {}, orderedMealIds);
+
+    applySelectedDateMealsData(nextMealsData, dateStr);
+
+    try {
+        await saveSelectedDateMealsData(cycleRef, dateStr, nextMealsData, {
+            preserveEmptyMealIds: orderedMealIds
+        });
+    } catch (error) {
+        console.error('Не удалось сохранить порядок приемов:', error);
+        applySelectedDateMealsData(previousMealsData, dateStr);
+        showToast('Не удалось сохранить порядок приемов');
+        syncMealSectionStructure(previousMealsData);
+        renderMeals(previousMealsData);
+        scheduleMealRootScrollAvailabilitySync();
+    }
+}
+
+function attachMealSectionReorderLongPress({ headerEl, itemEl, parentEl }) {
+    if (!headerEl || !itemEl || !parentEl || headerEl.dataset.mealSectionReorderBound === '1') return;
+    headerEl.dataset.mealSectionReorderBound = '1';
+
+    let pointerId = null;
+    let touchId = null;
+    let pressTimer = null;
+    let startX = 0;
+    let startY = 0;
+    let lastY = 0;
+    let reorderStarted = false;
+    const STEP_COOLDOWN_MS = 140;
+    const MID_CROSS_PADDING_PX = 5;
+
+    const clearPressTimer = () => {
+        if (!pressTimer) return;
+        clearTimeout(pressTimer);
+        pressTimer = null;
+    };
+
+    const shouldStepNow = (active, now) => {
+        const lastStepAt = active?.lastStepAt || 0;
+        if (now - lastStepAt < STEP_COOLDOWN_MS) return false;
+        active.lastStepAt = now;
+        return true;
+    };
+
+    const tryStepByPointerY = (active, pointerY) => {
+        if (!active?.itemEl || !active?.parentEl || !active?.placeholderEl) return;
+        const layoutItems = getMealSectionLayoutItems(active.parentEl, active.itemEl);
+        const slot = getMealSectionPlaceholderIndex(active.parentEl, active.placeholderEl, active.itemEl);
+        const prev = slot > 0 ? layoutItems[slot - 1] : null;
+        const next = slot < layoutItems.length ? layoutItems[slot] : null;
+
+        if (prev) {
+            const rect = prev.getBoundingClientRect();
+            const mid = rect.top + rect.height / 2;
+            if (pointerY < mid - MID_CROSS_PADDING_PX) {
+                moveMealSectionInReorder(active, -1);
+                return;
+            }
+        }
+
+        if (next) {
+            const rect = next.getBoundingClientRect();
+            const mid = rect.top + rect.height / 2;
+            if (pointerY > mid + MID_CROSS_PADDING_PX) {
+                moveMealSectionInReorder(active, 1);
+            }
+        }
+    };
+
+    const beginReorder = () => {
+        if (__activeMealSectionReorder || !itemEl.parentElement) return;
+
+        reorderStarted = true;
+        headerEl.dataset.suppressClick = '1';
+        closeAllOpenMealSwipes();
+
+        const rect = itemEl.getBoundingClientRect();
+        const placeholderEl = createMealSectionReorderPlaceholder(itemEl);
+        parentEl.insertBefore(placeholderEl, itemEl);
+        const ghostEl = createMealSectionReorderGhost(itemEl, rect);
+
+        __activeMealSectionReorder = {
+            headerEl,
+            itemEl,
+            parentEl,
+            placeholderEl,
+            ghostEl,
+            didChange: false,
+            mealStartY: lastY,
+            mealGhostLiftPx: -6,
+            lastStepAt: 0
+        };
+
+        itemEl.classList.add('meal-swipe--reorder-active', 'meal-swipe--dragging-source');
+        itemEl.style.opacity = '0';
+        itemEl.style.pointerEvents = 'none';
+        itemEl.style.display = 'none';
+        document.documentElement.classList.add('meal-reorder-lock');
+        document.body.classList.add('meal-reorder-lock');
+
+        updateMealSectionReorderGhostPos(__activeMealSectionReorder, startX, lastY);
+        updateMealSectionReorderVisual(__activeMealSectionReorder);
+    };
+
+    const removePointerWindowListeners = () => {
+        window.removeEventListener('pointermove', handlePointerMove);
+        window.removeEventListener('pointerup', handlePointerEnd);
+        window.removeEventListener('pointercancel', handlePointerEnd);
+    };
+
+    const removeTouchWindowListeners = () => {
+        window.removeEventListener('touchmove', handleTouchMove);
+        window.removeEventListener('touchend', handleTouchEnd);
+        window.removeEventListener('touchcancel', handleTouchEnd);
+    };
+
+    const getTrackedTouch = (touchList) => {
+        if (touchId == null) return null;
+        return [...touchList].find((touch) => touch.identifier === touchId) || null;
+    };
+
+    const handlePointerMove = (event) => {
+        if (event.pointerId !== pointerId) return;
+
+        lastY = event.clientY;
+
+        if (!reorderStarted) {
+            if (Math.abs(event.clientX - startX) > 10 || Math.abs(event.clientY - startY) > 10) {
+                clearPressTimer();
+            }
+            return;
+        }
+
+        const active = __activeMealSectionReorder;
+        if (!active) return;
+
+        if (event.cancelable) event.preventDefault();
+
+        const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        if (shouldStepNow(active, now)) {
+            tryStepByPointerY(active, event.clientY);
+        }
+        updateMealSectionReorderGhostPos(active, event.clientX, event.clientY);
+    };
+
+    const handleTouchMove = (event) => {
+        const touch = getTrackedTouch(event.touches);
+        if (!touch) return;
+
+        lastY = touch.clientY;
+
+        if (!reorderStarted) {
+            if (Math.abs(touch.clientX - startX) > 10 || Math.abs(touch.clientY - startY) > 10) {
+                clearPressTimer();
+            }
+            return;
+        }
+
+        const active = __activeMealSectionReorder;
+        if (!active) return;
+
+        if (event.cancelable) event.preventDefault();
+
+        const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        if (shouldStepNow(active, now)) {
+            tryStepByPointerY(active, touch.clientY);
+        }
+        updateMealSectionReorderGhostPos(active, touch.clientX, touch.clientY);
+    };
+
+    const handlePointerEnd = async () => {
+        clearPressTimer();
+        removePointerWindowListeners();
+        pointerId = null;
+
+        const didReorder = reorderStarted;
+        reorderStarted = false;
+
+        if (didReorder) {
+            await finishMealSectionReorder(true);
+        }
+    };
+
+    const handleTouchEnd = async (event) => {
+        const trackedTouchEnded = touchId != null && [...event.changedTouches].some((touch) => touch.identifier === touchId);
+        if (!trackedTouchEnded) return;
+
+        clearPressTimer();
+        removeTouchWindowListeners();
+        touchId = null;
+
+        const didReorder = reorderStarted;
+        reorderStarted = false;
+
+        if (didReorder) {
+            await finishMealSectionReorder(true);
+        }
+    };
+
+    const handlePointerDown = (event) => {
+        if (event.pointerType === 'touch') return;
+        if (event.pointerType === 'mouse' && event.button !== 0) return;
+        if (event.target.closest('.meal-add-icon, .action-btn, .meal-title, .meal-header-note, button, input, textarea, select, a')) return;
+        if (itemEl.classList.contains('open') || itemEl.classList.contains('open-left') || itemEl.classList.contains('open-right')) return;
+        if (__activeMealSectionReorder) return;
+
+        pointerId = event.pointerId;
+        startX = event.clientX;
+        startY = event.clientY;
+        lastY = event.clientY;
+        reorderStarted = false;
+        clearPressTimer();
+        pressTimer = setTimeout(beginReorder, 320);
+        window.addEventListener('pointermove', handlePointerMove, { passive: false });
+        window.addEventListener('pointerup', handlePointerEnd);
+        window.addEventListener('pointercancel', handlePointerEnd);
+    };
+
+    const handleTouchStart = (event) => {
+        if (event.touches.length !== 1) return;
+        if (event.target.closest('.meal-add-icon, .action-btn, .meal-title, .meal-header-note, button, input, textarea, select, a')) return;
+        if (itemEl.classList.contains('open') || itemEl.classList.contains('open-left') || itemEl.classList.contains('open-right')) return;
+        if (__activeMealSectionReorder) return;
+
+        const touch = event.changedTouches[0];
+        touchId = touch.identifier;
+        startX = touch.clientX;
+        startY = touch.clientY;
+        lastY = touch.clientY;
+        reorderStarted = false;
+        clearPressTimer();
+        pressTimer = setTimeout(beginReorder, 320);
+        window.addEventListener('touchmove', handleTouchMove, { passive: false });
+        window.addEventListener('touchend', handleTouchEnd);
+        window.addEventListener('touchcancel', handleTouchEnd);
+    };
+
+    headerEl.addEventListener('pointerdown', handlePointerDown);
+    headerEl.addEventListener('touchstart', handleTouchStart, { passive: true });
+}
+
+function attachMealSectionReorderBindings(mealsContainer) {
+    if (!mealsContainer) return;
+    getMealSectionLayoutItems(mealsContainer).forEach((itemEl) => {
+        const headerEl = itemEl.querySelector('.meal-card-header');
+        if (!headerEl) return;
+        attachMealSectionReorderLongPress({ headerEl, itemEl, parentEl: mealsContainer });
+    });
+}
+
 async function handleAddMealSection() {
     const currentKeys = getMealKeysFromData(state.mealsData || {});
 
@@ -2588,9 +3362,7 @@ async function handleAddMealSection() {
     const cycleRef = getCycleDocRef();
     if (!cycleRef || !state.selectedDate) return;
 
-    const nextMealsData = normalizeMealsDataSnapshot(state.mealsData || {}, {
-        preserveEmptyMealIds: [newMealId]
-    });
+    const nextMealsData = applyMealOrderToMealsSnapshot(state.mealsData || {}, [...currentKeys, newMealId]);
     nextMealsData[newMealId] = [];
     applySelectedDateMealsData(nextMealsData);
     await saveSelectedDateMealsData(cycleRef, state.selectedDate, nextMealsData, {
@@ -2663,6 +3435,7 @@ function installMealHeaderSearchGhostClickGuard() {
 function createMealCard(meal) {
     const swipeWrap = createElement('div', 'meal-swipe meal-swipe--inline-header');
     swipeWrap.dataset.mealId = meal.id;
+    swipeWrap.dataset.mealName = meal.name;
 
     const isBaseMeal = ['meal1', 'meal2', 'meal3'].includes(meal.id);
 
@@ -2710,16 +3483,28 @@ function createMealCard(meal) {
     macros.append(macrosContent, photoIndicator, arrow);
 
     const headerMain = createElement('div', 'meal-card-header-main');
+    const headerTop = createElement('div', 'meal-card-header-top');
     const title = createElement('div', 'meal-title', meal.name);
+    title.setAttribute('role', 'button');
+    title.tabIndex = 0;
     const headerKcal = createElement('div', 'meal-header-kcal');
     headerKcal.id = `${meal.id}-header-kcal`;
     headerKcal.innerHTML = '';
+    const headerNote = createElement('div', 'meal-header-note', getMealSectionNote(state.mealsData || {}, meal.id));
+    headerNote.id = `${meal.id}-header-note`;
+    if (headerNote.textContent) {
+        headerNote.title = headerNote.textContent;
+    }
 
     const addIconBtn = createElement('div', 'meal-add-icon');
     addIconBtn.setAttribute('aria-label', 'Добавить продукт');
     addIconBtn.innerHTML = getMealAddIconMarkup();
 
     function toggleMealFromHeader(ev) {
+        if (header.dataset.suppressClick === '1') {
+            header.dataset.suppressClick = '0';
+            return;
+        }
         if (ev) {
             ev.preventDefault();
             ev.stopPropagation();
@@ -2738,13 +3523,27 @@ function createMealCard(meal) {
 
     header.addEventListener('click', toggleMealFromHeader);
 
+    function openMealNoteFromHeader(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        openMealSectionNoteModal(meal);
+    }
+
+    title.addEventListener('click', openMealNoteFromHeader);
+    title.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        openMealNoteFromHeader(event);
+    });
+    headerNote.addEventListener('click', openMealNoteFromHeader);
+
     addIconBtn.addEventListener('click', e => {
         e.preventDefault();
         e.stopPropagation();
         openMealSearchForMeal(meal.id);
     });
 
-    headerMain.append(title, headerKcal);
+    headerTop.append(title, headerNote);
+    headerMain.append(headerTop, headerKcal);
     header.append(headerMain, addIconBtn);
 
     const list = createElement('div', 'meal-food-list');
@@ -2812,7 +3611,8 @@ function createMealCard(meal) {
         deleteBtn.onclick = async (e) => {
             e.stopPropagation();
 
-            openConfirmModal(`Удалить ${meal.name}?`, async () => {
+            const currentMealName = swipeWrap.dataset.mealName || meal.name;
+            openConfirmModal(`Удалить ${currentMealName}?`, async () => {
                 await deleteMealSectionAndPersist(meal.id);
 
                 delete mealOpenState[getMealOpenKey(state.selectedDate, meal.id)];
@@ -2849,6 +3649,7 @@ function rebuildMealsSection() {
     meals.forEach(meal => {
         mealsContainer.append(createMealCard(meal));
     });
+    attachMealSectionReorderBindings(mealsContainer);
 
     const existingBtn = document.getElementById('add-meal-section-btn');
     const shouldShowAddBtn = mealKeys.length < 6;
@@ -2880,6 +3681,80 @@ function rebuildMealsSection() {
         initMealSwipe();
         scheduleMealRootScrollAvailabilitySync();
     }, 0);
+}
+
+function syncMealAddSectionButton(mealKeys = []) {
+    const mealsContainer = document.getElementById('meals-container');
+    if (!mealsContainer) return;
+
+    const existingBtn = document.getElementById('add-meal-section-btn');
+    const shouldShowAddBtn = mealKeys.length < 6;
+
+    if (shouldShowAddBtn) {
+        if (!existingBtn) {
+            const addMealWrap = createElement('div', 'add-meal-wrap');
+            const addMealSectionBtn = createElement('button', 'tab-shape-btn');
+            addMealSectionBtn.id = 'add-meal-section-btn';
+            addMealSectionBtn.innerHTML = ` добавить прием `;
+            addMealSectionBtn.onclick = handleAddMealSection;
+            addMealWrap.append(addMealSectionBtn);
+            mealsContainer.insertAdjacentElement('afterend', addMealWrap);
+        }
+    } else if (existingBtn) {
+        existingBtn.remove();
+    }
+}
+
+function syncMealSectionStructure(mealsData = {}) {
+    const mealsContainer = document.getElementById('meals-container');
+    if (!mealsContainer) return false;
+
+    const mealKeys = getMealKeysFromData(mealsData || {});
+    const nextStructure = mealKeys.join('|');
+    const currentItems = getMealSectionLayoutItems(mealsContainer);
+    const currentIds = currentItems.map((itemEl) => String(itemEl.dataset.mealId || '').trim()).filter(Boolean);
+    const structureChanged = nextStructure !== lastRenderedMealStructure;
+
+    if (!structureChanged && currentIds.join('|') === nextStructure) {
+        syncMealAddSectionButton(mealKeys);
+        return false;
+    }
+
+    const desiredIds = new Set(mealKeys);
+    currentItems.forEach((itemEl) => {
+        const mealId = String(itemEl.dataset.mealId || '').trim();
+        if (!desiredIds.has(mealId)) {
+            itemEl.remove();
+        }
+    });
+
+    mealKeys.forEach((mealId, index) => {
+        let itemEl = mealsContainer.querySelector(`.meal-swipe[data-meal-id="${mealId}"]`);
+        const mealName = `Прием ${index + 1}`;
+
+        if (!itemEl) {
+            itemEl = createMealCard({ id: mealId, name: mealName });
+        } else {
+            itemEl.dataset.mealName = mealName;
+            const titleEl = itemEl.querySelector('.meal-title');
+            if (titleEl) {
+                titleEl.textContent = mealName;
+            }
+        }
+
+        mealsContainer.append(itemEl);
+    });
+
+    attachMealSectionReorderBindings(mealsContainer);
+    syncMealAddSectionButton(mealKeys);
+    lastRenderedMealStructure = nextStructure;
+
+    setTimeout(() => {
+        initMealSwipe();
+        scheduleMealRootScrollAvailabilitySync();
+    }, 0);
+
+    return true;
 }
 
 function initOpenStateForCurrentDay(mealsData) {
@@ -3833,12 +4708,12 @@ function renderMealMainScreen() {
     meals.forEach(meal => {
         mealsContainer.append(createMealCard(meal));
     });
+    attachMealSectionReorderBindings(mealsContainer);
 
     setupMealMacrosBorderObserver();
     setupTopBarMealBorderObserver();
 
-    const existingMealKeys = getMealKeysFromData(state.mealsData || {});
-    if (existingMealKeys.length < 6) {
+    if (mealKeys.length < 6) {
         const addMealWrap = createElement('div', 'add-meal-wrap');
 
         const addMealSectionBtn = createElement('button', 'tab-shape-btn');
@@ -3956,7 +4831,7 @@ function renderMealMonthlySummaryPage() {
     const yearPrevBtn = createElement('button', 'meal-monthly-summary-picker-year-btn');
     yearPrevBtn.type = 'button';
     yearPrevBtn.setAttribute('aria-label', 'Предыдущий год');
-    yearPrevBtn.textContent = '−';
+    yearPrevBtn.textContent = '?';
 
     const yearLabel = createElement('div', 'meal-monthly-summary-picker-year');
 
@@ -4212,6 +5087,10 @@ function renderMealMonthlySummaryPage() {
         `;
     }
 
+    function renderOnlineOnlyState() {
+        body.innerHTML = `<div class="meal-monthly-summary-error">${MEAL_ACTIVITY_SUMMARY_ONLINE_ONLY_MESSAGE}</div>`;
+    }
+
     function isSummaryMonthShowingToday() {
         const t = parseLocalDate(todayStr);
         return t.getFullYear() === visibleMonth.getFullYear() && t.getMonth() === visibleMonth.getMonth();
@@ -4245,6 +5124,12 @@ function renderMealMonthlySummaryPage() {
     async function loadAndRenderMonth() {
         const currentToken = ++renderToken;
         syncMonthButtonLabel();
+
+        if (isOfflineModeActive()) {
+            renderOnlineOnlyState();
+            return;
+        }
+
         renderLoadingState();
 
         try {
@@ -9930,7 +10815,7 @@ function makeFancyDateButton(initialValue = '') {
 
     const text = document.createElement('span');
     const icon = document.createElement('span');
-    icon.textContent = '📅';
+    icon.textContent = '??';
 
     function formatDisplayDate(dateStr) {
         if (!dateStr) return 'Выбрать';
@@ -10005,7 +10890,7 @@ function makeFancyDateButtonModal(initialValue = '', onChange = null) {
 
     const text = document.createElement('span');
     const icon = document.createElement('span');
-    icon.textContent = '📅';
+    icon.textContent = '??';
 
     function formatDisplayDateValue(dateStr) {
         if (!dateStr) return 'Выбрать';
@@ -14650,7 +15535,7 @@ function isRecipeDraftValid() {
     return (
         hasTitle &&
         hasServings &&
-        filledIngredients.length >= 3 &&
+        filledIngredients.length >= 2 &&
         hasPhoto
     );
 }
@@ -14894,7 +15779,7 @@ function renderCreateRecipe() {
     function validateRecipeForm() {
         const hasRequiredTitle = isFilled(draft.title);
         const hasRequiredServings = isFilled(draft.servings);
-        const hasEnoughIngredients = Array.isArray(draft.ingredients) && draft.ingredients.length >= 3;
+        const hasEnoughIngredients = Array.isArray(draft.ingredients) && draft.ingredients.length >= 2;
 
         const isValid =
             hasRequiredTitle &&
@@ -15271,7 +16156,7 @@ async function renderEditRecipe() {
     function validateRecipeForm() {
         const hasRequiredTitle = isFilled(draft.title);
         const hasRequiredServings = isFilled(draft.servings);
-        const hasEnoughIngredients = Array.isArray(draft.ingredients) && draft.ingredients.length >= 3;
+        const hasEnoughIngredients = Array.isArray(draft.ingredients) && draft.ingredients.length >= 2;
         const hasChanges = getEditRecipeSnapshot(draft) !== initialEditRecipeSnapshot;
 
         const isValid =
@@ -15366,7 +16251,7 @@ async function renderEditRecipe() {
     validateRecipeForm();
 }
 // =================================================================
-// 📦 FIREBASE
+// ?? FIREBASE
 // =================================================================
 async function getFoods(query = '') {
     const foodsMap = await getFoodsMap();
@@ -15866,7 +16751,7 @@ function createMealPhotoSwipeItem({ item, index, mealId }) {
     const text = createElement('div', 'meal-food-text meal-food-text--photo');
     text.style.cursor = 'pointer';
     const preview = createElement('img', 'meal-photo-thumb');
-    preview.src = item.photoUrl;
+    applyOfflineMediaSource(preview, item.photoUrl, 'photo');
     preview.alt = item.name || 'Фото продукта';
 
     const meta = createElement('div', 'meal-photo-meta');
@@ -16358,6 +17243,7 @@ async function subscribeMeals() {
         const cachedSnap = await getDocFromCache(mealRef);
         if (cachedSnap.exists() && state.selectedDate === selectedDateAtSubscribe) {
             const cachedData = cachedSnap.data();
+            const mealsContainer = document.getElementById('meals-container');
             state.mealsData = cachedData;
             mealsDataLoadedDate = selectedDateAtSubscribe;
             initOpenStateForCurrentDay(cachedData);
@@ -16365,7 +17251,11 @@ async function subscribeMeals() {
             updateCachedWeekPresenceForDate(selectedDateAtSubscribe, hasFoodForSelectedDate);
             updateCachedMonthMealsDailySummaryForDate(selectedDateAtSubscribe, cachedData);
             applyWeekRowPresence({ [selectedDateAtSubscribe]: hasFoodForSelectedDate });
-            rebuildMealsSection();
+            if (!mealsContainer || mealsContainer.childElementCount === 0) {
+                rebuildMealsSection();
+            } else {
+                syncMealSectionStructure(cachedData);
+            }
             renderMeals(cachedData);
             scheduleMealRootScrollAvailabilitySync();
         }
@@ -16375,7 +17265,6 @@ async function subscribeMeals() {
         if (selectedDateAtSubscribe !== state.selectedDate) return;
 
         const data = docSnap.exists() ? docSnap.data() : {};
-        const newStructure = getMealKeysFromData(data).join('|');
 
         state.mealsData = data;
         mealsDataLoadedDate = selectedDateAtSubscribe;
@@ -16384,12 +17273,19 @@ async function subscribeMeals() {
         updateCachedWeekPresenceForDate(selectedDateAtSubscribe, hasFoodForSelectedDate);
         updateCachedMonthMealsDailySummaryForDate(selectedDateAtSubscribe, data);
         applyWeekRowPresence({ [selectedDateAtSubscribe]: hasFoodForSelectedDate });
+        const mealsContainer = document.getElementById('meals-container');
 
-        if (newStructure !== lastRenderedMealStructure) {
+        if (!mealsContainer || mealsContainer.childElementCount === 0) {
+            rebuildMealsSection();
+            renderMeals(data);
+            scheduleMealRootScrollAvailabilitySync();
+            return;
+        }
+
+        if (syncMealSectionStructure(data)) {
             state.mealsData = data;
             initOpenStateForCurrentDay(data);
 
-            rebuildMealsSection();
             renderMeals(data);
             scheduleMealRootScrollAvailabilitySync();
             return;
@@ -16446,7 +17342,7 @@ async function getFoodsMap(force = false) {
 }
 
 // =================================================================
-// 🔎 MEAL SEARCH: lightweight previews (DB queries with limit)
+// ?? MEAL SEARCH: lightweight previews (DB queries with limit)
 // =================================================================
 const MEAL_SEARCH_PREVIEW_LIMIT = 20;
 
@@ -16774,10 +17670,40 @@ async function getHistoryPreview(sortId, take = 20) {
 // =================================================================
 // 🍽️ РЕНДЕР ПРИЕМОВ + ПОДСЧЕТ
 // =================================================================
+function mealItemsNeedFoodsMap(mealsData = {}) {
+    return getMealKeysFromData(mealsData || {}).some((mealId) => {
+        const items = Array.isArray(mealsData?.[mealId]) ? mealsData[mealId] : [];
+        return items.some((item) => {
+            if (isMealPhotoItem(item)) return false;
+
+            const hasSnapshotName = typeof item?.name === 'string' && item.name.trim().length > 0;
+            const hasSnapshotAmount = Number.isFinite(Number(item?.baseAmount));
+            const hasSnapshotUnit = typeof item?.baseUnit === 'string' && item.baseUnit.trim().length > 0;
+
+            return !(hasSnapshotName && hasSnapshotAmount && hasSnapshotUnit);
+        });
+    });
+}
+
 async function renderMeals(mealsData) {
-    renderMealsFromData(mealsData, null);
+    const expectedDate = state.selectedDate;
+    const expectedCycleId = state.selectedCycleId;
+    const cachedFoodsMap = foodsMapCache && foodsMapLibraryKey === getMealLibraryContextKey()
+        ? foodsMapCache
+        : null;
+
+    renderMealsFromData(mealsData, cachedFoodsMap);
+
+    if (cachedFoodsMap || !mealItemsNeedFoodsMap(mealsData)) {
+        return;
+    }
 
     const foodsMap = await getFoodsMap();
+
+    if (state.selectedDate !== expectedDate || state.selectedCycleId !== expectedCycleId) {
+        return;
+    }
+
     renderMealsFromData(mealsData, foodsMap);
 }
 
@@ -16791,8 +17717,11 @@ function renderMealsFromData(mealsData, foodsMap) {
         const macrosWrap = document.getElementById(`${mealId}-macros`);
         const macrosContent = document.getElementById(`${mealId}-macros-content`);
         const arrow = document.getElementById(`${mealId}-arrow`);
+        const mealNote = getMealSectionNote(mealsData, mealId);
 
         if (!list || !macrosWrap || !macrosContent) return;
+
+        syncMealSectionNoteDom(mealId, mealNote);
 
         list.innerHTML = '';
 
@@ -17304,3 +18233,6 @@ function initMealSwipe() {
         mealSwipeDocumentBound = true;
     }
 }
+
+
+

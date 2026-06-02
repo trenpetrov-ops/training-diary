@@ -447,6 +447,7 @@ exports.claimExclusiveSession = onRequest(
       const deviceId = normalizeSessionString(req.body?.deviceId, 160);
       const platform = normalizeSessionString(req.body?.platform, 80);
       const deviceLabel = normalizeSessionString(req.body?.deviceLabel, 120);
+      const previewOnly = req.body?.previewOnly === true;
 
       if (!uid || !Number.isFinite(authTime) || authTime <= 0) {
         return jsonResponse(res, 401, { ok: false, error: 'invalid_token' });
@@ -467,12 +468,28 @@ exports.claimExclusiveSession = onRequest(
             ok: false,
             error: 'stale_session',
             activeDeviceId: currentDeviceId || null,
+            activeDeviceLabel: normalizeSessionString(current.deviceLabel, 120) || null,
             minAuthTime: currentMinAuthTime || 0
           };
         }
 
+        const currentDeviceLabel = normalizeSessionString(current.deviceLabel, 120);
+        const wouldTakeOver = Boolean(currentDeviceId && currentDeviceId !== deviceId);
+
+        if (previewOnly) {
+          return {
+            ok: true,
+            previewOnly: true,
+            wouldTakeOver,
+            activeDeviceId: currentDeviceId || null,
+            activeDeviceLabel: currentDeviceLabel || null,
+            minAuthTime: currentMinAuthTime || 0,
+            version: Number(current.version || 0) || 0
+          };
+        }
+
         const version = (Number(current.version || 0) || 0) + 1;
-        const tookOver = Boolean(currentDeviceId && currentDeviceId !== deviceId);
+        const tookOver = wouldTakeOver;
         const payload = {
           activeDeviceId: deviceId,
           minAuthTime: authTime,

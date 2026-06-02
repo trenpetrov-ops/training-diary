@@ -37,6 +37,7 @@ import {
     browserLocalPersistence,
     indexedDBLocalPersistence,
     browserSessionPersistence,
+    beforeAuthStateChanged,
     onAuthStateChanged,
     createUserWithEmailAndPassword,
     signInWithEmailAndPassword,
@@ -78,6 +79,17 @@ import {
 } from "firebase/storage";
 import { initNetworkMonitoring, getNetworkStatusSnapshot, subscribeNetworkStatus, isNetworkOffline } from './offline/network-status.js';
 import { describeSyncStatus, getSyncStatusSnapshot, subscribeSyncStatus } from './offline/sync-status.js';
+import { getCachedMediaObjectUrl, preloadMediaUrls as preloadOfflineMediaUrls } from './offline/media-cache.js';
+import {
+    attachPendingMediaTarget,
+    deletePendingMediaUpload,
+    getPendingMediaObjectUrl,
+    isPendingMediaUrl as isPendingMediaUrlFromQueue,
+    listPendingMediaUploads,
+    queuePendingMediaFile,
+    releasePendingMediaObjectUrls,
+    updatePendingMediaState
+} from './offline/pending-media-queue.js';
 import {
     createProgram,
     deleteProgram,
@@ -240,6 +252,13 @@ let exclusiveSessionReauthPromise = null;
 let exclusiveSessionWasOnline = getNetworkStatusSnapshot().online !== false;
 let exclusiveSessionWriteLockState = null;
 let exclusiveSessionReadOnlyOverlay = null;
+let pendingExclusiveSessionLoginAttempt = null;
+const cyclePreloadInFlight = new Map();
+const cyclePreloadCompletedAt = new Map();
+
+const EXCLUSIVE_SESSION_TAKEOVER_TITLE = 'Аккаунт уже открыт на другом устройстве';
+const EXCLUSIVE_SESSION_SIGNED_OUT_MESSAGE = 'Вход выполнен на другом устройстве. Это устройство вышло из аккаунта, чтобы уменьшить риск перезаписи данных.';
+const EXCLUSIVE_SESSION_READ_ONLY_MESSAGE = 'Аккаунт открыт на другом устройстве. Это устройство переведено в режим только чтения, чтобы уменьшить риск перезаписи данных.';
 
 
 
@@ -394,6 +413,14 @@ function throwIfOnlineOnlyFeatureOffline(featureLabel) {
     if (isOfflineModeActive()) {
         throw new Error(getOnlineOnlyFeatureMessage(featureLabel));
     }
+}
+
+function isPendingMediaUrl(url) {
+    return isPendingMediaUrlFromQueue(url);
+}
+
+function getOfflineMediaQueuedMessage() {
+    return 'Фото сохранено на устройстве и будет загружено, когда появится интернет.';
 }
 
 function shouldShowSyncStatusPill(snapshot = getAppSyncStatus()) {
@@ -1448,12 +1475,216 @@ function getExclusiveSessionPlatform() {
     return isCapacitorNativePlatform() ? 'capacitor' : 'web';
 }
 
-function getExclusiveSessionDeviceLabel() {
-    const platform = getExclusiveSessionPlatform();
-    const userAgent = String(window.navigator?.userAgent || '').trim().replace(/\s+/g, ' ');
-    if (!userAgent) return platform;
-    return `${platform}:${userAgent.slice(0, 96)}`;
+function parseExclusiveSessionDeviceLabel(value) {
+    const normalized = String(value || '').trim();
+    if (!normalized) return '';
+
+    const source = normalized.includes(':')
+        ? normalized.split(':').slice(1).join(':').trim()
+        : normalized;
+
+    if (/iPhone/i.test(source)) return 'iPhone';
+    if (/iPad/i.test(source)) return 'iPad';
+    if (/Android/i.test(source)) return 'Android';
+    if (/Windows/i.test(source)) return 'Windows PC';
+    if (/Macintosh|Mac OS|MacIntel|MacPPC|Mac68K|Mac/i.test(source)) return 'Mac';
+    if (/Linux/i.test(source)) return 'Linux';
+    return normalized;
 }
+
+function getExclusiveSessionDeviceLabel() {
+    const platform = String(window.Capacitor?.getPlatform?.() || '').trim().toLowerCase();
+    const userAgent = String(window.navigator?.userAgent || '').trim();
+
+    if (platform === 'ios' || /iPhone/i.test(userAgent)) return 'iPhone';
+    if (/iPad/i.test(userAgent)) return 'iPad';
+    if (platform === 'android' || /Android/i.test(userAgent)) return 'Android';
+    if (/Windows/i.test(userAgent)) return 'Windows PC';
+    if (/Macintosh|Mac OS|MacIntel|MacPPC|Mac68K|Mac/i.test(userAgent)) return 'Mac';
+    if (/Linux/i.test(userAgent)) return 'Linux';
+    return isCapacitorNativePlatform() ? 'Мобильное устройство' : 'Устройство';
+}
+
+function buildExclusiveSessionTakeoverMessage(deviceLabel) {
+    const normalizedLabel = parseExclusiveSessionDeviceLabel(deviceLabel);
+    const deviceSentence = normalizedLabel
+        ? `Ранее вход в этот аккаунт был выполнен на устройстве ${normalizedLabel}.`
+        : 'Ранее вход в этот аккаунт был выполнен на другом устройстве.';
+    return `${deviceSentence} Если на том устройстве были внесены изменения и они ещё не синхронизировались, при продолжении входа на этом устройстве может произойти перезапись части данных.`;
+}
+
+function clearAuthCredentialInputs() {
+    const emailInput = document.getElementById('auth-email');
+    const passwordInput = document.getElementById('auth-password');
+    if (emailInput) {
+        emailInput.value = '';
+    }
+    if (passwordInput) {
+        passwordInput.value = '';
+    }
+    emailInput?.focus?.();
+}
+
+function openExclusiveSessionTakeoverModal(deviceLabel) {
+    return new Promise((resolve) => {
+        const overlay = createElement('div', 'modal-overlay');
+        const modal = createElement('div', 'modal-content modal-compact');
+        const title = createElement('h3', 'modal-title', EXCLUSIVE_SESSION_TAKEOVER_TITLE);
+        const text = createElement('p', 'duplicate-text', buildExclusiveSessionTakeoverMessage(deviceLabel));
+        const followup = createElement('p', 'duplicate-text', 'Продолжить вход на этом устройстве?');
+        const controls = createElement('div', 'duplicate-controls');
+        const confirmBtn = createElement('button', 'btn btn-primary', 'Войти здесь');
+        const cancelBtn = createElement('button', 'btn btn-secondary cancel-btn', 'Отмена');
+
+        const close = (result) => {
+            try {
+                overlay.remove();
+            } catch (_) {}
+            resolve(result);
+        };
+
+        confirmBtn.addEventListener('click', () => close(true));
+        cancelBtn.addEventListener('click', () => close(false));
+        overlay.addEventListener('click', (event) => {
+            if (event.target === overlay) {
+                close(false);
+            }
+        });
+        controls.append(confirmBtn, cancelBtn);
+        modal.append(title, text, followup, controls);
+        overlay.append(modal);
+        document.body.appendChild(overlay);
+    });
+}
+
+async function previewExclusiveSessionClaim(user) {
+    if (!user) return null;
+    if (getAppNetworkStatus().online === false) {
+        return { ok: false, skipped: 'offline' };
+    }
+
+    const token = String(await user.getIdToken() || '').trim();
+    if (!token) {
+        throw new Error('exclusive_session_missing_token');
+    }
+
+    const response = await fetch(resolveServerApiUrl('/api/session/claim'), {
+        method: 'POST',
+        headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+            deviceId: getOrCreateExclusiveSessionDeviceId(),
+            platform: getExclusiveSessionPlatform(),
+            deviceLabel: getExclusiveSessionDeviceLabel(),
+            previewOnly: true
+        })
+    });
+
+    let payload = null;
+    try {
+        payload = await response.json();
+    } catch (_) {
+        payload = null;
+    }
+
+    if (!response.ok) {
+        const error = new Error(payload?.error || `exclusive_session_preview_${response.status}`);
+        error.payload = payload;
+        throw error;
+    }
+
+    return payload;
+}
+
+async function releaseExclusiveSessionClaim(user = auth.currentUser) {
+    if (!user?.uid || getAppNetworkStatus().online === false) return;
+    const sessionRef = getCurrentUserPrivateDocRef(EXCLUSIVE_SESSION_DOC_ID, user.uid);
+    if (!sessionRef) return;
+    const localDeviceId = getOrCreateExclusiveSessionDeviceId();
+
+    await runTransaction(db, async (tx) => {
+        const snap = await tx.get(sessionRef);
+        if (!snap.exists) return;
+        const current = snap.data() || {};
+        const currentDeviceId = String(current.activeDeviceId || '').trim();
+        if (!currentDeviceId || currentDeviceId !== localDeviceId) return;
+
+        tx.set(sessionRef, {
+            activeDeviceId: deleteField(),
+            deviceLabel: deleteField(),
+            platform: deleteField(),
+            signedOutAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+        }, { merge: true });
+    });
+}
+
+async function performExplicitSignOut(successMessage = 'Вы вышли из системы.') {
+    try {
+        await releaseExclusiveSessionClaim(auth.currentUser);
+    } catch (error) {
+        console.warn('[session] release on signOut failed:', error);
+    }
+
+    await signOut(auth);
+    showToast(successMessage);
+}
+
+beforeAuthStateChanged(auth, async (user) => {
+    const pendingAttempt = pendingExclusiveSessionLoginAttempt;
+    if (!user || !pendingAttempt || pendingAttempt.mode !== 'email-password-login') {
+        return;
+    }
+
+    try {
+        const preview = await previewExclusiveSessionClaim(user);
+        if (!preview?.wouldTakeOver) {
+            return;
+        }
+
+        const confirmed = await openExclusiveSessionTakeoverModal(preview.activeDeviceLabel);
+        if (confirmed) {
+            return;
+        }
+
+        clearAuthCredentialInputs();
+        const error = new Error('exclusive_session_takeover_cancelled');
+        error.code = 'exclusive_session_takeover_cancelled';
+        throw error;
+    } finally {
+        pendingExclusiveSessionLoginAttempt = null;
+    }
+});
+
+forceSignOutForExclusiveSession = async function (message) {
+    if (exclusiveSessionSignOutPromise) {
+        return exclusiveSessionSignOutPromise;
+    }
+
+    const normalizedMessage = EXCLUSIVE_SESSION_SIGNED_OUT_MESSAGE;
+    persistExclusiveSessionNotice(normalizedMessage);
+
+    exclusiveSessionSignOutPromise = (async () => {
+        teardownExclusiveSessionListener();
+        clearExclusiveSessionRuntime();
+        activateExclusiveSessionReadOnly(normalizedMessage);
+        try {
+            showToast(normalizedMessage);
+        } catch (_) {}
+        await new Promise((resolve) => window.setTimeout(resolve, 900));
+        try {
+            await signOut(auth);
+        } catch (error) {
+            console.warn('[session] forced signOut failed:', error);
+        } finally {
+            exclusiveSessionSignOutPromise = null;
+        }
+    })();
+
+    return exclusiveSessionSignOutPromise;
+};
 
 function clearExclusiveSessionRuntime() {
     exclusiveSessionMeta = null;
@@ -1540,7 +1771,7 @@ async function forceSignOutForExclusiveSession(message) {
         } catch (_) {}
         await new Promise((resolve) => window.setTimeout(resolve, 900));
         try {
-            await signOut(auth);
+        await signOut(auth);
         } catch (error) {
             console.warn('[session] forced signOut failed:', error);
         } finally {
@@ -1685,6 +1916,15 @@ function maybeClaimExclusiveSessionAfterReconnect() {
     if (!auth.currentUser || getAppNetworkStatus().online === false) return;
     void ensureExclusiveSessionClaim(auth.currentUser, { reason: 'reconnect' }).catch((error) => {
         console.warn('[session] reconnect claim failed:', error);
+    });
+}
+
+function maybePreloadSelectedCycleAfterReconnect() {
+    if (!state.selectedCycleId || getAppNetworkStatus().online === false) return;
+    const selectedCycle = state.cycles?.find((cycle) => cycle.id === state.selectedCycleId);
+    if (!selectedCycle) return;
+    void preloadSelectedCycleOfflineBundle(selectedCycle).catch((error) => {
+        console.warn('[cycle-preload] reconnect preload failed:', error);
     });
 }
 
@@ -1932,6 +2172,145 @@ function resetCycleDerivedStateForSwitch() {
     state.mealBurnedSummaryDate = null;
 }
 
+function getCyclePreloadKey(cycleRef = getCycleDocRef()) {
+    if (!cycleRef?.path) return '';
+    return String(cycleRef.path).trim();
+}
+
+function collectProgramMediaUrls(programs = []) {
+    const urls = [];
+    (Array.isArray(programs) ? programs : []).forEach((program) => {
+        (Array.isArray(program?.trainingMedia) ? program.trainingMedia : []).forEach((item) => {
+            const url = String(item?.url || '').trim();
+            if (url) urls.push(url);
+        });
+        (Array.isArray(program?.exercises) ? program.exercises : []).forEach((exercise) => {
+            (Array.isArray(exercise?.media) ? exercise.media : []).forEach((item) => {
+                const url = String(item?.url || '').trim();
+                if (url) urls.push(url);
+            });
+        });
+    });
+    return urls;
+}
+
+function collectReportMediaUrls(reports = []) {
+    const urls = [];
+    (Array.isArray(reports) ? reports : []).forEach((report) => {
+        (Array.isArray(report?.photos) ? report.photos : []).forEach((photo) => {
+            const url = String(photo?.url || '').trim();
+            if (url) urls.push(url);
+        });
+    });
+    return urls;
+}
+
+function collectMealMediaUrls(mealDocs = []) {
+    const urls = [];
+    (Array.isArray(mealDocs) ? mealDocs : []).forEach((entry) => {
+        const data = entry?.data || entry;
+        Object.keys(data || {}).forEach((key) => {
+            if (!/^meal\d+$/.test(key)) return;
+            const items = Array.isArray(data[key]) ? data[key] : [];
+            items.forEach((item) => {
+                if (item?.isMealPhoto !== true) return;
+                const url = String(item?.photoUrl || '').trim();
+                if (url) urls.push(url);
+            });
+        });
+    });
+    return urls;
+}
+
+async function preloadSelectedCycleOfflineBundle(cycle = state.cycles?.find((item) => item.id === state.selectedCycleId), options = {}) {
+    if (!cycle?.id || getAppNetworkStatus().online === false) {
+        return { ok: false, skipped: 'offline-or-missing-cycle' };
+    }
+
+    const cycleRef = getCycleDocRef();
+    const preloadKey = getCyclePreloadKey(cycleRef);
+    if (!cycleRef || !preloadKey) {
+        return { ok: false, skipped: 'missing-cycle-ref' };
+    }
+
+    if (cyclePreloadInFlight.has(preloadKey)) {
+        return cyclePreloadInFlight.get(preloadKey);
+    }
+
+    if (options.force !== true && cyclePreloadCompletedAt.has(preloadKey)) {
+        return {
+            ok: true,
+            skipped: 'already-preloaded',
+            at: cyclePreloadCompletedAt.get(preloadKey)
+        };
+    }
+
+    const run = (async () => {
+        const programsRef = getUserProgramsCollection();
+        const reportsRef = getReportsCollection();
+        const mealsRef = collection(cycleRef, 'meals');
+        const mealLibraryFoodsRef = getMealLibraryFoodsCollection();
+        const mealLibraryRecipesRef = getMealLibraryRecipesCollection();
+        const tasks = [
+            getDoc(cycleRef),
+            programsRef ? getDocs(programsRef) : Promise.resolve(null),
+            reportsRef ? getDocs(reportsRef) : Promise.resolve(null),
+            mealsRef ? getDocs(mealsRef) : Promise.resolve(null),
+            mealLibraryFoodsRef ? getDocs(mealLibraryFoodsRef) : Promise.resolve(null),
+            mealLibraryRecipesRef ? getDocs(mealLibraryRecipesRef) : Promise.resolve(null)
+        ];
+
+        const settled = await Promise.allSettled(tasks);
+        const rejected = settled.filter((item) => item.status === 'rejected');
+
+        if (rejected.length > 0) {
+            console.warn('[cycle-preload] partial preload failures:', rejected.map((item) => item.reason));
+        }
+
+        const programs = settled[1]?.status === 'fulfilled'
+            ? settled[1].value.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+            : [];
+        const reports = settled[2]?.status === 'fulfilled'
+            ? settled[2].value.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+            : [];
+        const mealDocs = settled[3]?.status === 'fulfilled'
+            ? settled[3].value.docs.map((docSnap) => ({ id: docSnap.id, data: docSnap.data() }))
+            : [];
+
+        const mediaUrls = Array.from(new Set([
+            ...collectProgramMediaUrls(programs),
+            ...collectReportMediaUrls(reports),
+            ...collectMealMediaUrls(mealDocs)
+        ]));
+
+        let mediaPreloadResult = { ok: true, total: 0, cached: 0, failed: 0 };
+        if (mediaUrls.length > 0) {
+            mediaPreloadResult = await preloadOfflineMediaUrls(mediaUrls, { concurrency: 3 });
+        }
+
+        cyclePreloadCompletedAt.set(preloadKey, Date.now());
+
+        return {
+            ok: rejected.length === 0 && mediaPreloadResult.failed === 0,
+            partial: rejected.length > 0,
+            cycleId: cycle.id,
+            failedTasks: rejected.length,
+            mediaCached: mediaPreloadResult.cached,
+            mediaFailed: mediaPreloadResult.failed
+        };
+    })();
+
+    cyclePreloadInFlight.set(preloadKey, run);
+
+    try {
+        return await run;
+    } finally {
+        if (cyclePreloadInFlight.get(preloadKey) === run) {
+            cyclePreloadInFlight.delete(preloadKey);
+        }
+    }
+}
+
 function applyCycleSelection(cycle, options = {}) {
     if (!cycle?.id) return false;
 
@@ -1951,6 +2330,11 @@ function applyCycleSelection(cycle, options = {}) {
             state.selectedJournalRecord = null;
         }
         setupDynamicListeners();
+        if (options.preload !== false) {
+            void preloadSelectedCycleOfflineBundle(cycle, { force: options.forcePreload === true }).catch((error) => {
+                console.warn('[cycle-preload] failed:', error);
+            });
+        }
     }
 
     if (options.openPrograms === true) {
@@ -2727,7 +3111,7 @@ function renderModeChangeButton(contentContainer) {
     const logoutBtn = createElement('button', 'btn back-btn logout-btn', 'Выход');
     logoutBtn.addEventListener('click', async () => {
         try {
-            await signOut(auth);
+            await performExplicitSignOut(); state.currentMode = null; return;
             state.currentMode = null; // Сброс режима при выходе
             showToast('Вы вышли из системы.');
         } catch (error) {
@@ -3502,6 +3886,16 @@ function openEditProgramModal(program) {
 // =================================================================
 // 🌟 МОДАЛКА: ДОБАВЛЕНИЕ ПРОГРАММЫ
 // =================================================================
+function createCycleLabelArrow() {
+    const arrow = createElement('span', 'cycle-label-arrow');
+    arrow.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" aria-hidden="true">
+            <path fill="currentColor" d="m12.37 15.835l6.43-6.63C19.201 8.79 18.958 8 18.43 8H5.57c-.528 0-.771.79-.37 1.205l6.43 6.63c.213.22.527.22.74 0"/>
+        </svg>
+    `;
+    return arrow;
+}
+
 function openAddProgramModal(onConfirmNew, onConfirmCopy) {
     const modal = document.createElement('div');
     modal.className = 'modal-overlay-cicle modal-overlay-cicle--sheet';
@@ -3526,7 +3920,7 @@ function openAddProgramModal(onConfirmNew, onConfirmCopy) {
     // --- Custom cycle dropdown ---
     const cycleRow = createElement('div', 'add-program-dropdown-row');
     const cycleText = createElement('span', 'add-program-dropdown-text', 'Выберите цикл');
-    const cycleArrow = createElement('span', 'cycle-label-arrow', '▾');
+    const cycleArrow = createCycleLabelArrow();
     cycleRow.append(cycleText, cycleArrow);
 
     const cycleDropdown = createElement('div', 'add-program-dropdown-list');
@@ -3543,7 +3937,7 @@ function openAddProgramModal(onConfirmNew, onConfirmCopy) {
     // --- Custom program dropdown ---
     const programRow = createElement('div', 'add-program-dropdown-row add-program-dropdown-row--disabled');
     const programText = createElement('span', 'add-program-dropdown-text', 'Выберите программу');
-    const programArrow = createElement('span', 'cycle-label-arrow', '▾');
+    const programArrow = createCycleLabelArrow();
     programRow.append(programText, programArrow);
 
     const programDropdown = createElement('div', 'add-program-dropdown-list');
@@ -3769,7 +4163,7 @@ function __appendJournalTrainingCompact(parent, weight, reps) {
     const compact = createElement('span', 'set-item__compact');
     compact.append(
         document.createTextNode(String(weight ?? 0)),
-        createElement('span', 'set-item__times', '×'),
+        createElement('span', 'set-item__times', 'x'),
         document.createTextNode(String(reps ?? 0))
     );
     parent.append(compact);
@@ -3782,7 +4176,7 @@ function __dropSetTreeSvg(isLastInGroup) {
     return `<svg class="set-row__tree-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 34" width="22" height="34" aria-hidden="true"><path class="set-row__tree-path" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" d="M11 0v34M11 14h9"/></svg>`;
 }
 
-const __DROP_SET_TREE_ROOT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" id="РЁРєРѕРЅРєР° 8" viewBox="0 0 22 34">
+const __DROP_SET_TREE_ROOT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" id="Шконка 8" viewBox="0 0 22 34">
   <path class="set-row__tree-path" fill="none" stroke="currentColor" stroke-width="1.32" stroke-linecap="round" stroke-linejoin="round" d="M12.7,15.1 L12.7,31.3 M12.8,15.1 L15.6,15.1 L21.6,15.1"></path>
 </svg>`;
 
@@ -4035,7 +4429,7 @@ function openCommentModal(exerciseId, currentNote, titleText, onSave) {
     // Скрытое file-input поле
     const fileInput = createElement('input');
     fileInput.type = 'file';
-    fileInput.accept = 'image/*,video/*';
+    fileInput.accept = 'image/*';
     fileInput.style.display = 'none';
 
    // Кнопка "Медиа" с SVG вместо текста 📎
@@ -4046,18 +4440,20 @@ function openCommentModal(exerciseId, currentNote, titleText, onSave) {
     <span class="add-media-text">Добавить медиа</span>
    `;
    addMediaBtn.addEventListener('click', () => {
-     if (isOfflineModeActive()) {
-       showToast(getOfflineMediaUploadUnavailableMessage(), 'error');
-       return;
-     }
      fileInput.click();
    });
+   addMediaBtn.querySelector('.add-media-text')?.replaceChildren(document.createTextNode('Добавить фото'));
 
 
     // Обработка выбора файла
 fileInput.addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (!file) return;
+  if (!String(file.type || '').toLowerCase().startsWith('image/')) {
+    showToast('В комментарии можно добавлять только фото');
+    fileInput.value = '';
+    return;
+  }
 
   // === Создаём прогресс-бар ===
   const progressWrap = document.createElement('div');
@@ -4068,30 +4464,31 @@ fileInput.addEventListener('change', async (e) => {
   mediaContainer.append(progressWrap);
 
   try {
-    const url = await uploadUserMediaFileWithProgress(file, 'training-media', (percent) => {
+    const url = await uploadUserMediaFileOrQueueWithProgress(file, 'training-media', (percent) => {
       progressBar.style.width = percent + '%';
       progressBar.textContent = percent + '%'; // можно убрать, если не хочешь текст
       console.log('🟢 Реальный прогресс:', percent);
     });
 
     // === Добавляем медиа ===
-    const type = file.type.startsWith('video') ? 'video' : 'photo';
-    media.push({ url, type });
+    media.push({ url, type: 'photo' });
     renderMediaPreview(mediaContainer, media);
 
     // === Показываем уведомление ===
-    showToast('Медиа загружено');
+    showToast(
+      url.startsWith('local-media://')
+        ? 'Фото сохранено на устройстве и будет загружено, когда появится интернет.'
+        : 'Фото загружено'
+    );
 
     // === Удаляем прогресс после короткой паузы ===
     setTimeout(() => progressWrap.remove(), 1000);
   } catch (err) {
     console.error('❌ Ошибка загрузки:', err);
-    if (isOfflineMediaUploadUnsupportedError(err)) {
-      showToast(getOfflineMediaUploadUnavailableMessage(), 'error');
-    } else {
-      showToast('❌ Ошибка загрузки', 'error');
-    }
+    showToast('Не удалось сохранить фото', 'error');
     progressWrap.remove();
+  } finally {
+    fileInput.value = '';
   }
 });
 
@@ -4106,13 +4503,23 @@ const saveBtn = createElement('button', 'btn btn-primary', 'Сохранить')
 controls.append(saveBtn);
 
 // ✅ Закрытие модалки по клику на фон (overlay)
-overlay.addEventListener('click', () => overlay.remove());
+let commentModalSaved = false;
+const closeCommentModal = async () => {
+    if (!commentModalSaved) {
+        await purgePendingMediaUrls(media.map((item) => item?.url));
+    }
+    overlay.remove();
+};
+overlay.addEventListener('click', () => {
+    void closeCommentModal();
+});
 
 // ❗ Чтобы клик по модалке не закрывал её
 modal.addEventListener('click', (e) => e.stopPropagation());
 
 // ✅ Сохранение данных
 saveBtn.addEventListener('click', () => {
+    commentModalSaved = true;
     onSave(textarea.value.trim(), media);
     overlay.remove();
 });
@@ -4128,17 +4535,252 @@ saveBtn.addEventListener('click', () => {
 // Новые загрузки медиа: Firebase Storage (users/{uid}/...).
 // Старые записи с URL Cloudinary продолжают открываться по сохранённой ссылке.
 // -----------------------------------------------------------------------------
+const MEDIA_UPLOAD_MAX_IMAGE_EDGE = 2048;
+const MEDIA_UPLOAD_IMAGE_QUALITY = 0.82;
+const MEDIA_UPLOAD_REENCODE_BYTES_THRESHOLD = 1_400_000;
+const MEDIA_UPLOAD_SKIP_IMAGE_TYPES = new Set(['image/gif', 'image/svg+xml']);
+
+function isCompressibleUploadImage(file) {
+    if (!file) return false;
+    const mimeType = String(file.type || '').trim().toLowerCase();
+    return mimeType.startsWith('image/') && !MEDIA_UPLOAD_SKIP_IMAGE_TYPES.has(mimeType);
+}
+
+function replaceFileExtension(filename, nextExtension) {
+    const safeName = String(filename || '').trim() || 'image';
+    const baseName = safeName.replace(/\.[^.]+$/, '') || 'image';
+    const normalizedExtension = String(nextExtension || 'jpg').replace(/^\.+/, '').trim() || 'jpg';
+    return `${baseName}.${normalizedExtension}`;
+}
+
+function loadImageElementFromFile(file) {
+    return new Promise((resolve, reject) => {
+        const objectUrl = URL.createObjectURL(file);
+        const image = new Image();
+
+        const cleanup = () => {
+            try {
+                URL.revokeObjectURL(objectUrl);
+            } catch (_) {}
+        };
+
+        image.onload = () => {
+            cleanup();
+            resolve(image);
+        };
+
+        image.onerror = () => {
+            cleanup();
+            reject(new Error('image_load_failed'));
+        };
+
+        image.src = objectUrl;
+    });
+}
+
+function canvasToJpegBlob(canvas, quality) {
+    return new Promise((resolve) => {
+        canvas.toBlob(resolve, 'image/jpeg', quality);
+    });
+}
+
+async function compressImageFileForUpload(file) {
+    if (!isCompressibleUploadImage(file)) return file;
+
+    const mimeType = String(file.type || '').trim().toLowerCase();
+    const originalSize = Number(file.size || 0);
+    const forceReencode = /image\/hei(c|f)/i.test(mimeType);
+    const image = await loadImageElementFromFile(file).catch(() => null);
+    if (!image) return file;
+
+    const sourceWidth = Number(image.naturalWidth || image.width || 0);
+    const sourceHeight = Number(image.naturalHeight || image.height || 0);
+    if (!sourceWidth || !sourceHeight) return file;
+
+    const largestSide = Math.max(sourceWidth, sourceHeight);
+    const shouldResize = largestSide > MEDIA_UPLOAD_MAX_IMAGE_EDGE;
+    const shouldReencode = forceReencode || shouldResize || originalSize >= MEDIA_UPLOAD_REENCODE_BYTES_THRESHOLD;
+    if (!shouldReencode) return file;
+
+    const scale = shouldResize ? (MEDIA_UPLOAD_MAX_IMAGE_EDGE / largestSide) : 1;
+    const targetWidth = Math.max(1, Math.round(sourceWidth * scale));
+    const targetHeight = Math.max(1, Math.round(sourceHeight * scale));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+
+    const context = canvas.getContext('2d', { alpha: false });
+    if (!context) return file;
+
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, targetWidth, targetHeight);
+    context.drawImage(image, 0, 0, targetWidth, targetHeight);
+
+    const compressedBlob = await canvasToJpegBlob(canvas, MEDIA_UPLOAD_IMAGE_QUALITY);
+    if (!compressedBlob) return file;
+
+    const shouldUseCompressed =
+        forceReencode
+        || shouldResize
+        || originalSize === 0
+        || compressedBlob.size < (originalSize * 0.97);
+
+    if (!shouldUseCompressed) return file;
+
+    return new File(
+        [compressedBlob],
+        replaceFileExtension(file.name || 'image.jpg', 'jpg'),
+        {
+            type: 'image/jpeg',
+            lastModified: Date.now()
+        }
+    );
+}
+
+async function prepareUserMediaFileForUpload(file) {
+    if (!file) throw new Error('media_file_missing');
+    if (!isCompressibleUploadImage(file)) return file;
+
+    try {
+        return await compressImageFileForUpload(file);
+    } catch (error) {
+        console.warn('[media-upload] image compression skipped:', error);
+        return file;
+    }
+}
+
+const offlineMediaSourceBindings = new WeakMap();
+
+export async function resolveOfflineMediaDisplayUrl(url) {
+    const normalized = String(url || '').trim();
+    if (!normalized) return '';
+    if (/^(blob:|data:)/i.test(normalized)) return normalized;
+
+    if (isPendingMediaUrl(normalized)) {
+        try {
+            const pendingObjectUrl = await getPendingMediaObjectUrl(normalized);
+            return pendingObjectUrl || normalized;
+        } catch (error) {
+            console.warn('[pending-media-queue] resolve display url failed:', error);
+            return normalized;
+        }
+    }
+
+    try {
+        const cachedUrl = await getCachedMediaObjectUrl(normalized);
+        return cachedUrl || normalized;
+    } catch (error) {
+        console.warn('[media-cache] resolve display url failed:', error);
+        return normalized;
+    }
+}
+
+export function applyOfflineMediaSource(element, url, type = 'photo') {
+    if (!element) return;
+    const normalized = String(url || '').trim();
+    if (!normalized) return;
+
+    const token = {};
+    offlineMediaSourceBindings.set(element, token);
+
+    const assignSource = (sourceUrl) => {
+        if (offlineMediaSourceBindings.get(element) !== token || !sourceUrl) return;
+        if (element.src !== sourceUrl) {
+            element.src = sourceUrl;
+            if (type === 'video' && typeof element.load === 'function') {
+                element.load();
+            }
+        }
+    };
+
+    assignSource(normalized);
+    void resolveOfflineMediaDisplayUrl(normalized).then(assignSource).catch(() => {});
+}
+
+export function applyOfflineMediaBackground(element, url) {
+    if (!element) return;
+    const normalized = String(url || '').trim();
+    if (!normalized) return;
+
+    const token = {};
+    offlineMediaSourceBindings.set(element, token);
+
+    const assignBackground = (sourceUrl) => {
+        if (offlineMediaSourceBindings.get(element) !== token || !sourceUrl) return;
+        element.style.backgroundImage = `url(${sourceUrl})`;
+    };
+
+    assignBackground(normalized);
+    void resolveOfflineMediaDisplayUrl(normalized).then(assignBackground).catch(() => {});
+}
+
+function isExclusiveSessionWriteBlocked() {
+    try {
+        return Boolean(window.__TRAINING_DIARY_WRITE_GUARD__?.()?.blocked);
+    } catch (_) {
+        return false;
+    }
+}
+
+function isRecoverableOfflineUploadError(error) {
+    if (getAppNetworkStatus().online === false) return true;
+    const code = String(error?.code || '').trim().toLowerCase();
+    const message = String(error?.message || error || '').trim().toLowerCase();
+    return code.includes('network')
+        || code.includes('retry-limit-exceeded')
+        || message.includes('network')
+        || message.includes('offline');
+}
+
+function normalizePendingMediaUrls(urls = []) {
+    return Array.from(new Set(
+        (Array.isArray(urls) ? urls : [])
+            .map((url) => String(url || '').trim())
+            .filter((url) => isPendingMediaUrl(url))
+    ));
+}
+
+async function attachPendingMediaTargetsByUrls(urls = [], target) {
+    const pendingUrls = normalizePendingMediaUrls(urls);
+    if (!pendingUrls.length || !target) return;
+
+    await Promise.allSettled(
+        pendingUrls.map((pendingUrl) => attachPendingMediaTarget(pendingUrl, target))
+    );
+}
+
+async function purgePendingMediaUrls(urls = []) {
+    const pendingUrls = normalizePendingMediaUrls(urls);
+    if (!pendingUrls.length) return;
+
+    await Promise.allSettled(
+        pendingUrls.map((pendingUrl) => deletePendingMediaUpload(pendingUrl))
+    );
+}
+
+export async function bindPendingMediaUrlsToTarget(urls = [], target) {
+    await attachPendingMediaTargetsByUrls(urls, target);
+}
+
+export async function discardPendingMediaDraftUrls(urls = []) {
+    await purgePendingMediaUrls(urls);
+}
+
 export async function uploadUserMediaFileWithProgress(file, folder = 'uploads', onProgress) {
     const uid = getCurrentAuthUid();
     if (!uid) throw new Error('Нужна авторизация для загрузки файла');
 
     if (isOfflineModeActive()) throw new Error('offline_media_upload_not_supported');
+    const preparedFile = await prepareUserMediaFileForUpload(file);
     const safeFolder = String(folder || 'uploads').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || 'uploads';
-    const rawName = file.name || 'file';
+    const rawName = preparedFile.name || file.name || 'file';
     const safeName = rawName.replace(/[^\w.\-+()]/g, '_').slice(0, 180);
     const fullPath = `users/${uid}/${safeFolder}/${Date.now()}_${safeName}`;
     const storageRef = ref(storage, fullPath);
-    const task = uploadBytesResumable(storageRef, file);
+    const task = uploadBytesResumable(storageRef, preparedFile, {
+        contentType: preparedFile.type || file.type || 'application/octet-stream'
+    });
 
     return new Promise((resolve, reject) => {
         task.on(
@@ -4164,10 +4806,312 @@ export async function uploadUserMediaFileWithProgress(file, folder = 'uploads', 
 }
 
 /** Удаление файла из Firebase Storage по HTTPS download URL (наш bucket). Облако Cloudinary / чужие URL пропускаются. */
+async function uploadPreparedUserMediaFileToStorage(preparedFile, originalFile, folder = 'uploads', onProgress) {
+    const uid = getCurrentAuthUid();
+    if (!uid) throw new Error('media_upload_auth_required');
+
+    const safeFolder = String(folder || 'uploads').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || 'uploads';
+    const rawName = preparedFile.name || originalFile?.name || 'file';
+    const safeName = rawName.replace(/[^\w.\-+()]/g, '_').slice(0, 180);
+    const fullPath = `users/${uid}/${safeFolder}/${Date.now()}_${safeName}`;
+    const storageRef = ref(storage, fullPath);
+    const task = uploadBytesResumable(storageRef, preparedFile, {
+        contentType: preparedFile.type || originalFile?.type || 'application/octet-stream'
+    });
+
+    return new Promise((resolve, reject) => {
+        task.on(
+            'state_changed',
+            (snapshot) => {
+                if (typeof onProgress === 'function' && snapshot.totalBytes > 0) {
+                    const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+                    onProgress(pct);
+                }
+            },
+            (err) => reject(err),
+            async () => {
+                try {
+                    const url = await getDownloadURL(task.snapshot.ref);
+                    if (typeof onProgress === 'function') onProgress(100);
+                    resolve(url);
+                } catch (error) {
+                    reject(error);
+                }
+            }
+        );
+    });
+}
+
+async function queueOfflineUserMediaFile(file, preparedFile, folder = 'uploads', onProgress) {
+    const uid = getCurrentAuthUid();
+    if (!uid) throw new Error('media_upload_auth_required');
+
+    const queued = await queuePendingMediaFile(preparedFile, {
+        ownerUid: uid,
+        folder
+    });
+
+    if (typeof onProgress === 'function') onProgress(100);
+    return queued.pendingUrl;
+}
+
+export async function uploadUserMediaFileOrQueueWithProgress(file, folder = 'uploads', onProgress) {
+    const uid = getCurrentAuthUid();
+    if (!uid) throw new Error('media_upload_auth_required');
+
+    const preparedFile = await prepareUserMediaFileForUpload(file);
+
+    if (isOfflineModeActive()) {
+        return queueOfflineUserMediaFile(file, preparedFile, folder, onProgress);
+    }
+
+    try {
+        return await uploadPreparedUserMediaFileToStorage(preparedFile, file, folder, onProgress);
+    } catch (error) {
+        if (isRecoverableOfflineUploadError(error)) {
+            return queueOfflineUserMediaFile(file, preparedFile, folder, onProgress);
+        }
+        throw error;
+    }
+}
+
+function replaceTrainingMediaPendingUrl(items = [], pendingUrl, remoteUrl) {
+    let changed = false;
+    const nextItems = (Array.isArray(items) ? items : []).map((item) => {
+        if (!item || typeof item !== 'object') return item;
+        if (String(item.url || '').trim() !== pendingUrl) return item;
+        changed = true;
+        return { ...item, url: remoteUrl };
+    });
+    return { changed, nextItems };
+}
+
+function replaceExerciseMediaPendingUrl(exercises = [], exerciseId, pendingUrl, remoteUrl) {
+    let changed = false;
+    const nextExercises = JSON.parse(JSON.stringify(Array.isArray(exercises) ? exercises : []));
+
+    nextExercises.forEach((exercise) => {
+        if (String(exercise?.id || '').trim() !== String(exerciseId || '').trim()) return;
+        const mediaItems = Array.isArray(exercise.media) ? exercise.media : [];
+        exercise.media = mediaItems.map((item) => {
+            if (!item || typeof item !== 'object') return item;
+            if (String(item.url || '').trim() !== pendingUrl) return item;
+            changed = true;
+            return { ...item, url: remoteUrl };
+        });
+    });
+
+    return { changed, nextExercises };
+}
+
+function replaceMealPhotoPendingUrl(items = [], pendingUrl, remoteUrl) {
+    let changed = false;
+    const nextItems = (Array.isArray(items) ? items : []).map((item) => {
+        if (!item || typeof item !== 'object') return item;
+        if (item?.isMealPhoto !== true) return item;
+        if (String(item.photoUrl || '').trim() !== pendingUrl) return item;
+        changed = true;
+        return { ...item, photoUrl: remoteUrl };
+    });
+    return { changed, nextItems };
+}
+
+function replaceReportPhotoPendingUrl(items = [], pendingUrl, remoteUrl) {
+    let changed = false;
+    const nextItems = (Array.isArray(items) ? items : []).map((item) => {
+        if (!item || typeof item !== 'object') return item;
+        if (String(item.url || '').trim() !== pendingUrl) return item;
+        changed = true;
+        return { ...item, url: remoteUrl };
+    });
+    return { changed, nextItems };
+}
+
+async function buildPendingMediaTargetUpdate(target, pendingUrl, remoteUrl) {
+    const docPath = String(target?.docPath || '').trim();
+    if (!docPath) return { ok: false, skipped: 'missing-doc-path' };
+
+    const refToUpdate = doc(db, docPath);
+    const snap = await getDoc(refToUpdate);
+    if (!snap.exists()) {
+        return { ok: false, skipped: 'missing-doc' };
+    }
+
+    const data = snap.data() || {};
+
+    switch (String(target?.type || '').trim()) {
+        case 'program-training-media': {
+            const { changed, nextItems } = replaceTrainingMediaPendingUrl(data.trainingMedia, pendingUrl, remoteUrl);
+            if (!changed) return { ok: false, skipped: 'missing-placeholder' };
+            return { ok: true, ref: refToUpdate, patch: { trainingMedia: nextItems } };
+        }
+        case 'program-exercise-media': {
+            const { changed, nextExercises } = replaceExerciseMediaPendingUrl(data.exercises, target.exerciseId, pendingUrl, remoteUrl);
+            if (!changed) return { ok: false, skipped: 'missing-placeholder' };
+            return { ok: true, ref: refToUpdate, patch: { exercises: nextExercises } };
+        }
+        case 'meal-photo': {
+            const mealId = String(target?.mealId || '').trim();
+            if (!mealId) return { ok: false, skipped: 'missing-meal-id' };
+            const { changed, nextItems } = replaceMealPhotoPendingUrl(data[mealId], pendingUrl, remoteUrl);
+            if (!changed) return { ok: false, skipped: 'missing-placeholder' };
+            return { ok: true, ref: refToUpdate, patch: { [mealId]: nextItems } };
+        }
+        case 'report-photo': {
+            const { changed, nextItems } = replaceReportPhotoPendingUrl(data.photos, pendingUrl, remoteUrl);
+            if (!changed) return { ok: false, skipped: 'missing-placeholder' };
+            return { ok: true, ref: refToUpdate, patch: { photos: nextItems } };
+        }
+        default:
+            return { ok: false, skipped: 'unsupported-target-type' };
+    }
+}
+
+async function applyUploadedPendingMediaToTarget(record, remoteUrl) {
+    const pendingUrl = String(record?.pendingUrl || '').trim();
+    if (!pendingUrl || !record?.target) return { ok: false, skipped: 'missing-target' };
+
+    const updatePlan = await buildPendingMediaTargetUpdate(record.target, pendingUrl, remoteUrl);
+    if (!updatePlan.ok) {
+        return updatePlan;
+    }
+
+    await updateDoc(updatePlan.ref, updatePlan.patch);
+    return { ok: true };
+}
+
+async function processPendingMediaUploadQueue(options = {}) {
+    if (isOfflineModeActive()) {
+        return { ok: false, skipped: 'offline' };
+    }
+
+    if (isExclusiveSessionWriteBlocked()) {
+        return { ok: false, skipped: 'read-only-session' };
+    }
+
+    const syncSnapshot = getAppSyncStatus();
+    if (options.force !== true && syncSnapshot.hasPendingWrites) {
+        return { ok: false, skipped: 'waiting-firestore-sync' };
+    }
+
+    const uid = getCurrentAuthUid();
+    if (!uid) return { ok: false, skipped: 'missing-user' };
+
+    const pendingItems = await listPendingMediaUploads({
+        ownerUid: uid,
+        status: 'pending',
+        requireTarget: true
+    });
+    if (!pendingItems.length) {
+        return { ok: true, processed: 0, uploaded: 0, skipped: 0, failed: 0 };
+    }
+
+    let uploaded = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (const record of pendingItems) {
+        const pendingUrl = String(record?.pendingUrl || '').trim();
+        if (!pendingUrl || !record?.fileBlob) {
+            await deletePendingMediaUpload(pendingUrl);
+            skipped += 1;
+            continue;
+        }
+
+        const existingTarget = await buildPendingMediaTargetUpdate(record.target, pendingUrl, pendingUrl);
+        if (!existingTarget.ok) {
+            await deletePendingMediaUpload(pendingUrl);
+            skipped += 1;
+            continue;
+        }
+
+        await updatePendingMediaState(pendingUrl, {
+            status: 'uploading',
+            lastAttemptAt: Date.now(),
+            lastError: ''
+        });
+
+        try {
+            const uploadFile = new File(
+                [record.fileBlob],
+                record.fileName || 'image.jpg',
+                {
+                    type: record.mimeType || record.fileBlob.type || 'application/octet-stream',
+                    lastModified: Number(record.lastModified || Date.now()) || Date.now()
+                }
+            );
+            const remoteUrl = await uploadPreparedUserMediaFileToStorage(uploadFile, uploadFile, record.folder || 'uploads');
+            const applyResult = await applyUploadedPendingMediaToTarget(record, remoteUrl);
+
+            if (!applyResult.ok) {
+                await deleteUserFirebaseStorageFileByDownloadUrl(remoteUrl);
+                await deletePendingMediaUpload(pendingUrl);
+                skipped += 1;
+                continue;
+            }
+
+            await preloadOfflineMediaUrls([remoteUrl], { concurrency: 1 });
+            await deletePendingMediaUpload(pendingUrl);
+            uploaded += 1;
+        } catch (error) {
+            console.error('[pending-media-queue] upload failed:', error);
+            failed += 1;
+            await updatePendingMediaState(pendingUrl, {
+                status: 'pending',
+                lastError: String(error?.message || error || '').trim(),
+                lastAttemptAt: Date.now()
+            });
+        }
+    }
+
+    if (uploaded > 0) {
+        showToast(uploaded === 1
+            ? '1 фото загружено из офлайн-очереди'
+            : `${uploaded} фото загружено из офлайн-очереди`);
+    }
+
+    return {
+        ok: failed === 0,
+        processed: pendingItems.length,
+        uploaded,
+        skipped,
+        failed
+    };
+}
+
+function schedulePendingMediaUploadFlush(options = {}) {
+    if (pendingMediaUploadFlushPromise) {
+        return pendingMediaUploadFlushPromise;
+    }
+
+    const run = Promise.resolve()
+        .then(() => processPendingMediaUploadQueue(options))
+        .catch((error) => {
+            console.warn('[pending-media-queue] flush failed:', error);
+            return { ok: false, skipped: 'error', error };
+        });
+
+    pendingMediaUploadFlushPromise = run.finally(() => {
+        if (pendingMediaUploadFlushPromise === run) {
+            pendingMediaUploadFlushPromise = null;
+        }
+    });
+
+    return pendingMediaUploadFlushPromise;
+}
+
+export function flushPendingMediaUploadQueue(options = {}) {
+    return schedulePendingMediaUploadFlush(options);
+}
+
 export async function deleteUserFirebaseStorageFileByDownloadUrl(downloadUrl) {
     if (!downloadUrl || typeof downloadUrl !== 'string') return;
     const u = downloadUrl.trim();
     if (!u) return;
+    if (isPendingMediaUrl(u)) {
+        await deletePendingMediaUpload(u);
+        return;
+    }
     const bucket = firebaseConfig.storageBucket;
     if (!bucket) return;
     const isFirebase =
@@ -4192,9 +5136,10 @@ export async function uploadFileToCloudinaryWithProgress(file, onProgress) {
     throw new Error('offline_media_upload_not_supported');
   }
 
+  const preparedFile = await prepareUserMediaFileForUpload(file);
   const url = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/upload`;
   const formData = new FormData();
-  formData.append('file', file);
+  formData.append('file', preparedFile);
   formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
 
   return new Promise((resolve, reject) => {
@@ -4286,7 +5231,7 @@ function renderMediaPreview(container, media) {
         // === Если фото ===
         if (file.type === 'photo') {
             const img = createElement('img');
-            img.src = file.url;
+            applyOfflineMediaSource(img, file.url, 'photo');
             img.className = 'media-thumb';
             img.style.width = '60px';
             img.style.height = '60px';
@@ -4300,7 +5245,7 @@ function renderMediaPreview(container, media) {
         // === Если видео — показываем миниплеер ===
         if (file.type === 'video') {
             const video = createElement('video');
-            video.src = file.url;
+            applyOfflineMediaSource(video, file.url, 'video');
             video.className = 'media-thumb';
             video.muted = true;
             video.playsInline = true; // чтобы не развернулось в полный экран на iPhone
@@ -4343,12 +5288,19 @@ async function saveTrainingNote(programId, note, media = []) {
 
     program.trainingNote = note;
     program.trainingMedia = media;
+    const programsCollection = getUserProgramsCollection();
+    const programDocPath = programsCollection ? doc(programsCollection, programId).path : '';
 
     try {
-        await updateProgramDocument(getUserProgramsCollection(), programId, {
+        await updateProgramDocument(programsCollection, programId, {
             trainingNote: note,
             trainingMedia: media
         });
+        await attachPendingMediaTargetsByUrls(media.map((item) => item?.url), {
+            type: 'program-training-media',
+            docPath: programDocPath
+        });
+        void schedulePendingMediaUploadFlush();
         showToast('Комментарий к тренировке сохранён!');
     } catch (err) {
         console.error(err);
@@ -4369,28 +5321,35 @@ async function saveExerciseNote(programId, exerciseId, note, media = []) {
 
     exercise.note = note;
 
-    // ✅ сохраняем медиа (если передается)
     if (media) {
-        exercise.media = media.map(m => ({
-            url: m.url,
-            type: m.type || (m.url.endsWith('.mp4') ? 'video' : 'photo'),
+        exercise.media = media.map((item) => ({
+            url: item.url,
+            type: item.type || (item.url.endsWith('.mp4') ? 'video' : 'photo'),
             addedAt: Date.now()
         }));
     }
 
-    // ✅ глубокая копия чтобы Firestore принял
     const cleanedExercises = JSON.parse(JSON.stringify(program.exercises));
+    const programsCollection = getUserProgramsCollection();
+    const programDocPath = programsCollection ? doc(programsCollection, programId).path : '';
 
     try {
-        queueProgramExercisesSave(programId, cleanedExercises, {
-            errorMessage: 'Не удалось сохранить комментарий'
+        await updateProgramDocument(programsCollection, programId, {
+            exercises: cleanedExercises
         });
+        await attachPendingMediaTargetsByUrls(media.map((item) => item?.url), {
+            type: 'program-exercise-media',
+            docPath: programDocPath,
+            exerciseId
+        });
+        void schedulePendingMediaUploadFlush();
         showToast('Комментарий сохранён');
     } catch (err) {
         console.error(err);
         showToast('Ошибка сохранения', 'error');
     }
 }
+
 
 
 // ===============================
@@ -6092,7 +7051,7 @@ exerciseHeader.addEventListener('click', () => {
             if (!hasNote) {
                 editNoteBtn = createElement('button', 'btn edit-note-btn');
                 editNoteBtn.innerHTML = `
-<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" id="РРєРѕРЅРєР° 7" viewBox="0 0 17 12">
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" id="Иконка 7" viewBox="0 0 17 12">
   <g>
     <path fill="none" fill-rule="evenodd" d="M6.5,12.39 L6.5,12.39 L6.44,12.4 L6.43,12.4 L6.43,12.4 L6.38,12.39 C6.38,12.37 6.38,12.39 6.37,12.39 L6.37,12.39 L6.36,12.64 L6.37,12.65 L6.37,12.65 L6.43,12.7 L6.44,12.7 L6.44,12.7 L6.51,12.65 L6.51,12.65 L6.52,12.64 L6.51,12.39 C6.51,12.39 6.5,12.39 6.5,12.39 M6.65,12.31 L6.65,12.31 L6.53,12.37 L6.53,12.37 L6.53,12.39 L6.53,12.62 L6.54,12.64 L6.54,12.64 L6.66,12.69 C6.68,12.7 6.68,12.7 6.69,12.69 L6.69,12.68 L6.66,12.32 C6.66,12.32 6.66,12.31 6.65,12.31 M6.23,12.31 C6.23,12.31 6.22,12.31 6.22,12.32 L6.22,12.32 L6.19,12.68 C6.19,12.69 6.2,12.69 6.2,12.7 L6.22,12.69 L6.34,12.64 L6.35,12.64 L6.35,12.62 L6.35,12.39 L6.35,12.37 L6.35,12.37 Z"/>
   </g>
@@ -6368,13 +7327,13 @@ exerciseHeader.addEventListener('click', () => {
                 if (exercise.media && exercise.media.length > 0) {
                     const mediaContainer = createElement('div', 'note-media-preview');
                     mediaContainer.style.display = 'flex';
-                    mediaContainer.style.gап = '8px';
+                    mediaContainer.style.gap = '8px';
                     mediaContainer.style.marginTop = '10px';
 
                     exercise.media.forEach(file => {
                         if (file.type === 'photo') {
                             const img = createElement('img');
-                            img.src = file.url;
+                            applyOfflineMediaSource(img, file.url, 'photo');
                             img.className = 'note-media-image';
                             img.style.width = '40px';
                             img.style.height = '40px';
@@ -6388,7 +7347,7 @@ exerciseHeader.addEventListener('click', () => {
                         }
                         if (file.type === 'video') {
                             const videoThumb = createElement('video');
-                            videoThumb.src = file.url;
+                            applyOfflineMediaSource(videoThumb, file.url, 'video');
                             videoThumb.className = 'note-media-video-thumb';
                             videoThumb.muted = true;
                             videoThumb.playsInline = true;
@@ -6480,7 +7439,7 @@ const commentButtonGroup = createElement('div', 'comment-btn-group');
 // --- иконка (SVG внутри кнопки) ---
 const commentBtn = createElement('button', `btn comment-toggle-btn ${hasTrainingNote ? 'has-note' : ''}`);
 commentBtn.innerHTML = `
-<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" id="РРєРѕРЅРєР° 7" viewBox="0 0 17 12">
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" id="Иконка 7" viewBox="0 0 17 12">
   <g>
     <path fill="none" fill-rule="evenodd" d="M6.5,12.39 L6.5,12.39 L6.44,12.4 L6.43,12.4 L6.43,12.4 L6.38,12.39 C6.38,12.37 6.38,12.39 6.37,12.39 L6.37,12.39 L6.36,12.64 L6.37,12.65 L6.37,12.65 L6.43,12.7 L6.44,12.7 L6.44,12.7 L6.51,12.65 L6.51,12.65 L6.52,12.64 L6.51,12.39 C6.51,12.39 6.5,12.39 6.5,12.39 M6.65,12.31 L6.65,12.31 L6.53,12.37 L6.53,12.37 L6.53,12.39 L6.53,12.62 L6.54,12.64 L6.54,12.64 L6.66,12.69 C6.68,12.7 6.68,12.7 6.69,12.69 L6.69,12.68 L6.66,12.32 C6.66,12.32 6.66,12.31 6.65,12.31 M6.23,12.31 C6.23,12.31 6.22,12.31 6.22,12.32 L6.22,12.32 L6.19,12.68 C6.19,12.69 6.2,12.69 6.2,12.7 L6.22,12.69 L6.34,12.64 L6.35,12.64 L6.35,12.62 L6.35,12.39 L6.35,12.37 L6.35,12.37 Z"/>
   </g>
@@ -6545,7 +7504,7 @@ if (hasTrainingNote) {
     selectedProgram.trainingMedia.forEach(file => {
       if (file.type === 'photo') {
         const img = createElement('img');
-        img.src = file.url;
+        applyOfflineMediaSource(img, file.url, 'photo');
         Object.assign(img.style, {
           width: '30px',
           height: '30px',
@@ -6568,7 +7527,7 @@ if (hasTrainingNote) {
           borderRadius: '5px',
           cursor: 'pointer',
         });
-        videoThumb.onclick = () => window.open(file.url, '_blank');
+        videoThumb.onclick = () => openMediaFullScreen(file.url, 'video');
         mediaContainer.append(videoThumb);
       }
     });
@@ -6593,7 +7552,7 @@ contentContainer.append(commentWrapper);
             document.querySelectorAll(".set-row.done").forEach(row => {
                 row.classList.remove("done");
             });
-            // 🔥🔥🔥 END
+            // ?????? END
 
 
       const exercisesToSave = (selectedProgram.exercises || [])
@@ -6620,7 +7579,7 @@ contentContainer.append(commentWrapper);
         const journalCollection = getUserJournalCollection();
         const todayStr = new Date().toLocaleDateString('ru-RU');
         await replacePlannedTrainingWithCompleted(db, journalCollection, todayStr, trainingRecord);
-        showToast('РўСЂРµРЅРёСЂРѕРІРєР° СЃРѕС…СЂР°РЅРµРЅР° РІ РґРЅРµРІРЅРёРєРµ!');
+        showToast('Тренировка сохранена в дневнике!');
         const legacyOrigin = state.programDetailsOrigin;
         state.programDetailsOrigin = null;
         state.currentPage = legacyOrigin === 'journal' ? 'journal' : 'programsInCycle';
@@ -6698,7 +7657,7 @@ export function openMediaFullScreen(url, type = 'photo') {
     // Если фото
     if (type === 'photo') {
         const img = document.createElement('img');
-        img.src = url;
+        applyOfflineMediaSource(img, url, 'photo');
         img.style.maxWidth = '90%';
         img.style.maxHeight = '90%';
         img.style.borderRadius = '10px';
@@ -6709,7 +7668,7 @@ export function openMediaFullScreen(url, type = 'photo') {
     // Если видео
     if (type === 'video') {
         const video = document.createElement('video');
-        video.src = url;
+        applyOfflineMediaSource(video, url, 'video');
         video.controls = true;
         video.autoplay = true;
         video.style.maxWidth = '90%';
@@ -7691,11 +8650,11 @@ const filterWrapper = createElement('div', 'journal-filters');
 
 // --- 1. СТРОКА ЦИКЛА (клик → выбор цикла) ---
 const cycleLabelBlock = createElement('div', 'cycle-label-block');
-const cycleLabelIcon = createElement('span', 'cycle-label-icon', '📋');
+const cycleLabelIcon = createElement('span', 'active-filter-label', 'Цикл:');
 const cycleLabelText = createElement('span', 'cycle-label-text',
     state.selectedJournalCategory || 'Цикл не выбран'
 );
-const cycleArrow = createElement('span', 'cycle-label-arrow', '▾');
+const cycleArrow = createCycleLabelArrow();
 cycleLabelBlock.append(cycleLabelIcon, cycleLabelText, cycleArrow);
 
 const allCycleNames = [...new Set(
@@ -7751,7 +8710,7 @@ if (state.selectedJournalCategory) {
     const activeFilterValue = createElement('span', 'active-filter-value' + (!state.selectedJournalProgram ? ' all' : ''),
         state.selectedJournalProgram || 'Все'
     );
-    const filterArrow = createElement('span', 'cycle-label-arrow', '▾');
+    const filterArrow = createCycleLabelArrow();
     activeFilterRow.append(activeFilterLabel, activeFilterValue, filterArrow);
 
     if (programs.length > 0) {
@@ -7813,6 +8772,7 @@ root.append(contentContainer);
 // 📅 ГЛАВНАЯ ФУНКЦИЯ — РЕНДЕР КАЛЕНДАРЯ
 // ------------------------------------------------
 let journalCalendarSuppressTapUntil = 0;
+let detachTrainingDropdownOutsideClose = null;
 
 function getJournalCalendarMonthDate() {
     if (state.calendarYear === undefined) {
@@ -7850,6 +8810,45 @@ function suppressJournalCalendarCellTap() {
 
 function shouldSuppressJournalCalendarCellTap() {
     return Date.now() < journalCalendarSuppressTapUntil;
+}
+
+function removeTrainingDropdown({ suppressTap = false } = {}) {
+    const dropdown = document.querySelector('.training-dropdown');
+    if (dropdown) dropdown.remove();
+
+    if (typeof detachTrainingDropdownOutsideClose === 'function') {
+        detachTrainingDropdownOutsideClose();
+        detachTrainingDropdownOutsideClose = null;
+    }
+
+    if (suppressTap) suppressJournalCalendarCellTap();
+}
+
+function bindTrainingDropdownOutsideClose(dropdown) {
+    if (!dropdown) return;
+
+    if (typeof detachTrainingDropdownOutsideClose === 'function') {
+        detachTrainingDropdownOutsideClose();
+        detachTrainingDropdownOutsideClose = null;
+    }
+
+    const handleOutsidePointerDown = (event) => {
+        if (!dropdown.isConnected) {
+            if (typeof detachTrainingDropdownOutsideClose === 'function') {
+                detachTrainingDropdownOutsideClose();
+                detachTrainingDropdownOutsideClose = null;
+            }
+            return;
+        }
+
+        if (dropdown.contains(event.target)) return;
+        removeTrainingDropdown({ suppressTap: true });
+    };
+
+    document.addEventListener('pointerdown', handleOutsidePointerDown, true);
+    detachTrainingDropdownOutsideClose = () => {
+        document.removeEventListener('pointerdown', handleOutsidePointerDown, true);
+    };
 }
 
 function syncJournalCalendarLayout(container, viewport, track) {
@@ -8058,11 +9057,6 @@ function renderCalendar(container, journalRecords) {
         window.addEventListener('orientationchange', resync, { passive: true });
     }
 
-    // ✅ Закрытие меню по клику вне
-    document.addEventListener('click', () => {
-        const menu = document.querySelector('.training-dropdown');
-        if (menu) menu.remove();
-    }, { once: true });
 }
 
 function renderJournalCalendarMonthPage(page, monthDate, journalRecords) {
@@ -8216,9 +9210,7 @@ function renderJournalCalendarMonthPage(page, monthDate, journalRecords) {
 // ------------------------------------------------
 
 function openPlanTrainingDropdown(cell, dateStr) {
-    // Убираем старое меню
-    const old = document.querySelector('.training-dropdown');
-    if (old) old.remove();
+    removeTrainingDropdown();
 
     // 1️⃣ Определяем выбранный цикл (по названию из select-display)
     let currentCycleName = state.selectedJournalCategory;
@@ -8239,10 +9231,21 @@ function openPlanTrainingDropdown(cell, dateStr) {
 
     // ✅ Тянем программы из Firestore для этого цикла:
     getDocs(getUserProgramsCollection()).then(programsSnap => {
+        const stateProgramOrder = new Map(state.programs.map((program, index) => [program.id, index]));
         const programList = programsSnap.docs.map(doc => ({
             id: doc.id,
             ...doc.data()
-        }));
+        })).sort((a, b) => {
+            const aOrder = typeof a.order === 'number' && Number.isFinite(a.order) ? a.order : Number.POSITIVE_INFINITY;
+            const bOrder = typeof b.order === 'number' && Number.isFinite(b.order) ? b.order : Number.POSITIVE_INFINITY;
+            if (aOrder !== bOrder) return aOrder - bOrder;
+
+            const aStateOrder = stateProgramOrder.get(a.id) ?? Number.POSITIVE_INFINITY;
+            const bStateOrder = stateProgramOrder.get(b.id) ?? Number.POSITIVE_INFINITY;
+            if (aStateOrder !== bStateOrder) return aStateOrder - bStateOrder;
+
+            return String(a.name || '').localeCompare(String(b.name || ''), 'ru');
+        });
 
         if (programList.length === 0) {
             showToast('В этом цикле нет программ. Добавьте их в разделе "Программы".');
@@ -8265,25 +9268,16 @@ function openPlanTrainingDropdown(cell, dateStr) {
                     isPlanned: true,
                     exercises: []
                 });
-                dropdown.remove();
+                removeTrainingDropdown();
                 showToast('Тренировка запланирована!');
             });
             dropdown.append(li);
         });
 
         document.body.append(dropdown);
+        bindTrainingDropdownOutsideClose(dropdown);
          // ✅ 4. Умное позиционирование (вниз/вверх если не помещается)
             smartPositionDropdown(dropdown, cell);
-
-            // ✅ 5. Закрытие при клике вне меню
-            setTimeout(() => {
-                document.addEventListener('click', function handler(e) {
-                    if (!dropdown.contains(e.target)) {
-                        dropdown.remove();
-                        document.removeEventListener('click', handler);
-                    }
-                });
-            }, 10);
 
         const rect = cell.getBoundingClientRect();
         dropdown.style.left = rect.left + 'px';
@@ -8317,9 +9311,7 @@ function openPlanTrainingDropdown(cell, dateStr) {
 // ------------------------------------------------
 
 function openTrainingDropdown(cell, dayRecords) {
-    // Удаляем старое меню
-    const old = document.querySelector('.training-dropdown');
-    if (old) old.remove();
+    removeTrainingDropdown();
 
     const dropdown = document.createElement('ul');
     dropdown.className = 'training-dropdown';
@@ -8383,7 +9375,7 @@ function openTrainingDropdown(cell, dayRecords) {
                     await deleteJournalRecord(getUserJournalCollection(), rec.id);  // Удаление записи из дневника
                 }
                 showToast('План удалён');
-                dropdown.remove();
+                removeTrainingDropdown();
                 render(); // Обновляем страницу после удаления
             }
         });
@@ -8392,6 +9384,7 @@ function openTrainingDropdown(cell, dayRecords) {
 
     // Показываем в DOM
     document.body.append(dropdown);
+    bindTrainingDropdownOutsideClose(dropdown);
 
     // Позиция
     const rect = cell.getBoundingClientRect();
@@ -9200,12 +10193,12 @@ editBtn.addEventListener('click', () => {
             record.trainingMedia.forEach(file => {
                 if (file.type === 'photo') {
                     const img = createElement('img', 'media-thumb');
-                    img.src = file.url;
+                    applyOfflineMediaSource(img, file.url, 'photo');
                     img.onclick = () => openPhotoFullScreen(file.url);
                     mediaWrap.append(img);
                 } else {
                     const video = createElement('video', 'media-thumb');
-                    video.src = file.url;
+                    applyOfflineMediaSource(video, file.url, 'video');
                     video.controls = true;
                     mediaWrap.append(video);
                 }
@@ -9301,12 +10294,12 @@ editBtn.addEventListener('click', () => {
             exercise.media.forEach(file => {
                 if (file.type === 'photo') {
                     const img = createElement('img', 'media-thumb');
-                    img.src = file.url;
+                    applyOfflineMediaSource(img, file.url, 'photo');
                     img.onclick = () => openPhotoFullScreen(file.url);
                     mediaWrap.append(img);
                 } else {
                     const video = createElement('video', 'media-thumb');
-                    video.src = file.url;
+                    applyOfflineMediaSource(video, file.url, 'video');
                     video.controls = true;
                     mediaWrap.append(video);
                 }
@@ -9450,7 +10443,7 @@ const openPhotoFullScreen = (url, name = '') => {
     `;
 
     const fullImg = createElement('img');
-    fullImg.src = url;
+    applyOfflineMediaSource(fullImg, url, 'photo');
     fullImg.alt = name;
     fullImg.style.maxWidth = '90%';
     fullImg.style.maxHeight = '90%';
@@ -9474,7 +10467,7 @@ function openFullScreenPhoto(url, name = '') {
     `;
 
     const fullImg = createElement('img');
-    fullImg.src = url;
+    applyOfflineMediaSource(fullImg, url, 'photo');
     fullImg.alt = name;
     fullImg.style.maxWidth = '90%';
     fullImg.style.maxHeight = '90%';
@@ -9876,12 +10869,12 @@ export function renderTopBar() {
                 console.log('currentPage:', state.currentPage);
 
                 if (state.currentPage === 'supplements') {
-                    console.log('👉 supplements');
+                    console.log('?? supplements');
                     openPdfDateModal(cycle);
                 }
 
                 if (state.currentPage === 'meal') {
-                    console.log('👉 meal');
+                    console.log('?? meal');
                     openMealsPdfModal(cycle);
                 }
             };
@@ -9895,6 +10888,10 @@ export function renderTopBar() {
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Round-graph-broken SVG Icon</title><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"><path d="M12 2c5.523 0 10 4.477 10 10c0 1.821-.487 3.53-1.338 5M5 4.859A9.97 9.97 0 0 0 2 12c0 5.523 4.477 10 10 10c1.821 0 3.53-.487 5-1.338"/><path d="M5 12c0 1.487.464 2.866 1.255 4M12 5a7 7 0 1 1-3 13.326"/><path d="M12 16a4 4 0 0 0 0-8"/></g></svg>
                 `;
                 summaryBtn.onclick = () => {
+                    if (isOfflineModeActive()) {
+                        showToast('Сводка активности доступна только онлайн. Подключитесь к интернету и повторите.');
+                        return;
+                    }
                     const now = new Date();
                     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
                     state.mealSummarySelectedDate = todayStr;
@@ -10079,7 +11076,7 @@ function openMenuModal() {
     logoutBtn.title = 'Выйти из аккаунта';
     logoutBtn.onclick = async () => {
         overlay.remove();
-        await signOut(auth);
+        await performExplicitSignOut('Вы вышли.'); return;
         showToast("Вы вышли.");
     };
 
@@ -10958,6 +11955,10 @@ runBootstrapStep('ensureNativeKeyboardBottomNavBinding', ensureNativeKeyboardBot
 runBootstrapStep('scheduleLocalBuildTrialCountdownTick', scheduleLocalBuildTrialCountdownTick);
 syncStatusUnsubscribe = subscribeSyncStatus(() => {
     applyAppConnectivityState();
+    const syncSnapshot = getAppSyncStatus();
+    if (getAppNetworkStatus().online !== false && !syncSnapshot.hasPendingWrites) {
+        void schedulePendingMediaUploadFlush();
+    }
 });
 networkStatusUnsubscribe = subscribeNetworkStatus(() => {
     applyAppConnectivityState();
@@ -10965,6 +11966,8 @@ networkStatusUnsubscribe = subscribeNetworkStatus(() => {
     const isOnline = snapshot.online !== false;
     if (isOnline && !exclusiveSessionWasOnline) {
         maybeClaimExclusiveSessionAfterReconnect();
+        maybePreloadSelectedCycleAfterReconnect();
+        void schedulePendingMediaUploadFlush({ force: true });
     }
     exclusiveSessionWasOnline = isOnline;
 });
@@ -11001,8 +12004,7 @@ export function render() {
     renderTopBar();
     syncTopBarSyncStatusIndicator();
 
-    const openDropdown = document.querySelector('.training-dropdown');
-    if (openDropdown) openDropdown.remove();
+    removeTrainingDropdown();
 
     toggleAppVisibility(!!userId);
 
@@ -11161,13 +12163,68 @@ function updateAuthKeyboardHints() {
     });
 }
 
+async function submitEmailPasswordLogin(email, password) {
+    pendingExclusiveSessionLoginAttempt = {
+        mode: 'email-password-login',
+        startedAt: Date.now()
+    };
+
+    try {
+        await signInWithEmailAndPassword(auth, email, password); showToast('Вход выполнен успешно!'); return;
+        showToast('Вход выполнен успешно!');
+    } catch (error) {
+        if (error?.code === 'exclusive_session_takeover_cancelled' || error?.message === 'exclusive_session_takeover_cancelled') {
+            return;
+        }
+        throw error;
+    } finally {
+        pendingExclusiveSessionLoginAttempt = null;
+    }
+}
+
+async function submitRegistrationFlow(email, password, messages = {}) {
+    const firstName = document.getElementById('auth-first-name')?.value?.trim() || '';
+    const lastName = document.getElementById('auth-last-name')?.value?.trim() || '';
+    const patronymic = document.getElementById('auth-patronymic')?.value?.trim() || '';
+    const birthDate = document.getElementById('auth-birth-date')?.value || '';
+
+    if (!firstName || !lastName || !patronymic || !birthDate) {
+        showToast(messages.fillProfile || 'Заполните имя, фамилию, отчество и дату рождения.');
+        return;
+    }
+    if (!email || !password) {
+        showToast(messages.missingCredentials || 'Укажите email и пароль.');
+        return;
+    }
+
+    const cred = await createUserWithEmailAndPassword(auth, email, password);
+    await ensureExclusiveSessionClaim(cred.user, {
+        reason: 'register',
+        forceTokenRefresh: true,
+        ignoreOfflineGuard: true
+    });
+    if (auth.currentUser?.uid !== cred.user.uid) {
+        return;
+    }
+
+    const code = await createUserProfileAndAssignCode(cred.user.uid, {
+        firstName,
+        lastName,
+        patronymic,
+        birthDate
+    });
+    await refreshUserProfileFromServer();
+    render();
+    showPostRegistrationModal(code);
+}
+
 async function handleAuthSubmit() {
     const email = document.getElementById('auth-email').value.trim();
     const password = document.getElementById('auth-password').value;
     try {
         if (isLoginMode) {
-            await signInWithEmailAndPassword(auth, email, password);
-            showToast('Р’С…РѕРґ РІС‹РїРѕР»РЅРµРЅ СѓСЃРїРµС€РЅРѕ!');
+            await submitEmailPasswordLogin(email, password); return;
+            showToast('Вход выполнен успешно!');
         } else {
             const firstName = document.getElementById('auth-first-name')?.value?.trim() || '';
             const lastName = document.getElementById('auth-last-name')?.value?.trim() || '';
@@ -11175,11 +12232,11 @@ async function handleAuthSubmit() {
             const birthDate = document.getElementById('auth-birth-date')?.value || '';
 
             if (!firstName || !lastName || !patronymic || !birthDate) {
-                showToast('Р—Р°РїРѕР»РЅРёС‚Рµ РёРјСЏ, С„Р°РјРёР»РёСЋ, РѕС‚С‡РµСЃС‚РІРѕ Рё РґР°С‚Сѓ СЂРѕР¶РґРµРЅРёСЏ.');
+                showToast('Заполните имя, фамилию, отчество и дату рождения.');
                 return;
             }
             if (!email || !password) {
-                showToast('РЈРєР°Р¶РёС‚Рµ email Рё РїР°СЂРѕР»СЊ.');
+                showToast('Укажите email и пароль.');
                 return;
             }
 
@@ -11203,8 +12260,8 @@ async function handleAuthSubmit() {
             showPostRegistrationModal(code);
         }
     } catch (error) {
-        console.error("РћС€РёР±РєР° Р°СѓС‚РµРЅС‚РёС„РёРєР°С†РёРё:", error);
-        showToast('РћС€РёР±РєР°: ' + (error.message.includes('auth/invalid-credential') ? 'РќРµРІРµСЂРЅС‹Р№ email РёР»Рё РїР°СЂРѕР»СЊ.' : error.message));
+        console.error("Ошибка аутентификации:", error);
+        showToast('Ошибка: ' + (error.message.includes('auth/invalid-credential') ? 'Неверный email или пароль.' : error.message));
     }
 }
 
@@ -11227,7 +12284,7 @@ if (authToggleBtn && authLoginBtn) {
         const password = document.getElementById('auth-password').value;
         try {
             if (isLoginMode) {
-                await signInWithEmailAndPassword(auth, email, password);
+                await submitEmailPasswordLogin(email, password); return;
                 showToast('Вход выполнен успешно!');
             } else {
                 const firstName = document.getElementById('auth-first-name')?.value?.trim() || '';
@@ -11338,7 +12395,7 @@ document.getElementById('select-personal-mode')?.addEventListener('click', () =>
 // 🔥 ВЫХОД (Logout)
 document.getElementById('mode-logout-btn')?.addEventListener('click', async () => {
     try {
-        await signOut(auth);
+        await performExplicitSignOut(); state.currentMode = null; state.selectedClientId = null; state.selectedCycleId = null; state.selectedJournalCategory = null; state.selectedJournalProgram = null; return;
         state.currentMode = null;
         state.selectedClientId = null;
         state.selectedCycleId = null;
@@ -11387,8 +12444,14 @@ onAuthStateChanged(auth, async (user) => {
             console.warn('[session] bootstrap claim failed:', error);
             return null;
         });
-        if (sessionClaim?.error === 'stale_session' || sessionClaim?.reauthenticated || auth.currentUser?.uid !== user.uid) {
+        if (sessionClaim?.error === 'stale_session' || auth.currentUser?.uid !== user.uid) {
             return;
+        }
+        if (sessionClaim?.reauthenticated) {
+            await ensureExclusiveSessionMeta(auth.currentUser || user).catch((error) => {
+                console.warn('[session] post-reauth token bootstrap failed:', error);
+                return null;
+            });
         }
 
         try {
@@ -11433,3 +12496,4 @@ onAuthStateChanged(auth, async (user) => {
         }, 300); // можно увеличить если захочешь плавности
     }
 });
+

@@ -12,9 +12,12 @@ import {
     openConfirmModal,
     openDateModal,
     isOfflineModeActive,
-    isOfflineMediaUploadUnsupportedError,
-    getOfflineMediaUploadUnavailableMessage,
-    uploadUserMediaFileWithProgress,
+    applyOfflineMediaBackground,
+    applyOfflineMediaSource,
+    bindPendingMediaUrlsToTarget,
+    discardPendingMediaDraftUrls,
+    flushPendingMediaUploadQueue,
+    uploadUserMediaFileOrQueueWithProgress,
     deleteUserFirebaseStorageFileByDownloadUrl
 } from '../script.js';
 
@@ -83,7 +86,7 @@ export function renderReportsPage() {
             reportItem.style.flexDirection = 'column';
             reportItem.style.gap = '10px';
 
-            reportItem.appendChild(createElement('div', 'report-date', `📅 ${report.date}`));
+            reportItem.appendChild(createElement('div', 'report-date', `?? ${report.date}`));
 
             if (report.metrics && report.metrics.length > 0) {
                 const metricsDiv = createElement('div', 'report-metrics');
@@ -109,7 +112,7 @@ export function renderReportsPage() {
                 report.photos.forEach((photo, index) => {
                     if (photo.url) {
                         const img = createElement('img');
-                        img.src = photo.url;
+                        applyOfflineMediaSource(img, photo.url, 'photo');
                         img.style.width = '100px';
                         img.style.height = '100px';
                         img.style.objectFit = 'cover';
@@ -186,6 +189,23 @@ export function renderReportsPage() {
         reportToEdit.photos = [];
         reportToEdit.comment = '';
     }
+
+    const initialPendingPhotoUrls = new Set(
+        (Array.isArray(reportToEdit.photos) ? reportToEdit.photos : [])
+            .map((photo) => String(photo?.url || '').trim())
+            .filter((url) => url.startsWith('local-media://'))
+    );
+    let reportModalSaved = false;
+
+    const closeReportModal = async () => {
+        if (!reportModalSaved) {
+            const draftPendingUrls = (Array.isArray(reportToEdit.photos) ? reportToEdit.photos : [])
+                .map((photo) => String(photo?.url || '').trim())
+                .filter((url) => url.startsWith('local-media://') && !initialPendingPhotoUrls.has(url));
+            await discardPendingMediaDraftUrls(draftPendingUrls);
+        }
+        overlay.remove();
+    };
 
     const modalContent = createElement('div', 'modal-content modal-progress-report');
     modalContent.style.maxWidth = '600px';
@@ -296,7 +316,9 @@ export function renderReportsPage() {
     // --- КНОПКИ УПРАВЛЕНИЯ ---
     const controls = createElement('div', 'modal-controls', '');
     const cancelBtn = createElement('button', 'btn', 'Отмена');
-    cancelBtn.onclick = () => overlay.remove();
+    cancelBtn.onclick = () => {
+        void closeReportModal();
+    };
 
     const saveBtn = createElement('button', 'btn btn-primary', '💾 Сохранить Отчет');
     saveBtn.onclick = async () => {
@@ -333,7 +355,10 @@ export function renderReportsPage() {
         };
 
         // 2. Вызов функции сохранения
-        await saveProgressReport(reportToSave, reportToEdit.id);
+        const saved = await saveProgressReport(reportToSave, reportToEdit.id);
+        if (!saved) return;
+
+        reportModalSaved = true;
         overlay.remove();
     };
 
@@ -342,6 +367,11 @@ export function renderReportsPage() {
     controls.appendChild(saveBtn);
     modalContent.appendChild(controls);
     overlay.appendChild(modalContent);
+    overlay.addEventListener('click', (event) => {
+        if (event.target === overlay) {
+            void closeReportModal();
+        }
+    });
     root.appendChild(overlay);
 }
 
@@ -703,7 +733,7 @@ function showComparePhotos(idBefore, idAfter, numBefore, numAfter) {
 
     if (photo1 && photo1.url) {
         const img1 = createElement('img');
-        img1.src = photo1.url;
+        applyOfflineMediaSource(img1, photo1.url, 'photo');
         img1.style.maxWidth = '45%';
         img1.style.borderRadius = '8px';
         overlay.appendChild(img1);
@@ -711,7 +741,7 @@ function showComparePhotos(idBefore, idAfter, numBefore, numAfter) {
 
     if (photo2 && photo2.url) {
         const img2 = createElement('img');
-        img2.src = photo2.url;
+        applyOfflineMediaSource(img2, photo2.url, 'photo');
         img2.style.maxWidth = '45%';
         img2.style.borderRadius = '8px';
         overlay.appendChild(img2);
@@ -776,7 +806,7 @@ function renderPhotoControls(photos, container, reportId) {
     previewContainer.style.marginBottom = '10px';
 
     photos.forEach((photo, index) => {
-        console.log("👉 renderPhotoControls: photo.url =", photo.url, "type:", typeof photo.url);
+        console.log("?? renderPhotoControls: photo.url =", photo.url, "type:", typeof photo.url);
 
         // Если url не строка — сразу предупреждаем
         if (typeof photo.url !== "string") {
@@ -788,20 +818,26 @@ function renderPhotoControls(photos, container, reportId) {
         preview.style.position = 'relative';
         preview.style.width = '60px';
         preview.style.height = '60px';
-        preview.style.backgroundImage = `url(${photo.url})`; // ✅ уже точно строка
+        applyOfflineMediaBackground(preview, photo.url);
         preview.style.backgroundSize = 'cover';
         preview.style.borderRadius = '5px';
         preview.title = "Нажмите для увеличения";
 
         // Кнопка удаления
         const deleteBtn = createElement('button', 'btn btn-delete-photo');
-        deleteBtn.innerHTML = '×';
+        deleteBtn.innerHTML = '?';
 
 
         deleteBtn.addEventListener('click', async () => {
             if (!confirm('Вы уверены, что хотите удалить это фото?')) return;
             const url = typeof photo.url === 'string' ? photo.url : '';
-            if (url) await deleteUserFirebaseStorageFileByDownloadUrl(url);
+            if (url) {
+                if (url.startsWith('local-media://')) {
+                    await discardPendingMediaDraftUrls([url]);
+                } else {
+                    await deleteUserFirebaseStorageFileByDownloadUrl(url);
+                }
+            }
             photos.splice(index, 1);
             renderPhotoControls(photos, container, reportId);
         });
@@ -824,41 +860,30 @@ function renderPhotoControls(photos, container, reportId) {
 
     const addPhotoBtn = createElement('button', 'btn btn-secondary btn-small', '+');
     addPhotoBtn.addEventListener('click', () => {
-        if (isOfflineModeActive()) {
-            showToast(getOfflineMediaUploadUnavailableMessage(), 'error');
-            return;
-        }
         fileInput.click();
     });
 
     fileInput.addEventListener('change', async (e) => {
-        const files = Array.from(e.target.files);
+        const files = Array.from(e.target.files || []);
         for (const file of files) {
-            showToast(`Загрузка ${file.name} в Storage...`);
             try {
-                const permanentUrl = await uploadUserMediaFileWithProgress(file, 'reports', (pct) => {
-                    if (pct >= 99) showToast(`${file.name}: почти готово…`);
+                const permanentUrl = await uploadUserMediaFileOrQueueWithProgress(file, 'reports', (pct) => {
+                    if (pct >= 99) showToast(file.name + ': почти готово...');
                 });
 
-                // Проверяем, что Storage вернул строку URL
-                if (typeof permanentUrl !== "string") {
-                    console.error("❌ Storage вернул не строку:", permanentUrl);
-                    showToast(`Ошибка: невалидный URL для ${file.name}`, 'error');
+                if (typeof permanentUrl !== 'string') {
+                    console.error('Invalid report media URL:', permanentUrl);
+                    showToast('Некорректный URL для ' + file.name, 'error');
                     continue;
                 }
 
                 photos.push({ url: permanentUrl, name: file.name });
-                showToast(`Фото ${file.name} загружено!`);
+                showToast(permanentUrl.startsWith('local-media://') ? 'Фото сохранено на устройстве и будет загружено, когда появится интернет.' : ('Фото ' + file.name + ' загружено.'));
             } catch (error) {
                 console.error(error);
-                showToast(
-                    isOfflineMediaUploadUnsupportedError(error)
-                        ? getOfflineMediaUploadUnavailableMessage()
-                        : `Ошибка загрузки ${file.name}`,
-                    'error'
-                );
+                showToast('Ошибка загрузки: ' + file.name, 'error');
             }
-        }
+            }
         renderPhotoControls(photos, container, reportId);
         e.target.value = '';
     });
@@ -889,20 +914,31 @@ async function saveProgressReport(reportData, reportId = null) {
     const reportsCollection = getReportsCollection();
     if (!reportsCollection) {
         showToast('Нет контекста цикла для сохранения отчёта.');
-        return;
+        return false;
     }
-
     try {
+        const reportRef = reportId
+            ? { path: reportsCollection.path + '/' + reportId }
+            : await createReport(reportsCollection, reportData);
+
         if (reportId) {
             await updateReport(reportsCollection, reportId, reportData);
-            showToast('Отчет о прогрессе обновлен!');
-        } else {
-            await createReport(reportsCollection, reportData);
-            showToast('Отчет о прогрессе сохранен!');
         }
+
+        await bindPendingMediaUrlsToTarget(
+            (Array.isArray(reportData?.photos) ? reportData.photos : []).map((photo) => photo?.url),
+            {
+                type: 'report-photo',
+                docPath: reportRef.path
+            }
+        );
+        void flushPendingMediaUploadQueue();
+        showToast(reportId ? 'Отчет о прогрессе обновлен!' : 'Отчет о прогрессе сохранен!');
+        return true;
     } catch (error) {
-        console.error("Ошибка сохранения отчета:", error);
+        console.error('Ошибка сохранения отчета:', error);
         showToast('Не удалось сохранить отчет о прогрессе.');
+        return false;
     }
 }
 
@@ -923,3 +959,4 @@ async function deleteReport(reportId) {
         showToast('Не удалось удалить отчет.');
     }
 }
+
