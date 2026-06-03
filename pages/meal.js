@@ -1,4 +1,4 @@
-import {
+﻿import {
     doc,
     setDoc,
     getDoc,
@@ -38,7 +38,6 @@ import {
     openConfirmModal,
     openDateModal,
     openMediaFullScreen,
-    applyOfflineMediaSource,
     renderTopBar,
     ensureCycleSelected,
     render,
@@ -46,9 +45,9 @@ import {
     requestAppChromeSync,
     showToast,
     isOfflineModeActive,
-    bindPendingMediaUrlsToTarget,
-    flushPendingMediaUploadQueue,
-    uploadUserMediaFileOrQueueWithProgress,
+    isOfflineMediaUploadUnsupportedError,
+    getOfflineMediaUploadUnavailableMessage,
+    uploadUserMediaFileWithProgress,
     deleteUserFirebaseStorageFileByDownloadUrl
 } from '../script.js';
 import { debounce } from './supplement.js';
@@ -56,6 +55,7 @@ import {
     cloneMealItemsArray,
     clearMealGoalConfig,
     hasAnyFoodInMealsSnapshot,
+    MEAL_NOTES_FIELD,
     normalizeMealsDataSnapshot,
     queueMealsDataSave as queueMealsDataSaveViaRepository,
     saveMealGoalConfigPatch,
@@ -103,6 +103,7 @@ let monthMealsDailySummaryCache = {};
 let monthMealsDailySummaryCycleId = null;
 let mealPageScrollY = 0;
 let mealScrollRestorePending = false;
+let __activeMealSectionReorder = null;
 let mealMainMounted = false;
 let mealMainEl = null;
 let mealOverlayEl = null;
@@ -112,11 +113,7 @@ let cleanupMealMacrosBorderObserver = null;
 let cleanupTopBarMealBorderObserver = null;
 let weekMealsPresenceCache = {};
 let mealsDataLoadedDate = null;
-let __activeMealSectionReorder = null;
-const MEAL_ORDER_CACHE_PREFIX = 'mealOrderCache:';
-const MEAL_NOTES_FIELD = 'mealNotes';
 const APPLE_HEALTH_ONLINE_ONLY_MESSAGE = 'Apple Health доступен только онлайн. Подключитесь к интернету и повторите.';
-const MEAL_ACTIVITY_SUMMARY_ONLINE_ONLY_MESSAGE = 'Сводка активности доступна только онлайн. Подключитесь к интернету и повторите.';
 const GLOBAL_CATALOG_ONLINE_ONLY_MESSAGE = 'Общая база продуктов доступна только онлайн. В офлайн-режиме используйте ваши локальные продукты и рецепты.';
 const MEAL_NO_GOAL_SUMMARY_VIEW_KEY = 'mealNoGoalSummaryView';
 let mealNoGoalSummaryCurrentMode = localStorage.getItem(MEAL_NO_GOAL_SUMMARY_VIEW_KEY) === 'current';
@@ -134,7 +131,6 @@ function applySelectedDateMealsData(mealsData = {}, dateStr = state.selectedDate
     state.mealsData = normalized;
     mealsDataLoadedDate = dateStr || null;
     weekMealsPresenceCache = {};
-    syncCachedMealOrderForDate(normalized, dateStr);
 
     if (dateStr) {
         const monthKey = dateStr.slice(0, 7);
@@ -148,63 +144,6 @@ function applySelectedDateMealsData(mealsData = {}, dateStr = state.selectedDate
     }
 
     return normalized;
-}
-
-function normalizeMealOrderIds(orderedMealIds = []) {
-    return Array.from(new Set(
-        (Array.isArray(orderedMealIds) ? orderedMealIds : [])
-            .map((mealId) => String(mealId || '').trim())
-            .filter((mealId) => /^meal\d+$/.test(mealId))
-    ));
-}
-
-function getMealOrderCacheKey(cycleId = state.selectedCycleId, dateStr = state.selectedDate) {
-    const normalizedCycleId = String(cycleId || '').trim();
-    const normalizedDate = String(dateStr || '').trim();
-    if (!normalizedCycleId || !normalizedDate) return '';
-    return `${MEAL_ORDER_CACHE_PREFIX}${normalizedCycleId}::${normalizedDate}`;
-}
-
-function readCachedMealOrder(cycleId = state.selectedCycleId, dateStr = state.selectedDate) {
-    const storageKey = getMealOrderCacheKey(cycleId, dateStr);
-    if (!storageKey) return [];
-
-    try {
-        const raw = localStorage.getItem(storageKey);
-        if (!raw) return [];
-        return normalizeMealOrderIds(JSON.parse(raw));
-    } catch (_) {
-        return [];
-    }
-}
-
-function writeCachedMealOrder(orderedMealIds = [], cycleId = state.selectedCycleId, dateStr = state.selectedDate) {
-    const storageKey = getMealOrderCacheKey(cycleId, dateStr);
-    if (!storageKey) return;
-
-    const normalizedOrder = normalizeMealOrderIds(orderedMealIds);
-
-    try {
-        if (!normalizedOrder.length) {
-            localStorage.removeItem(storageKey);
-            return;
-        }
-
-        const nextRaw = JSON.stringify(normalizedOrder);
-        if (localStorage.getItem(storageKey) === nextRaw) return;
-        localStorage.setItem(storageKey, nextRaw);
-    } catch (_) {}
-}
-
-function syncCachedMealOrderForDate(mealsData = {}, dateStr = state.selectedDate, cycleId = state.selectedCycleId) {
-    const hasMealFields = Object.keys(mealsData || {}).some((key) => /^meal\d+$/.test(key));
-    const hasExplicitOrder = Array.isArray(mealsData?.mealOrder) && mealsData.mealOrder.length > 0;
-
-    if (!hasMealFields && !hasExplicitOrder) return [];
-
-    const orderedMealIds = getMealKeysFromData(mealsData || {});
-    writeCachedMealOrder(orderedMealIds, cycleId, dateStr);
-    return orderedMealIds;
 }
 
 function normalizeMealSectionNoteValue(note) {
@@ -238,15 +177,17 @@ function getMealSectionNote(mealsData = {}, mealId = '') {
 
 function setMealSectionNoteInSnapshot(mealsData = {}, mealId, note) {
     const normalizedMealId = String(mealId || '').trim();
-    const preserveEmptyMealIds = getMealKeysFromData(mealsData || {});
+    if (!normalizedMealId) {
+        return normalizeMealsDataSnapshot(mealsData || {});
+    }
+
+    const preserveEmptyMealIds = getMealKeysFromData(mealsData || {}).filter((mealKey) => !['meal1', 'meal2', 'meal3'].includes(mealKey));
     const nextMealsData = normalizeMealsDataSnapshot(mealsData || {}, {
         preserveEmptyMealIds
     });
-
-    if (!normalizedMealId) return nextMealsData;
-
     const nextNotes = getMealNotesMap(nextMealsData);
     const normalizedNote = normalizeMealSectionNoteValue(note);
+
     if (normalizedNote) {
         nextNotes[normalizedMealId] = normalizedNote;
     } else {
@@ -263,16 +204,15 @@ function setMealSectionNoteInSnapshot(mealsData = {}, mealId, note) {
 }
 
 function syncMealSectionNoteDom(mealId, note) {
-    const headerNoteEl = document.getElementById(`${mealId}-header-note`);
-    if (!headerNoteEl) return;
+    const noteEl = document.getElementById(`${mealId}-header-note`);
+    if (!noteEl) return;
 
     const normalizedNote = normalizeMealSectionNoteValue(note);
-    headerNoteEl.textContent = normalizedNote;
-
+    noteEl.textContent = normalizedNote;
     if (normalizedNote) {
-        headerNoteEl.title = normalizedNote;
+        noteEl.title = normalizedNote;
     } else {
-        headerNoteEl.removeAttribute('title');
+        noteEl.removeAttribute('title');
     }
 }
 
@@ -322,7 +262,7 @@ async function saveMealSectionNote(mealId, note) {
     const dateStr = state.selectedDate;
     if (!cycleRef || !dateStr || !mealId) return;
 
-    const preserveEmptyMealIds = getMealKeysFromData(state.mealsData || {});
+    const preserveEmptyMealIds = getMealKeysFromData(state.mealsData || {}).filter((mealKey) => !['meal1', 'meal2', 'meal3'].includes(mealKey));
     const previousMealsData = normalizeMealsDataSnapshot(state.mealsData || {}, {
         preserveEmptyMealIds
     });
@@ -358,6 +298,7 @@ function openMealSectionNoteModal(meal) {
     textarea.placeholder = 'Например: после тренировки, перед тренировкой, 18:30';
     textarea.maxLength = MEAL_NOTE_MAX_LENGTH;
     textarea.value = currentNote;
+
     const hint = createElement('p', 'muted', `Ограничение: до ${MEAL_NOTE_MAX_LENGTH} символов`);
 
     const controls = createElement('div', 'modal-controls');
@@ -404,10 +345,8 @@ function openMealSectionNoteModal(meal) {
             saveBtn.disabled = false;
             cancelBtn.disabled = false;
             textarea.disabled = false;
-            textarea.focus();
         }
     });
-
 }
 
 async function deleteMealSectionAndPersist(mealId) {
@@ -416,7 +355,6 @@ async function deleteMealSectionAndPersist(mealId) {
 
     const nextMealsData = normalizeMealsDataSnapshot(state.mealsData || {});
     delete nextMealsData[mealId];
-    nextMealsData.mealOrder = getMealKeysFromData(state.mealsData || {}).filter((id) => id !== mealId);
     const nextNotes = getMealNotesMap(nextMealsData);
     delete nextNotes[mealId];
     if (Object.keys(nextNotes).length > 0) {
@@ -666,11 +604,6 @@ function applyWeekRowPresence(presence = {}, root = mealMainEl) {
 
 function getMealKeysFromData(mealsData = {}) {
     const defaultKeys = ['meal1', 'meal2', 'meal3'];
-    const explicitOrder = Array.isArray(mealsData?.mealOrder)
-        ? mealsData.mealOrder
-            .map((mealId) => String(mealId || '').trim())
-            .filter((mealId) => /^meal\d+$/.test(mealId))
-        : [];
 
     const extraKeys = Object.keys(mealsData)
         .filter(key => /^meal\d+$/.test(key))
@@ -681,35 +614,7 @@ function getMealKeysFromData(mealsData = {}) {
             return aNum - bNum;
         });
 
-    const knownKeys = Array.from(new Set([...defaultKeys, ...extraKeys, ...explicitOrder]));
-    const ordered = [];
-    const seen = new Set();
-
-    explicitOrder.forEach((mealId) => {
-        if (!knownKeys.includes(mealId) || seen.has(mealId)) return;
-        seen.add(mealId);
-        ordered.push(mealId);
-    });
-
-    knownKeys.forEach((mealId) => {
-        if (seen.has(mealId)) return;
-        seen.add(mealId);
-        ordered.push(mealId);
-    });
-
-    return ordered;
-}
-
-function applyMealOrderToMealsSnapshot(mealsData = {}, orderedMealIds = []) {
-    const nextMealsData = normalizeMealsDataSnapshot(mealsData || {}, {
-        preserveEmptyMealIds: orderedMealIds
-    });
-    nextMealsData.mealOrder = Array.from(new Set(
-        (Array.isArray(orderedMealIds) ? orderedMealIds : [])
-            .map((mealId) => String(mealId || '').trim())
-            .filter((mealId) => /^meal\d+$/.test(mealId))
-    ));
-    return nextMealsData;
+    return [...defaultKeys, ...extraKeys];
 }
 
 function formatLocalDate(date) {
@@ -1285,6 +1190,113 @@ function buildMealGoalCompactCard({
     `;
 }
 
+function buildMealGoalTopSection({
+    eatenCalories,
+    caloriesGoal,
+    caloriesData
+}) {
+    return `
+        <div class="meal-summary-side meal-summary-side-left">
+            <div class="meal-summary-side-value">${eatenCalories}</div>
+            <div class="meal-summary-side-label">Съедено</div>
+        </div>
+
+        <div class="meal-summary-center">
+            ${buildMealProgressArc({
+                eaten: caloriesData.eaten,
+                target: caloriesData.target
+            })}
+            <div class="meal-summary-center-text">
+                <div class="meal-summary-center-value">${caloriesGoal}</div>
+                <div class="meal-summary-center-label">Цель</div>
+            </div>
+        </div>
+
+        <div class="meal-summary-side meal-summary-side-right">
+            <div class="meal-summary-side-value">—</div>
+            <div class="meal-summary-side-label">&nbsp;</div>
+        </div>
+    `;
+}
+
+function buildMealGoalBarsSection({
+    proteinData,
+    fatData,
+    carbsData
+}) {
+    return `
+        ${buildMealGoalBar({
+            title: 'Белки',
+            eaten: proteinData.eaten,
+            target: proteinData.target,
+            percent: proteinData.percent
+        })}
+
+        ${buildMealGoalBar({
+            title: 'Жиры',
+            eaten: fatData.eaten,
+            target: fatData.target,
+            percent: fatData.percent
+        })}
+
+        ${buildMealGoalBar({
+            title: 'Углеводы',
+            eaten: carbsData.eaten,
+            target: carbsData.target,
+            percent: carbsData.percent
+        })}
+    `;
+}
+
+function buildMealGoalCompactCardContent({
+    eatenCalories,
+    caloriesGoal,
+    caloriesData,
+    proteinData,
+    fatData,
+    carbsData
+}) {
+    return `
+        <div class="meal-summary-goal-compact-energy">
+            <div class="meal-summary-center meal-summary-goal-compact-center">
+                ${buildMealProgressArc({
+                    eaten: caloriesData.eaten,
+                    target: caloriesData.target
+                })}
+                <div class="meal-summary-center-text meal-summary-goal-compact-center-text">
+                    <div class="meal-summary-center-value">${eatenCalories}</div>
+                    <div class="meal-summary-center-label">Ккал</div>
+                </div>
+            </div>
+            <div class="meal-summary-goal-compact-energy-target">
+                <span>/</span>
+                <strong>${Math.round(Number(caloriesGoal || 0))}</strong>
+            </div>
+        </div>
+
+        ${buildMealGoalCompactMacro({
+            title: 'Белки',
+            eaten: proteinData.eaten,
+            target: proteinData.target,
+            percent: proteinData.percent
+        })}
+
+        ${buildMealGoalCompactMacro({
+            title: 'Жиры',
+            eaten: fatData.eaten,
+            target: fatData.target,
+            percent: fatData.percent
+        })}
+
+        ${buildMealGoalCompactMacro({
+            title: 'Углеводы',
+            eaten: carbsData.eaten,
+            target: carbsData.target,
+            percent: carbsData.percent
+        })}
+    `;
+}
+
 function bindMealGoalSummaryToggle(root = document) {
     const card = root.querySelector?.('.meal-summary-card-goal');
     if (!card) return;
@@ -1348,6 +1360,182 @@ function buildMealFactBar({ title, value, percent }) {
     `;
 }
 
+function buildMealNoGoalTopSection({
+    eatenCalories,
+    carbsKcal,
+    fatKcal,
+    proteinKcal
+}) {
+    return `
+        <div class="meal-summary-center meal-summary-center-no-goal">
+            ${buildMealSplitArc({
+                carbsKcal,
+                fatKcal,
+                proteinKcal,
+                totalKcal: eatenCalories
+            })}
+            <div class="meal-summary-center-text">
+                <div class="meal-summary-center-value">${eatenCalories}</div>
+                <div class="meal-summary-center-label">Всего</div>
+            </div>
+        </div>
+    `;
+}
+
+function buildMealFactBarsSection({
+    eatenProtein,
+    eatenFat,
+    eatenCarbs,
+    proteinPercent,
+    fatPercent,
+    carbsPercent
+}) {
+    return `
+        ${buildMealFactBar({
+            title: 'Белки',
+            value: eatenProtein,
+            percent: proteinPercent
+        })}
+
+        ${buildMealFactBar({
+            title: 'Жиры',
+            value: eatenFat,
+            percent: fatPercent
+        })}
+
+        ${buildMealFactBar({
+            title: 'Углеводы',
+            value: eatenCarbs,
+            percent: carbsPercent
+        })}
+    `;
+}
+
+function buildMealSummaryCurrentCardContent({
+    eatenCalories,
+    eatenProtein,
+    eatenFat,
+    eatenCarbs,
+    carbsPercent,
+    fatPercent,
+    proteinPercent
+}) {
+    const circumference = 301.59;
+    const carbsLen = (clampMealPercent(carbsPercent) / 100) * circumference;
+    const fatLen = (clampMealPercent(fatPercent) / 100) * circumference;
+    const proteinLen = (clampMealPercent(proteinPercent) / 100) * circumference;
+
+    return `
+        <div class="food-current-ring-block">
+            <div class="food-current-ring">
+                <svg viewBox="0 0 120 120" class="food-ring-svg">
+                    <circle class="food-ring-bg" cx="60" cy="60" r="48"></circle>
+
+                    <circle
+                        class="food-ring-segment food-ring-carbs"
+                        cx="60"
+                        cy="60"
+                        r="48"
+                        stroke-dasharray="${carbsLen} ${circumference}"
+                        stroke-dashoffset="0"
+                    ></circle>
+
+                    <circle
+                        class="food-ring-segment food-ring-fat"
+                        cx="60"
+                        cy="60"
+                        r="48"
+                        stroke-dasharray="${fatLen} ${circumference}"
+                        stroke-dashoffset="-${carbsLen}"
+                    ></circle>
+
+                    <circle
+                        class="food-ring-segment food-ring-protein"
+                        cx="60"
+                        cy="60"
+                        r="48"
+                        stroke-dasharray="${proteinLen} ${circumference}"
+                        stroke-dashoffset="-${carbsLen + fatLen}"
+                    ></circle>
+                </svg>
+
+                <div class="food-ring-center">
+                    <div class="food-ring-kcal">${eatenCalories}</div>
+                    <div class="food-ring-label">ккал</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="food-current-macros">
+            <div class="food-current-macro food-current-macro-carbs">
+                <div class="food-current-percent">${Math.round(carbsPercent)} %</div>
+                <div class="food-current-grams">${String(formatMacro(eatenCarbs, 1)).replace('.', ',')} г</div>
+                <div class="food-current-name">Углев.</div>
+            </div>
+
+            <div class="food-current-macro food-current-macro-fat">
+                <div class="food-current-percent">${Math.round(fatPercent)} %</div>
+                <div class="food-current-grams">${String(formatMacro(eatenFat, 1)).replace('.', ',')} г</div>
+                <div class="food-current-name">Жиры</div>
+            </div>
+
+            <div class="food-current-macro food-current-macro-protein">
+                <div class="food-current-percent">${Math.round(proteinPercent)} %</div>
+                <div class="food-current-grams">${String(formatMacro(eatenProtein, 1)).replace('.', ',')} г</div>
+                <div class="food-current-name">Белки</div>
+            </div>
+        </div>
+    `;
+}
+
+function patchMealGoalSummaryCard(card, data) {
+    if (!card) return false;
+
+    card.classList.toggle('meal-summary-card-goal--current', mealGoalSummaryCurrentMode);
+    card.setAttribute('aria-pressed', mealGoalSummaryCurrentMode ? 'true' : 'false');
+
+    const top = card.querySelector('.meal-summary-top-goal');
+    if (top) {
+        top.innerHTML = buildMealGoalTopSection(data);
+    }
+
+    const bars = card.querySelector('.meal-summary-bars');
+    if (bars) {
+        bars.innerHTML = buildMealGoalBarsSection(data);
+    }
+
+    const compact = card.querySelector('.meal-summary-goal-compact-card');
+    if (compact) {
+        compact.innerHTML = buildMealGoalCompactCardContent(data);
+    }
+
+    return true;
+}
+
+function patchMealNoGoalSummaryCard(card, data) {
+    if (!card) return false;
+
+    card.classList.toggle('meal-summary-card-no-goal--current', mealNoGoalSummaryCurrentMode);
+    card.setAttribute('aria-pressed', mealNoGoalSummaryCurrentMode ? 'true' : 'false');
+
+    const top = card.querySelector('.meal-summary-top-no-goal');
+    if (top) {
+        top.innerHTML = buildMealNoGoalTopSection(data);
+    }
+
+    const bars = card.querySelector('.meal-summary-bars-fact');
+    if (bars) {
+        bars.innerHTML = buildMealFactBarsSection(data);
+    }
+
+    const currentCard = card.querySelector('.meal-summary-current-card');
+    if (currentCard) {
+        currentCard.innerHTML = buildMealSummaryCurrentCardContent(data);
+    }
+
+    return true;
+}
+
 function getMealMacrosSkeletonHtml() {
     return `
         <div class="meal-summary-card meal-summary-skeleton">
@@ -1400,6 +1588,21 @@ function renderMealMacrosRow(total = { p: 0, f: 0, c: 0, cal: 0 }) {
         const proteinData = getMealGoalProgress(eatenProtein, proteinGoal);
         const fatData = getMealGoalProgress(eatenFat, fatGoal);
         const carbsData = getMealGoalProgress(eatenCarbs, carbsGoal);
+
+        const goalViewData = {
+            eatenCalories,
+            caloriesGoal,
+            caloriesData,
+            proteinData,
+            fatData,
+            carbsData
+        };
+
+        const existingCard = row.querySelector('.meal-summary-card-goal');
+        if (existingCard && !row.querySelector('.meal-summary-skeleton') && !row.querySelector('.meal-summary-card-no-goal')) {
+            patchMealGoalSummaryCard(existingCard, goalViewData);
+            return;
+        }
 
         row.innerHTML = `
             <div
@@ -1456,12 +1659,7 @@ function renderMealMacrosRow(total = { p: 0, f: 0, c: 0, cal: 0 }) {
                 </div>
 
                 ${buildMealGoalCompactCard({
-                    eatenCalories,
-                    caloriesGoal,
-                    caloriesData,
-                    proteinData,
-                    fatData,
-                    carbsData
+                    ...goalViewData
                 })}
             </div>
         `;
@@ -1479,6 +1677,25 @@ function renderMealMacrosRow(total = { p: 0, f: 0, c: 0, cal: 0 }) {
     const fatPercent = (fatKcal / totalFactKcal) * 100;
     const carbsPercent = (carbsKcal / totalFactKcal) * 100;
 
+    const noGoalViewData = {
+        eatenCalories,
+        eatenProtein,
+        eatenFat,
+        eatenCarbs,
+        carbsKcal,
+        fatKcal,
+        proteinKcal,
+        carbsPercent,
+        fatPercent,
+        proteinPercent
+    };
+
+    const existingCard = row.querySelector('.meal-summary-card-no-goal');
+    if (existingCard && !row.querySelector('.meal-summary-skeleton') && !row.querySelector('.meal-summary-card-goal')) {
+        patchMealNoGoalSummaryCard(existingCard, noGoalViewData);
+        return;
+    }
+
     row.innerHTML = `
         <div
             class="meal-summary-card meal-summary-card-no-goal ${mealNoGoalSummaryCurrentMode ? 'meal-summary-card-no-goal--current' : ''}"
@@ -1490,9 +1707,9 @@ function renderMealMacrosRow(total = { p: 0, f: 0, c: 0, cal: 0 }) {
             <div class="meal-summary-top meal-summary-top-no-goal">
                 <div class="meal-summary-center meal-summary-center-no-goal">
                     ${buildMealSplitArc({
-                        carbsKcal,
-                        fatKcal,
-                        proteinKcal,
+                        carbsKcal: noGoalViewData.carbsKcal,
+                        fatKcal: noGoalViewData.fatKcal,
+                        proteinKcal: noGoalViewData.proteinKcal,
                         totalKcal: eatenCalories
                     })}
                     <div class="meal-summary-center-text">
@@ -1525,13 +1742,7 @@ function renderMealMacrosRow(total = { p: 0, f: 0, c: 0, cal: 0 }) {
             </div>
 
             ${buildMealSummaryCurrentCard({
-                eatenCalories,
-                eatenProtein,
-                eatenFat,
-                eatenCarbs,
-                carbsPercent,
-                fatPercent,
-                proteinPercent
+                ...noGoalViewData
             })}
         </div>
     `;
@@ -1956,12 +2167,11 @@ function isMealPhotoItem(item = {}) {
 
 async function addMealPhotoToCurrentMeal(mealId, photoUrl) {
     if (!mealId || !state.selectedDate || !photoUrl) return;
-    const normalizedUrl = String(photoUrl).trim();
 
     appendItemToSelectedMeal({
         id: crypto.randomUUID(),
         isMealPhoto: true,
-        photoUrl: normalizedUrl,
+        photoUrl: String(photoUrl).trim(),
         name: 'Фото продукта',
         planned: false,
         createdAt: Date.now()
@@ -1969,17 +2179,12 @@ async function addMealPhotoToCurrentMeal(mealId, photoUrl) {
         delayMs: 260,
         errorMessage: 'Не удалось сохранить фото в приёме'
     });
+}
 
-    if (normalizedUrl.startsWith('local-media://')) {
-        const cycleRef = getCycleDocRef();
-        if (cycleRef) {
-            await bindPendingMediaUrlsToTarget([normalizedUrl], {
-                type: 'meal-photo',
-                docPath: doc(cycleRef, 'meals', state.selectedDate).path,
-                mealId
-            });
-        }
-    }
+function getMealSectionNoteIconMarkup() {
+    return `
+        <svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 17 12" aria-hidden="true"><g><path fill="none" fill-rule="evenodd" d="M6.5,12.39 L6.5,12.39 L6.44,12.4 L6.43,12.4 L6.43,12.4 L6.38,12.39 C6.38,12.37 6.38,12.39 6.37,12.39 L6.37,12.39 L6.36,12.64 L6.37,12.65 L6.37,12.65 L6.43,12.7 L6.44,12.7 L6.44,12.7 L6.51,12.65 L6.51,12.65 L6.52,12.64 L6.51,12.39 C6.51,12.39 6.5,12.39 6.5,12.39 M6.65,12.31 L6.65,12.31 L6.53,12.37 L6.53,12.37 L6.53,12.39 L6.53,12.62 L6.54,12.64 L6.54,12.64 L6.66,12.69 C6.68,12.7 6.68,12.7 6.69,12.69 L6.69,12.68 L6.66,12.32 C6.66,12.32 6.66,12.31 6.65,12.31 M6.23,12.31 C6.23,12.31 6.22,12.31 6.22,12.32 L6.22,12.32 L6.19,12.68 C6.19,12.69 6.2,12.69 6.2,12.7 L6.22,12.69 L6.34,12.64 L6.35,12.64 L6.35,12.62 L6.35,12.39 L6.35,12.37 L6.35,12.37 Z"></path></g><g><path fill="none" fill-rule="evenodd" d="M6.44,12.09 L6.44,12.09 L6.39,12.1 L6.38,12.1 L6.38,12.1 L6.34,12.09 C6.34,12.08 6.34,12.09 6.31,12.09 L6.31,12.09 L6.3,12.34 L6.31,12.36 L6.31,12.36 L6.38,12.4 L6.39,12.4 L6.39,12.4 L6.46,12.36 L6.46,12.36 L6.47,12.34 L6.46,12.09 C6.46,12.09 6.44,12.09 6.44,12.09 M6.6,12.02 L6.6,12.02 L6.48,12.08 L6.48,12.08 L6.48,12.09 L6.48,12.32 L6.49,12.34 L6.49,12.34 L6.61,12.39 C6.63,12.4 6.63,12.4 6.63,12.39 L6.63,12.38 L6.61,12.03 C6.61,12.03 6.61,12.02 6.6,12.02 M6.18,12.02 C6.18,12.02 6.17,12.02 6.17,12.03 L6.17,12.03 L6.15,12.38 C6.15,12.39 6.16,12.39 6.16,12.4 L6.17,12.39 L6.29,12.34 L6.29,12.34 L6.29,12.32 L6.29,12.09 L6.29,12.08 L6.29,12.08 Z"></path><g><path fill="none" fill-rule="evenodd" d="M6.35,12.48 L6.35,12.48 L6.29,12.51 L6.28,12.51 L6.28,12.51 L6.24,12.48 C6.24,12.47 6.24,12.48 6.23,12.48 L6.23,12.48 L6.22,12.74 L6.23,12.75 L6.23,12.75 L6.28,12.8 L6.29,12.8 L6.29,12.8 L6.36,12.75 L6.36,12.75 L6.37,12.74 L6.36,12.48 C6.36,12.48 6.35,12.48 6.35,12.48 M6.51,12.41 L6.51,12.41 L6.38,12.47 L6.38,12.47 L6.38,12.48 L6.38,12.73 L6.39,12.74 L6.39,12.74 L6.52,12.79 C6.54,12.8 6.54,12.8 6.55,12.79 L6.55,12.78 L6.52,12.43 C6.52,12.43 6.52,12.41 6.51,12.41 M6.08,12.41 C6.08,12.41 6.06,12.41 6.06,12.43 L6.06,12.43 L6.04,12.78 C6.04,12.79 6.05,12.79 6.05,12.8 L6.06,12.79 L6.18,12.74 L6.2,12.74 L6.2,12.73 L6.2,12.48 L6.2,12.47 L6.2,12.47 Z"></path></g></g><g><path fill="none" fill-rule="evenodd" d="M5.3,10.73 L5.3,10.73 L5.26,10.75 L5.26,10.75 L5.25,10.75 L5.21,10.73 C5.21,10.73 5.21,10.73 5.2,10.74 L5.2,10.74 L5.19,10.95 L5.2,10.96 L5.2,10.96 L5.25,11 L5.26,11 L5.26,11 L5.31,10.96 L5.32,10.95 L5.32,10.95 L5.31,10.74 C5.31,10.74 5.31,10.73 5.3,10.73 M5.43,10.68 L5.42,10.68 L5.34,10.72 L5.33,10.73 L5.33,10.73 L5.34,10.94 L5.34,10.95 L5.35,10.95 L5.44,10.99 C5.45,11 5.45,11 5.46,10.99 L5.46,10.98 L5.44,10.69 C5.44,10.68 5.44,10.68 5.43,10.68 M5.09,10.68 C5.08,10.68 5.08,10.68 5.08,10.68 L5.07,10.69 L5.06,10.98 C5.06,10.99 5.06,10.99 5.06,11 L5.07,10.99 L5.17,10.95 L5.17,10.95 L5.17,10.94 L5.18,10.73 L5.18,10.73 L5.18,10.72 Z"></path><path fill="currentColor" fill-rule="evenodd" d="M11.31,9.45 C11.56,9.2 11.99,9.19 12.26,9.41 C12.53,9.65 12.56,10.04 12.35,10.33 L12.28,10.4 L11.25,11.39 C10.4,12.2 9.04,12.2 8.19,11.39 C7.92,11.11 7.47,11.1 7.18,11.32 L7.1,11.39 L6.75,11.74 C6.49,11.98 6.08,11.98 5.81,11.76 C5.53,11.52 5.47,11.11 5.72,10.84 L5.78,10.79 L6.12,10.46 C6.95,9.64 8.31,9.64 9.17,10.46 C9.44,10.72 9.89,10.74 10.21,10.5 L10.26,10.46 Z M10.04,.58 C10.72,-.05 11.78,-.06 12.46,.55 C13.12,1.16 13.19,2.19 12.58,2.86 L12.49,2.94 L4.49,10.65 C4.39,10.74 4.27,10.83 4.14,10.86 L4.04,10.92 L2.07,11.44 C1.84,11.51 1.59,11.46 1.42,11.3 C1.26,11.14 1.18,10.92 1.21,10.69 L1.22,10.61 L1.78,8.73 C1.82,8.59 1.89,8.47 1.98,8.37 L2.04,8.29 Z M11.68,1.19 C11.56,1.08 11.23,1.1 11.1,1.19 L10.67,1.46 L2.89,8.93 L2.31,10.33 L3.76,9.91 L11.82,2.15 C11.96,2.03 11.96,1.86 11.96,1.46"></path></g></svg>
+    `;
 }
 
 function getMealCameraIconMarkup() {
@@ -1990,7 +2195,7 @@ function getMealCameraIconMarkup() {
 
 function getMealQuickAddIconMarkup() {
     return `
-        <svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" id="РВконка 7" viewBox="0 0 17 12">
+        <svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" id="Иконка 7" viewBox="0 0 17 12">
           <g>
             <path fill="none" fill-rule="evenodd" d="M6.5,12.39 L6.5,12.39 L6.44,12.4 L6.43,12.4 L6.43,12.4 L6.38,12.39 C6.38,12.37 6.38,12.39 6.37,12.39 L6.37,12.39 L6.36,12.64 L6.37,12.65 L6.37,12.65 L6.43,12.7 L6.44,12.7 L6.44,12.7 L6.51,12.65 L6.51,12.65 L6.52,12.64 L6.51,12.39 C6.51,12.39 6.5,12.39 6.5,12.39 M6.65,12.31 L6.65,12.31 L6.53,12.37 L6.53,12.37 L6.53,12.39 L6.53,12.62 L6.54,12.64 L6.54,12.64 L6.66,12.69 C6.68,12.7 6.68,12.7 6.69,12.69 L6.69,12.68 L6.66,12.32 C6.66,12.32 6.66,12.31 6.65,12.31 M6.23,12.31 C6.23,12.31 6.22,12.31 6.22,12.32 L6.22,12.32 L6.19,12.68 C6.19,12.69 6.2,12.69 6.2,12.7 L6.22,12.69 L6.34,12.64 L6.35,12.64 L6.35,12.62 L6.35,12.39 L6.35,12.37 L6.35,12.37 Z"/>
           </g>
@@ -2073,6 +2278,10 @@ function openMealPhotoCaptureFlow(mealId) {
     };
 
     const openPicker = () => {
+        if (isOfflineModeActive()) {
+            showToast(getOfflineMediaUploadUnavailableMessage(), 'error');
+            return;
+        }
         fileInput.value = '';
         fileInput.click();
     };
@@ -2116,16 +2325,20 @@ function openMealPhotoCaptureFlow(mealId) {
             saveBtn.disabled = true;
 
             try {
-                const uploadedUrl = await uploadUserMediaFileOrQueueWithProgress(currentFile, 'meal-photos', (percent) => {
-                    saveBtn.textContent = percent >= 100 ? 'Сохранение...' : ('Загрузка ' + percent + '%');
+                const uploadedUrl = await uploadUserMediaFileWithProgress(currentFile, 'meal-photos', (percent) => {
+                    saveBtn.textContent = percent >= 100 ? 'Сохранение...' : `Загрузка ${percent}%`;
                 });
 
                 await addMealPhotoToCurrentMeal(mealId, uploadedUrl);
                 closeFlow();
-                showToast(uploadedUrl.startsWith('local-media://') ? 'Фото сохранено на устройстве и будет загружено, когда появится интернет.' : 'Фото добавлено в приём.');
+                showToast('Фото добавлено в прием');
             } catch (error) {
                 console.error(error);
-                showToast('Не удалось сохранить фото.');
+                showToast(
+                    isOfflineMediaUploadUnsupportedError(error)
+                        ? getOfflineMediaUploadUnavailableMessage()
+                        : 'Не удалось сохранить фото'
+                );
                 retakeBtn.disabled = false;
                 saveBtn.disabled = false;
                 saveBtn.textContent = 'Сохранить';
@@ -2411,7 +2624,7 @@ function renderMealMacrosImmediately() {
     }
 
     const localMealsData = state.mealsData || {};
-    const mealKeys = getMealKeysFromData(localMealsData);
+    const mealKeys = Object.keys(localMealsData).filter(key => /^meal\d+$/.test(key));
 
     if (mealKeys.length > 0) {
         const { total } = calcMealsTotalsFast(localMealsData);
@@ -2810,25 +3023,12 @@ async function getWeekMealsPresence(weekDates) {
 }
 
 function getMealKeysForRender() {
-    const mealsData = state.mealsData || {};
-    const hasSnapshotStructure =
-        Array.isArray(mealsData?.mealOrder) && mealsData.mealOrder.length > 0
-        || Object.keys(mealsData).some((key) => /^meal\d+$/.test(key));
-
-    if (hasSnapshotStructure) {
-        return getMealKeysFromData(mealsData);
-    }
-
-    const cachedMealOrder = readCachedMealOrder();
-    if (cachedMealOrder.length) {
-        return getMealKeysFromData({ mealOrder: cachedMealOrder });
-    }
-
-    return getMealKeysFromData(mealsData);
+    return getMealKeysFromData(state.mealsData || {});
 }
 
 function getMealWeekPresenceForRender(weekDates = []) {
-    const weekPresence = readWeekMealsPresenceCache(weekDates) || normalizeWeekPresenceForDates(weekDates);
+    const cachedWeekPresence = readWeekMealsPresenceCache(weekDates);
+    const weekPresence = cachedWeekPresence || normalizeWeekPresenceForDates(weekDates);
 
     if (state.selectedDate && mealsDataLoadedDate === state.selectedDate && state.mealsData) {
         weekPresence[state.selectedDate] = hasAnyFoodInDoc(state.mealsData);
@@ -2842,7 +3042,7 @@ function renderMealWeekRowContent(weekRow, weekDates = [], todayStr, weekPresenc
 
     weekRow.innerHTML = '';
 
-    weekDates.forEach((date) => {
+    weekDates.forEach(date => {
         const dayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
         const d = new Date(`${date}T00:00:00`);
         const dayIndex = (d.getDay() + 6) % 7;
@@ -2869,13 +3069,141 @@ function renderMealWeekRowContent(weekRow, weekDates = [], todayStr, weekPresenc
     });
 }
 
+function ensureMealMainLoadingOverlay() {
+    const wrap = mealMainEl?.querySelector('.meals-container-wrap');
+    if (!wrap) return null;
+
+    wrap.style.position = 'relative';
+
+    let overlay = wrap.querySelector('.meal-day-loading-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.className = 'meal-day-loading-overlay';
+        Object.assign(overlay.style, {
+            position: 'absolute',
+            inset: '0',
+            display: 'none',
+            background: 'rgba(238, 239, 243, 0.58)',
+            backdropFilter: 'blur(2px)',
+            WebkitBackdropFilter: 'blur(2px)',
+            borderRadius: '8px',
+            zIndex: '5',
+            pointerEvents: 'auto'
+        });
+        wrap.append(overlay);
+    }
+
+    return overlay;
+}
+
+function setMealMainLoadingState(isLoading) {
+    const page = mealMainEl?.querySelector('.meal-page');
+    const overlay = ensureMealMainLoadingOverlay();
+    const addMealBtn = document.getElementById('add-meal-section-btn');
+
+    if (page) {
+        page.setAttribute('aria-busy', isLoading ? 'true' : 'false');
+    }
+
+    if (overlay) {
+        overlay.style.display = isLoading ? 'block' : 'none';
+    }
+
+    if (addMealBtn) {
+        addMealBtn.disabled = Boolean(isLoading);
+        addMealBtn.style.pointerEvents = isLoading ? 'none' : '';
+        addMealBtn.style.opacity = isLoading ? '0.65' : '';
+    }
+}
+
+function syncMealAddSectionButton(mealKeys = []) {
+    const mealsContainer = document.getElementById('meals-container');
+    if (!mealsContainer) return;
+
+    const existingBtn = document.getElementById('add-meal-section-btn');
+    const shouldShowAddBtn = mealKeys.length < 6;
+
+    if (shouldShowAddBtn) {
+        if (!existingBtn) {
+            const addMealWrap = createElement('div', 'add-meal-wrap');
+            const addMealSectionBtn = createElement('button', 'tab-shape-btn');
+            addMealSectionBtn.id = 'add-meal-section-btn';
+            addMealSectionBtn.innerHTML = ` добавить прием `;
+            addMealSectionBtn.onclick = handleAddMealSection;
+            addMealWrap.append(addMealSectionBtn);
+            mealsContainer.insertAdjacentElement('afterend', addMealWrap);
+        }
+    } else if (existingBtn) {
+        existingBtn.remove();
+    }
+}
+
+function syncMealSectionStructure(mealsData = {}) {
+    const mealsContainer = document.getElementById('meals-container');
+    if (!mealsContainer) return false;
+
+    const mealKeys = getMealKeysFromData(mealsData || {});
+    const nextStructure = mealKeys.join('|');
+    const currentItems = [...mealsContainer.querySelectorAll(':scope > .meal-swipe--inline-header')];
+    const currentIds = currentItems
+        .map((itemEl) => String(itemEl.dataset.mealId || '').trim())
+        .filter(Boolean);
+
+    if (currentIds.join('|') === nextStructure) {
+        lastRenderedMealStructure = nextStructure;
+        syncMealAddSectionButton(mealKeys);
+        return false;
+    }
+
+    const desiredIds = new Set(mealKeys);
+    currentItems.forEach((itemEl) => {
+        const mealId = String(itemEl.dataset.mealId || '').trim();
+        if (!desiredIds.has(mealId)) {
+            itemEl.remove();
+        }
+    });
+
+    mealKeys.forEach((mealId, index) => {
+        const mealName = `Прием ${index + 1}`;
+        let itemEl = mealsContainer.querySelector(`.meal-swipe[data-meal-id="${mealId}"]`);
+
+        if (!itemEl) {
+            itemEl = createMealCard({ id: mealId, name: mealName });
+        } else {
+            itemEl.dataset.mealName = mealName;
+            const titleEl = itemEl.querySelector('.meal-title');
+            if (titleEl) {
+                titleEl.textContent = mealName;
+            }
+        }
+
+        mealsContainer.append(itemEl);
+    });
+
+    lastRenderedMealStructure = nextStructure;
+    syncMealAddSectionButton(mealKeys);
+
+    setTimeout(() => {
+        initMealSwipe();
+        scheduleMealRootScrollAvailabilitySync();
+    }, 0);
+
+    return true;
+}
+
 function refreshMealMainScreenForDateChange() {
     if (!mealMainEl) return false;
+
     const contentContainer = mealMainEl.querySelector('.meal-page');
     if (!contentContainer) return false;
 
-    const currentCycle = state.cycles?.find((c) => c.id === state.selectedCycleId);
+    const currentCycle = state.cycles?.find(c => c.id === state.selectedCycleId);
     if (!currentCycle) return false;
+
+    const title = contentContainer.querySelector('h3');
+    if (title) {
+        title.innerHTML = `Питание: <span>${currentCycle.name}</span>`;
+    }
 
     const weekDates = getWeekDates(state.selectedDate);
     const todayStr = formatLocalDate(new Date());
@@ -2896,23 +3224,9 @@ function refreshMealMainScreenForDateChange() {
     renderMealWeekRowContent(weekRow, weekDates, todayStr, weekPresence);
     applyWeekRowPresence(weekPresence, contentContainer);
 
-    const mealKeys = getMealKeysForRender();
-    syncMealSectionStructure({ mealOrder: mealKeys });
-    renderMealsFromData({ mealOrder: mealKeys }, null);
-    renderMealMacrosImmediately();
-
     bindMealCalendarButton();
     scheduleMealRootScrollAvailabilitySync();
 
-    const expectedWeekCacheKey = getWeekPresenceCacheKey(weekDates);
-    getWeekMealsPresence(weekDates).then((presence) => {
-        const currentWeekDates = getWeekDates(state.selectedDate);
-        if (expectedWeekCacheKey !== getWeekPresenceCacheKey(currentWeekDates)) return;
-        applyWeekRowPresence(presence);
-    });
-
-    getFoodsMap();
-    subscribeMeals();
     return true;
 }
 
@@ -2928,196 +3242,231 @@ function switchMealDate(newDate) {
     state.mealsData = {};
     mealsDataLoadedDate = null;
 
-    // ❗ 3. мягко обновляем текущий экран meal, не пересобирая его целиком
+    // ❗ 3. перерисовываем экран
+    if (
+        state.currentPage === 'meal' &&
+        (!state.mealView || state.mealView === 'main') &&
+        refreshMealMainScreenForDateChange()
+    ) {
+        setMealMainLoadingState(true);
+        subscribeMeals();
+
+        const weekDates = getWeekDates(state.selectedDate);
+        const expectedWeekCacheKey = getWeekPresenceCacheKey(weekDates);
+        getWeekMealsPresence(weekDates).then((presence) => {
+            const currentWeekDates = getWeekDates(state.selectedDate);
+            if (expectedWeekCacheKey !== getWeekPresenceCacheKey(currentWeekDates)) return;
+            applyWeekRowPresence(presence);
+        });
+        return;
+    }
+
     renderMealMainScreen();
 }
 
+function closeMealPageSwipesForReorder() {
+    const onSwipeClosedVisual = (rootEl) => setMealHeaderSwipeRadiusDuringSwipe(rootEl, false);
 
-function animateMealArrow(arrow, isOpen) {
-    if (!arrow) return;
+    document.querySelectorAll('.meal-swipe.open, .meal-swipe.open-left, .meal-swipe.open-right').forEach((el) => {
+        closeSwipeRowVisual(el, onSwipeClosedVisual);
+    });
 
-    arrow.classList.remove('arrow-rotate-open', 'arrow-rotate-close');
-
-    // форсим перезапуск анимации
-    void arrow.offsetWidth;
-
-    if (isOpen) {
-        arrow.classList.add('arrow-rotate-open');
-    } else {
-        arrow.classList.add('arrow-rotate-close');
-    }
-}
-
-function closeAllOpenMealSwipes() {
-    document.querySelectorAll('.meal-swipe.open, .food-swipe.food-swipe--meal-item.open, .food-swipe.food-swipe--meal-item.open-left').forEach((el) => {
-        closeSwipeRowVisual(el);
+    document.querySelectorAll('.food-swipe.food-swipe--meal-item.open, .food-swipe.food-swipe--meal-item.open-left, .food-swipe.food-swipe--meal-item.open-right').forEach((el) => {
+        closeSwipeRowVisual(el, onSwipeClosedVisual);
     });
 }
 
-function getMealSectionLayoutItems(parentEl, excludeEl = null) {
-    return [...(parentEl?.querySelectorAll('.meal-swipe.meal-swipe--inline-header') || [])]
-        .filter((el) => el !== excludeEl);
+function __mealSectionReorderLayoutItems(parentEl, draggedEl = null) {
+    return [...parentEl.querySelectorAll(':scope > .meal-swipe--inline-header')].filter((el) => el !== draggedEl);
 }
 
-function createMealSectionReorderPlaceholder(itemEl) {
-    const placeholderEl = document.createElement('div');
-    placeholderEl.className = 'meal-section-reorder-placeholder';
+function __createMealSectionReorderPlaceholder(itemEl) {
     const rect = itemEl.getBoundingClientRect();
-    placeholderEl.style.height = `${Math.max(1, Math.round(rect.height))}px`;
+    const placeholderEl = createElement('div', 'meal-reorder-placeholder');
+    placeholderEl.style.height = `${Math.round(rect.height)}px`;
     return placeholderEl;
 }
 
-function createMealSectionReorderGhost(itemEl, rect) {
+function __createMealSectionReorderGhost(itemEl, rect) {
     const ghostEl = itemEl.cloneNode(true);
-    ghostEl.classList.add('meal-section-reorder-ghost');
+    ghostEl.classList.add('meal-reorder-ghost');
     ghostEl.style.width = `${Math.round(rect.width)}px`;
     ghostEl.style.height = `${Math.round(rect.height)}px`;
-    ghostEl.style.left = '0px';
-    ghostEl.style.top = '0px';
-    document.body.appendChild(ghostEl);
+    ghostEl.style.left = `${Math.round(rect.left)}px`;
+    ghostEl.style.top = `${Math.round(rect.top)}px`;
+    document.body.append(ghostEl);
     return ghostEl;
 }
 
-function getMealSectionPlaceholderIndex(parentEl, placeholderEl, draggedEl) {
-    const layoutItems = getMealSectionLayoutItems(parentEl, draggedEl);
-    let el = placeholderEl?.nextElementSibling || null;
-    while (el && (!(el instanceof HTMLElement) || el.style.display === 'none')) {
-        el = el.nextElementSibling;
-    }
-    if (!el || !el.classList?.contains('meal-swipe')) return layoutItems.length;
-    const index = layoutItems.indexOf(el);
-    return index < 0 ? layoutItems.length : index;
+function __updateMealSectionReorderGhostPos(active, clientY) {
+    if (!active?.ghostEl) return;
+    const top = Math.round(clientY - active.pointerOffsetY + active.ghostLiftPx);
+    active.ghostEl.style.top = `${top}px`;
+}
+
+function __mealSectionPlaceholderSlotIndex(parentEl, placeholderEl, draggedEl) {
+    const layoutItems = __mealSectionReorderLayoutItems(parentEl, draggedEl);
+    const orderedNodes = [...parentEl.children].filter((child) =>
+        child === placeholderEl || layoutItems.includes(child)
+    );
+    return orderedNodes.indexOf(placeholderEl);
 }
 
 function updateMealSectionReorderVisual(active) {
     if (!active?.itemEl || !active?.parentEl || !active?.placeholderEl) return;
-    const currentIndex = getMealSectionPlaceholderIndex(active.parentEl, active.placeholderEl, active.itemEl);
-    const lastIndex = getMealSectionLayoutItems(active.parentEl, active.itemEl).length;
+
+    const layoutItems = __mealSectionReorderLayoutItems(active.parentEl, active.itemEl);
+    const currentIndex = __mealSectionPlaceholderSlotIndex(active.parentEl, active.placeholderEl, active.itemEl);
+    const lastIndex = Math.max(0, layoutItems.length);
+
     active.itemEl.classList.toggle('meal-swipe--can-move-up', currentIndex > 0);
     active.itemEl.classList.toggle('meal-swipe--can-move-down', currentIndex >= 0 && currentIndex < lastIndex);
 }
 
-function clampMealSectionGhostToViewport(ghostEl, x, y) {
-    const ghostWidth = ghostEl?.offsetWidth || 0;
-    const ghostHeight = ghostEl?.offsetHeight || 0;
-    const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
-    const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
-    return {
-        x: Math.max(0, Math.min(Math.max(0, viewportWidth - ghostWidth), Math.round(x))),
-        y: Math.max(0, Math.min(Math.max(0, viewportHeight - ghostHeight), Math.round(y)))
-    };
-}
-
-function updateMealSectionReorderGhostPos(active, clientX, clientY) {
-    if (!active?.ghostEl || !active.placeholderEl) return;
-    const placeholderRect = active.placeholderEl.getBoundingClientRect();
-    const ghostWidth = active.ghostEl.offsetWidth || placeholderRect.width || 0;
-    const ghostHeight = active.ghostEl.offsetHeight || placeholderRect.height || 0;
-    const lift = typeof active.mealGhostLiftPx === 'number' ? active.mealGhostLiftPx : -6;
-    const maxVerticalOffset = Math.min(22, Math.min(placeholderRect.width, placeholderRect.height) * 0.2);
-    const centerX = placeholderRect.left + placeholderRect.width / 2;
-    const centerY = placeholderRect.top + placeholderRect.height / 2;
-    const startY = active.mealStartY ?? clientY;
-    let verticalOffset = (clientY - startY) + lift;
-    if (verticalOffset > maxVerticalOffset) verticalOffset = maxVerticalOffset;
-    if (verticalOffset < -maxVerticalOffset) verticalOffset = -maxVerticalOffset;
-    const rawX = centerX - ghostWidth / 2;
-    const rawY = centerY - ghostHeight / 2 + verticalOffset;
-    const { x, y } = clampMealSectionGhostToViewport(active.ghostEl, rawX, rawY);
-    active.ghostEl.style.transform = `translate3d(${x}px, ${y}px, 0)`;
-}
-
 function moveMealSectionInReorder(active, direction) {
-    if (!active?.placeholderEl || !active?.parentEl || !direction) return false;
+    if (!active?.parentEl || !active?.placeholderEl || !direction) return false;
 
     const parentEl = active.parentEl;
-    const layoutItems = getMealSectionLayoutItems(parentEl, active.itemEl);
-    const currentIndex = getMealSectionPlaceholderIndex(parentEl, active.placeholderEl, active.itemEl);
-    const nextIndex = currentIndex + direction;
+    const placeholderEl = active.placeholderEl;
+    const layoutItems = __mealSectionReorderLayoutItems(parentEl, active.itemEl);
+    const currentIndex = __mealSectionPlaceholderSlotIndex(parentEl, placeholderEl, active.itemEl);
+    const targetIndex = currentIndex + direction;
 
-    if (currentIndex < 0 || nextIndex < 0 || nextIndex > layoutItems.length) return false;
+    if (targetIndex < 0 || targetIndex > layoutItems.length) return false;
 
-    if (direction < 0) {
-        const beforeEl = layoutItems[nextIndex];
-        if (beforeEl) parentEl.insertBefore(active.placeholderEl, beforeEl);
-    } else if (nextIndex >= layoutItems.length) {
-        parentEl.appendChild(active.placeholderEl);
-    } else {
-        const beforeEl = layoutItems[nextIndex];
-        if (beforeEl) parentEl.insertBefore(active.placeholderEl, beforeEl);
-    }
-
+    const referenceNode = layoutItems[targetIndex] || null;
+    parentEl.insertBefore(placeholderEl, referenceNode);
     active.didChange = true;
     updateMealSectionReorderVisual(active);
     return true;
 }
 
-async function finishMealSectionReorder(saveChanges = true) {
-    const active = __activeMealSectionReorder;
-    if (!active) return;
+function getMealSectionVisualOrder(parentEl, placeholderEl, draggedEl) {
+    const order = [];
+    const draggedMealId = String(draggedEl?.dataset?.mealId || '').trim();
 
-    __activeMealSectionReorder = null;
+    [...parentEl.children].forEach((child) => {
+        if (child === draggedEl) return;
+        if (child === placeholderEl) {
+            if (draggedMealId) order.push(draggedMealId);
+            return;
+        }
+        if (!child.classList?.contains('meal-swipe--inline-header')) return;
+        const mealId = String(child.dataset.mealId || '').trim();
+        if (mealId) order.push(mealId);
+    });
 
-    if (active.ghostEl) {
-        active.ghostEl.remove();
-        active.ghostEl = null;
-    }
-
-    if (active.placeholderEl?.parentElement) {
-        active.parentEl.insertBefore(active.itemEl, active.placeholderEl);
-        active.placeholderEl.remove();
-        active.placeholderEl = null;
-    }
-
-    active.itemEl.style.opacity = '';
-    active.itemEl.style.pointerEvents = '';
-    active.itemEl.style.display = '';
-    active.itemEl.classList.remove(
-        'meal-swipe--reorder-active',
-        'meal-swipe--can-move-up',
-        'meal-swipe--can-move-down',
-        'meal-swipe--dragging-source'
-    );
-    if (active.headerEl) {
-        active.headerEl.dataset.suppressClick = '0';
-    }
-    document.documentElement.classList.remove('meal-reorder-lock');
-    document.body.classList.remove('meal-reorder-lock');
-
-    if (!saveChanges || !active.didChange) return;
-
-    const orderedMealIds = getMealSectionLayoutItems(active.parentEl).map((el) => el.dataset.mealId).filter(Boolean);
-    const cycleRef = getCycleDocRef();
-    const dateStr = state.selectedDate;
-    if (!cycleRef || !dateStr || !orderedMealIds.length) {
-        syncMealSectionStructure(state.mealsData || {});
-        renderMeals(state.mealsData || {});
-        scheduleMealRootScrollAvailabilitySync();
-        return;
-    }
-
-    const previousMealsData = applyMealOrderToMealsSnapshot(state.mealsData || {}, getMealKeysFromData(state.mealsData || {}));
-    const nextMealsData = applyMealOrderToMealsSnapshot(state.mealsData || {}, orderedMealIds);
-
-    applySelectedDateMealsData(nextMealsData, dateStr);
-
-    try {
-        await saveSelectedDateMealsData(cycleRef, dateStr, nextMealsData, {
-            preserveEmptyMealIds: orderedMealIds
-        });
-    } catch (error) {
-        console.error('Не удалось сохранить порядок приемов:', error);
-        applySelectedDateMealsData(previousMealsData, dateStr);
-        showToast('Не удалось сохранить порядок приемов');
-        syncMealSectionStructure(previousMealsData);
-        renderMeals(previousMealsData);
-        scheduleMealRootScrollAvailabilitySync();
-    }
+    return order;
 }
 
-function attachMealSectionReorderLongPress({ headerEl, itemEl, parentEl }) {
-    if (!headerEl || !itemEl || !parentEl || headerEl.dataset.mealSectionReorderBound === '1') return;
-    headerEl.dataset.mealSectionReorderBound = '1';
+function syncMealOpenStateForVisualOrder(mealKeys, visualOrder, dateStr = state.selectedDate) {
+    if (!dateStr) return;
+
+    const previousStates = new Map(
+        mealKeys.map((mealId) => [mealId, Boolean(mealOpenState[getMealOpenKey(dateStr, mealId)])])
+    );
+
+    mealKeys.forEach((targetMealId, index) => {
+        const sourceMealId = visualOrder[index];
+        mealOpenState[getMealOpenKey(dateStr, targetMealId)] = Boolean(previousStates.get(sourceMealId));
+    });
+
+    localStorage.setItem('mealOpenState', JSON.stringify(mealOpenState));
+}
+
+function applyMealSectionVisualOrder(visualOrder = []) {
+    const cycleRef = getCycleDocRef();
+    const dateStr = state.selectedDate;
+    if (!cycleRef || !dateStr) return false;
+
+    const mealKeys = getMealKeysFromData(state.mealsData || {});
+    if (mealKeys.length < 2 || visualOrder.length !== mealKeys.length) return false;
+
+    const canonicalKey = mealKeys.slice().sort().join('|');
+    const visualKey = visualOrder.slice().sort().join('|');
+    if (canonicalKey !== visualKey) return false;
+
+    if (mealKeys.every((mealId, index) => mealId === visualOrder[index])) {
+        return false;
+    }
+
+    const preserveEmptyMealIds = mealKeys.filter((mealId) => !['meal1', 'meal2', 'meal3'].includes(mealId));
+    const currentMealsData = normalizeMealsDataSnapshot(state.mealsData || {}, {
+        preserveEmptyMealIds
+    });
+    const nextMealsData = {};
+    const currentNotes = getMealNotesMap(currentMealsData);
+    const nextNotes = {};
+
+    mealKeys.forEach((targetMealId, index) => {
+        const sourceMealId = visualOrder[index];
+        const sourceItems = cloneMealItemsArray(currentMealsData[sourceMealId]);
+        if (sourceItems.length > 0 || preserveEmptyMealIds.includes(targetMealId)) {
+            nextMealsData[targetMealId] = sourceItems;
+        }
+        const sourceNote = normalizeMealSectionNoteValue(currentNotes[sourceMealId]);
+        if (sourceNote) {
+            nextNotes[targetMealId] = sourceNote;
+        }
+    });
+
+    if (Object.keys(nextNotes).length > 0) {
+        nextMealsData[MEAL_NOTES_FIELD] = nextNotes;
+    }
+
+    syncMealOpenStateForVisualOrder(mealKeys, visualOrder, dateStr);
+
+    const normalizedNextMealsData = applySelectedDateMealsData(nextMealsData, dateStr);
+    void renderMeals(normalizedNextMealsData);
+    queueMealsDataSave(cycleRef, dateStr, normalizedNextMealsData, {
+        preserveEmptyMealIds,
+        delayMs: 220,
+        errorMessage: 'Не удалось сохранить порядок приемов'
+    });
+
+    return true;
+}
+
+function cleanupMealSectionReorder(active) {
+    if (!active) return;
+
+    active.itemEl.classList.remove('meal-swipe--reorder-active', 'meal-swipe--can-move-up', 'meal-swipe--can-move-down', 'meal-swipe--dragging-source');
+    active.itemEl.style.opacity = active.restoreStyle.opacity;
+    active.itemEl.style.display = active.restoreStyle.display;
+    active.itemEl.style.visibility = active.restoreStyle.visibility;
+    active.itemEl.style.pointerEvents = active.restoreStyle.pointerEvents;
+    active.itemEl.style.transform = active.restoreStyle.transform;
+    active.itemEl.style.transition = active.restoreStyle.transition;
+    active.itemEl.style.willChange = active.restoreStyle.willChange;
+
+    active.placeholderEl?.remove();
+    active.ghostEl?.remove();
+
+    document.documentElement.classList.remove('meal-reorder-lock');
+    document.body.classList.remove('meal-reorder-lock');
+    __activeMealSectionReorder = null;
+}
+
+function finishMealSectionReorder(commit = true) {
+    const active = __activeMealSectionReorder;
+    if (!active) return false;
+
+    const visualOrder = commit
+        ? getMealSectionVisualOrder(active.parentEl, active.placeholderEl, active.itemEl)
+        : [];
+
+    cleanupMealSectionReorder(active);
+
+    if (!commit || !active.didChange) {
+        return false;
+    }
+
+    return applyMealSectionVisualOrder(visualOrder);
+}
+
+function attachMealSectionReorderLongPress({ handleEl, headerEl, itemEl }) {
+    if (!handleEl || !headerEl || !itemEl || handleEl.dataset.mealReorderBound === '1') return;
+    handleEl.dataset.mealReorderBound = '1';
 
     let pointerId = null;
     let touchId = null;
@@ -3127,7 +3476,7 @@ function attachMealSectionReorderLongPress({ headerEl, itemEl, parentEl }) {
     let lastY = 0;
     let reorderStarted = false;
     const STEP_COOLDOWN_MS = 140;
-    const MID_CROSS_PADDING_PX = 5;
+    const MID_CROSS_PADDING_PX = 6;
 
     const clearPressTimer = () => {
         if (!pressTimer) return;
@@ -3135,17 +3484,23 @@ function attachMealSectionReorderLongPress({ headerEl, itemEl, parentEl }) {
         pressTimer = null;
     };
 
+    const suppressNextToggle = () => {
+        headerEl.dataset.suppressClick = '1';
+        itemEl.dataset.suppressPureTap = '1';
+    };
+
     const shouldStepNow = (active, now) => {
-        const lastStepAt = active?.lastStepAt || 0;
-        if (now - lastStepAt < STEP_COOLDOWN_MS) return false;
+        const last = active?.lastStepAt || 0;
+        if (now - last < STEP_COOLDOWN_MS) return false;
         active.lastStepAt = now;
         return true;
     };
 
     const tryStepByPointerY = (active, pointerY) => {
-        if (!active?.itemEl || !active?.parentEl || !active?.placeholderEl) return;
-        const layoutItems = getMealSectionLayoutItems(active.parentEl, active.itemEl);
-        const slot = getMealSectionPlaceholderIndex(active.parentEl, active.placeholderEl, active.itemEl);
+        if (!active?.itemEl || !active?.parentEl || !active.placeholderEl) return;
+
+        const layoutItems = __mealSectionReorderLayoutItems(active.parentEl, active.itemEl);
+        const slot = __mealSectionPlaceholderSlotIndex(active.parentEl, active.placeholderEl, active.itemEl);
         const prev = slot > 0 ? layoutItems[slot - 1] : null;
         const next = slot < layoutItems.length ? layoutItems[slot] : null;
 
@@ -3169,26 +3524,41 @@ function attachMealSectionReorderLongPress({ headerEl, itemEl, parentEl }) {
 
     const beginReorder = () => {
         if (__activeMealSectionReorder || !itemEl.parentElement) return;
+        if (mealMainEl?.querySelector('.meal-page[aria-busy="true"]')) return;
 
         reorderStarted = true;
-        headerEl.dataset.suppressClick = '1';
-        closeAllOpenMealSwipes();
+        suppressNextToggle();
+        closeMealPageSwipesForReorder();
 
+        try {
+            if (pointerId != null) handleEl.setPointerCapture?.(pointerId);
+        } catch (_) {}
+
+        const parentEl = itemEl.parentElement;
         const rect = itemEl.getBoundingClientRect();
-        const placeholderEl = createMealSectionReorderPlaceholder(itemEl);
+        const placeholderEl = __createMealSectionReorderPlaceholder(itemEl);
         parentEl.insertBefore(placeholderEl, itemEl);
-        const ghostEl = createMealSectionReorderGhost(itemEl, rect);
+        const ghostEl = __createMealSectionReorderGhost(itemEl, rect);
 
         __activeMealSectionReorder = {
-            headerEl,
             itemEl,
             parentEl,
+            headerEl,
             placeholderEl,
             ghostEl,
+            pointerOffsetY: Math.max(0, startY - rect.top),
+            ghostLiftPx: -6,
+            lastStepAt: 0,
             didChange: false,
-            mealStartY: lastY,
-            mealGhostLiftPx: -6,
-            lastStepAt: 0
+            restoreStyle: {
+                opacity: itemEl.style.opacity,
+                display: itemEl.style.display,
+                visibility: itemEl.style.visibility,
+                pointerEvents: itemEl.style.pointerEvents,
+                transform: itemEl.style.transform,
+                transition: itemEl.style.transition,
+                willChange: itemEl.style.willChange
+            }
         };
 
         itemEl.classList.add('meal-swipe--reorder-active', 'meal-swipe--dragging-source');
@@ -3198,7 +3568,7 @@ function attachMealSectionReorderLongPress({ headerEl, itemEl, parentEl }) {
         document.documentElement.classList.add('meal-reorder-lock');
         document.body.classList.add('meal-reorder-lock');
 
-        updateMealSectionReorderGhostPos(__activeMealSectionReorder, startX, lastY);
+        __updateMealSectionReorderGhostPos(__activeMealSectionReorder, lastY);
         updateMealSectionReorderVisual(__activeMealSectionReorder);
     };
 
@@ -3214,93 +3584,23 @@ function attachMealSectionReorderLongPress({ headerEl, itemEl, parentEl }) {
         window.removeEventListener('touchcancel', handleTouchEnd);
     };
 
+    const releasePointer = () => {
+        if (pointerId == null) return;
+        try {
+            handleEl.releasePointerCapture?.(pointerId);
+        } catch (_) {}
+        pointerId = null;
+    };
+
     const getTrackedTouch = (touchList) => {
         if (touchId == null) return null;
         return [...touchList].find((touch) => touch.identifier === touchId) || null;
     };
 
-    const handlePointerMove = (event) => {
-        if (event.pointerId !== pointerId) return;
-
-        lastY = event.clientY;
-
-        if (!reorderStarted) {
-            if (Math.abs(event.clientX - startX) > 10 || Math.abs(event.clientY - startY) > 10) {
-                clearPressTimer();
-            }
-            return;
-        }
-
-        const active = __activeMealSectionReorder;
-        if (!active) return;
-
-        if (event.cancelable) event.preventDefault();
-
-        const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-        if (shouldStepNow(active, now)) {
-            tryStepByPointerY(active, event.clientY);
-        }
-        updateMealSectionReorderGhostPos(active, event.clientX, event.clientY);
-    };
-
-    const handleTouchMove = (event) => {
-        const touch = getTrackedTouch(event.touches);
-        if (!touch) return;
-
-        lastY = touch.clientY;
-
-        if (!reorderStarted) {
-            if (Math.abs(touch.clientX - startX) > 10 || Math.abs(touch.clientY - startY) > 10) {
-                clearPressTimer();
-            }
-            return;
-        }
-
-        const active = __activeMealSectionReorder;
-        if (!active) return;
-
-        if (event.cancelable) event.preventDefault();
-
-        const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-        if (shouldStepNow(active, now)) {
-            tryStepByPointerY(active, touch.clientY);
-        }
-        updateMealSectionReorderGhostPos(active, touch.clientX, touch.clientY);
-    };
-
-    const handlePointerEnd = async () => {
-        clearPressTimer();
-        removePointerWindowListeners();
-        pointerId = null;
-
-        const didReorder = reorderStarted;
-        reorderStarted = false;
-
-        if (didReorder) {
-            await finishMealSectionReorder(true);
-        }
-    };
-
-    const handleTouchEnd = async (event) => {
-        const trackedTouchEnded = touchId != null && [...event.changedTouches].some((touch) => touch.identifier === touchId);
-        if (!trackedTouchEnded) return;
-
-        clearPressTimer();
-        removeTouchWindowListeners();
-        touchId = null;
-
-        const didReorder = reorderStarted;
-        reorderStarted = false;
-
-        if (didReorder) {
-            await finishMealSectionReorder(true);
-        }
-    };
-
     const handlePointerDown = (event) => {
         if (event.pointerType === 'touch') return;
         if (event.pointerType === 'mouse' && event.button !== 0) return;
-        if (event.target.closest('.meal-add-icon, .action-btn, .meal-title, .meal-header-note, button, input, textarea, select, a')) return;
+        if (event.target.closest('.meal-add-icon, .action-btn, input, textarea, select, a, button')) return;
         if (itemEl.classList.contains('open') || itemEl.classList.contains('open-left') || itemEl.classList.contains('open-right')) return;
         if (__activeMealSectionReorder) return;
 
@@ -3316,9 +3616,31 @@ function attachMealSectionReorderLongPress({ headerEl, itemEl, parentEl }) {
         window.addEventListener('pointercancel', handlePointerEnd);
     };
 
+    const handlePointerMove = (event) => {
+        if (event.pointerId !== pointerId) return;
+        lastY = event.clientY;
+
+        if (!reorderStarted) {
+            if (Math.abs(event.clientX - startX) > 10 || Math.abs(event.clientY - startY) > 10) {
+                clearPressTimer();
+            }
+            return;
+        }
+
+        const active = __activeMealSectionReorder;
+        if (!active) return;
+
+        if (event.cancelable) event.preventDefault();
+        const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        if (shouldStepNow(active, now)) {
+            tryStepByPointerY(active, event.clientY);
+        }
+        __updateMealSectionReorderGhostPos(active, event.clientY);
+    };
+
     const handleTouchStart = (event) => {
         if (event.touches.length !== 1) return;
-        if (event.target.closest('.meal-add-icon, .action-btn, .meal-title, .meal-header-note, button, input, textarea, select, a')) return;
+        if (event.target.closest('.meal-add-icon, .action-btn, input, textarea, select, a, button')) return;
         if (itemEl.classList.contains('open') || itemEl.classList.contains('open-left') || itemEl.classList.contains('open-right')) return;
         if (__activeMealSectionReorder) return;
 
@@ -3335,17 +3657,70 @@ function attachMealSectionReorderLongPress({ headerEl, itemEl, parentEl }) {
         window.addEventListener('touchcancel', handleTouchEnd);
     };
 
-    headerEl.addEventListener('pointerdown', handlePointerDown);
-    headerEl.addEventListener('touchstart', handleTouchStart, { passive: true });
+    const handleTouchMove = (event) => {
+        const touch = getTrackedTouch(event.touches);
+        if (!touch) return;
+        lastY = touch.clientY;
+
+        if (!reorderStarted) {
+            if (Math.abs(touch.clientX - startX) > 10 || Math.abs(touch.clientY - startY) > 10) {
+                clearPressTimer();
+            }
+            return;
+        }
+
+        const active = __activeMealSectionReorder;
+        if (!active) return;
+
+        if (event.cancelable) event.preventDefault();
+        const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        if (shouldStepNow(active, now)) {
+            tryStepByPointerY(active, touch.clientY);
+        }
+        __updateMealSectionReorderGhostPos(active, touch.clientY);
+    };
+
+    const handlePointerEnd = () => {
+        clearPressTimer();
+        removePointerWindowListeners();
+        releasePointer();
+
+        const didReorder = reorderStarted;
+        reorderStarted = false;
+        finishMealSectionReorder(didReorder);
+    };
+
+    const handleTouchEnd = (event) => {
+        const trackedTouchEnded = touchId != null && [...event.changedTouches].some((touch) => touch.identifier === touchId);
+        if (!trackedTouchEnded) return;
+
+        clearPressTimer();
+        removeTouchWindowListeners();
+        touchId = null;
+
+        const didReorder = reorderStarted;
+        reorderStarted = false;
+        finishMealSectionReorder(didReorder);
+    };
+
+    handleEl.addEventListener('pointerdown', handlePointerDown);
+    handleEl.addEventListener('touchstart', handleTouchStart, { passive: true });
 }
 
-function attachMealSectionReorderBindings(mealsContainer) {
-    if (!mealsContainer) return;
-    getMealSectionLayoutItems(mealsContainer).forEach((itemEl) => {
-        const headerEl = itemEl.querySelector('.meal-card-header');
-        if (!headerEl) return;
-        attachMealSectionReorderLongPress({ headerEl, itemEl, parentEl: mealsContainer });
-    });
+
+function animateMealArrow(arrow, isOpen) {
+    if (!arrow) return;
+
+    arrow.classList.remove('arrow-rotate-open', 'arrow-rotate-close');
+
+    // форсим перезапуск анимации
+    void arrow.offsetWidth;
+
+    if (isOpen) {
+        arrow.classList.add('arrow-rotate-open');
+    } else {
+        arrow.classList.add('arrow-rotate-close');
+    }
 }
 
 async function handleAddMealSection() {
@@ -3362,7 +3737,9 @@ async function handleAddMealSection() {
     const cycleRef = getCycleDocRef();
     if (!cycleRef || !state.selectedDate) return;
 
-    const nextMealsData = applyMealOrderToMealsSnapshot(state.mealsData || {}, [...currentKeys, newMealId]);
+    const nextMealsData = normalizeMealsDataSnapshot(state.mealsData || {}, {
+        preserveEmptyMealIds: [newMealId]
+    });
     nextMealsData[newMealId] = [];
     applySelectedDateMealsData(nextMealsData);
     await saveSelectedDateMealsData(cycleRef, state.selectedDate, nextMealsData, {
@@ -3438,14 +3815,23 @@ function createMealCard(meal) {
     swipeWrap.dataset.mealName = meal.name;
 
     const isBaseMeal = ['meal1', 'meal2', 'meal3'].includes(meal.id);
+    const swipeRight = isBaseMeal ? 120 : 180;
+    swipeWrap.dataset.swipeRight = String(swipeRight);
+    if (!isBaseMeal) {
+        swipeWrap.classList.add('meal-swipe--actions-wide');
+    }
 
     const actionsSlot = createElement('div', 'meal-card-header-actions-slot');
+    const noteBtn = createElement('button', 'action-btn action-edit meal-header-action-btn meal-action-note');
+    noteBtn.type = 'button';
+    noteBtn.setAttribute('aria-label', 'Комментарий к приему');
+    noteBtn.innerHTML = getMealSectionNoteIconMarkup();
     const stubBtn = createElement('button', 'action-btn action-edit meal-action-stub');
     stubBtn.type = 'button';
     stubBtn.innerHTML = `
          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 512 512"><title>Copy-outline SVG Icon</title><rect width="336" height="336" x="128" y="128" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="32" rx="57" ry="57"></rect><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="32" d="m383.5 128l.5-24a56.16 56.16 0 0 0-56-56H112a64.19 64.19 0 0 0-64 64v216a56.16 56.16 0 0 0 56 56h24"></path></svg>
          `;
-    actionsSlot.append(stubBtn);
+    actionsSlot.append(noteBtn, stubBtn);
 
     const card = createElement('div', 'meal-card');
     const swipeContent = createElement('div', 'swipe-content');
@@ -3485,16 +3871,11 @@ function createMealCard(meal) {
     const headerMain = createElement('div', 'meal-card-header-main');
     const headerTop = createElement('div', 'meal-card-header-top');
     const title = createElement('div', 'meal-title', meal.name);
-    title.setAttribute('role', 'button');
-    title.tabIndex = 0;
+    const headerNote = createElement('div', 'meal-header-note', getMealSectionNote(state.mealsData || {}, meal.id));
+    headerNote.id = `${meal.id}-header-note`;
     const headerKcal = createElement('div', 'meal-header-kcal');
     headerKcal.id = `${meal.id}-header-kcal`;
     headerKcal.innerHTML = '';
-    const headerNote = createElement('div', 'meal-header-note', getMealSectionNote(state.mealsData || {}, meal.id));
-    headerNote.id = `${meal.id}-header-note`;
-    if (headerNote.textContent) {
-        headerNote.title = headerNote.textContent;
-    }
 
     const addIconBtn = createElement('div', 'meal-add-icon');
     addIconBtn.setAttribute('aria-label', 'Добавить продукт');
@@ -3522,19 +3903,6 @@ function createMealCard(meal) {
     }
 
     header.addEventListener('click', toggleMealFromHeader);
-
-    function openMealNoteFromHeader(event) {
-        event.preventDefault();
-        event.stopPropagation();
-        openMealSectionNoteModal(meal);
-    }
-
-    title.addEventListener('click', openMealNoteFromHeader);
-    title.addEventListener('keydown', (event) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return;
-        openMealNoteFromHeader(event);
-    });
-    headerNote.addEventListener('click', openMealNoteFromHeader);
 
     addIconBtn.addEventListener('click', e => {
         e.preventDefault();
@@ -3589,10 +3957,20 @@ function createMealCard(meal) {
     applyOpenState();
 
     swipeWrap.addEventListener('meal-header-pure-tap', () => {
+        if (swipeWrap.dataset.suppressPureTap === '1') {
+            swipeWrap.dataset.suppressPureTap = '0';
+            return;
+        }
         toggleMealFromHeader();
     });
 
     macros.addEventListener('click', toggleMeal);
+
+    noteBtn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openMealSectionNoteModal(meal);
+    };
 
     stubBtn.onclick = (e) => {
         e.stopPropagation();
@@ -3610,8 +3988,8 @@ function createMealCard(meal) {
          `;
         deleteBtn.onclick = async (e) => {
             e.stopPropagation();
-
             const currentMealName = swipeWrap.dataset.mealName || meal.name;
+
             openConfirmModal(`Удалить ${currentMealName}?`, async () => {
                 await deleteMealSectionAndPersist(meal.id);
 
@@ -3626,6 +4004,11 @@ function createMealCard(meal) {
     swipeContent.append(headerContent);
     card.append(swipeContent, macros, list);
     swipeWrap.append(card);
+    attachMealSectionReorderLongPress({
+        handleEl: headerMain,
+        headerEl: header,
+        itemEl: swipeWrap
+    });
 
     return swipeWrap;
 }
@@ -3635,6 +4018,8 @@ function createMealCard(meal) {
 function rebuildMealsSection() {
     const mealsContainer = document.getElementById('meals-container');
     if (!mealsContainer) return;
+    syncMealSectionStructure(state.mealsData || {});
+    return;
 
     mealsContainer.innerHTML = '';
 
@@ -3649,7 +4034,6 @@ function rebuildMealsSection() {
     meals.forEach(meal => {
         mealsContainer.append(createMealCard(meal));
     });
-    attachMealSectionReorderBindings(mealsContainer);
 
     const existingBtn = document.getElementById('add-meal-section-btn');
     const shouldShowAddBtn = mealKeys.length < 6;
@@ -3681,80 +4065,6 @@ function rebuildMealsSection() {
         initMealSwipe();
         scheduleMealRootScrollAvailabilitySync();
     }, 0);
-}
-
-function syncMealAddSectionButton(mealKeys = []) {
-    const mealsContainer = document.getElementById('meals-container');
-    if (!mealsContainer) return;
-
-    const existingBtn = document.getElementById('add-meal-section-btn');
-    const shouldShowAddBtn = mealKeys.length < 6;
-
-    if (shouldShowAddBtn) {
-        if (!existingBtn) {
-            const addMealWrap = createElement('div', 'add-meal-wrap');
-            const addMealSectionBtn = createElement('button', 'tab-shape-btn');
-            addMealSectionBtn.id = 'add-meal-section-btn';
-            addMealSectionBtn.innerHTML = ` добавить прием `;
-            addMealSectionBtn.onclick = handleAddMealSection;
-            addMealWrap.append(addMealSectionBtn);
-            mealsContainer.insertAdjacentElement('afterend', addMealWrap);
-        }
-    } else if (existingBtn) {
-        existingBtn.remove();
-    }
-}
-
-function syncMealSectionStructure(mealsData = {}) {
-    const mealsContainer = document.getElementById('meals-container');
-    if (!mealsContainer) return false;
-
-    const mealKeys = getMealKeysFromData(mealsData || {});
-    const nextStructure = mealKeys.join('|');
-    const currentItems = getMealSectionLayoutItems(mealsContainer);
-    const currentIds = currentItems.map((itemEl) => String(itemEl.dataset.mealId || '').trim()).filter(Boolean);
-    const structureChanged = nextStructure !== lastRenderedMealStructure;
-
-    if (!structureChanged && currentIds.join('|') === nextStructure) {
-        syncMealAddSectionButton(mealKeys);
-        return false;
-    }
-
-    const desiredIds = new Set(mealKeys);
-    currentItems.forEach((itemEl) => {
-        const mealId = String(itemEl.dataset.mealId || '').trim();
-        if (!desiredIds.has(mealId)) {
-            itemEl.remove();
-        }
-    });
-
-    mealKeys.forEach((mealId, index) => {
-        let itemEl = mealsContainer.querySelector(`.meal-swipe[data-meal-id="${mealId}"]`);
-        const mealName = `Прием ${index + 1}`;
-
-        if (!itemEl) {
-            itemEl = createMealCard({ id: mealId, name: mealName });
-        } else {
-            itemEl.dataset.mealName = mealName;
-            const titleEl = itemEl.querySelector('.meal-title');
-            if (titleEl) {
-                titleEl.textContent = mealName;
-            }
-        }
-
-        mealsContainer.append(itemEl);
-    });
-
-    attachMealSectionReorderBindings(mealsContainer);
-    syncMealAddSectionButton(mealKeys);
-    lastRenderedMealStructure = nextStructure;
-
-    setTimeout(() => {
-        initMealSwipe();
-        scheduleMealRootScrollAvailabilitySync();
-    }, 0);
-
-    return true;
 }
 
 function initOpenStateForCurrentDay(mealsData) {
@@ -4708,12 +5018,12 @@ function renderMealMainScreen() {
     meals.forEach(meal => {
         mealsContainer.append(createMealCard(meal));
     });
-    attachMealSectionReorderBindings(mealsContainer);
 
     setupMealMacrosBorderObserver();
     setupTopBarMealBorderObserver();
 
-    if (mealKeys.length < 6) {
+    const existingMealKeys = getMealKeysFromData(state.mealsData || {});
+    if (existingMealKeys.length < 6) {
         const addMealWrap = createElement('div', 'add-meal-wrap');
 
         const addMealSectionBtn = createElement('button', 'tab-shape-btn');
@@ -4732,6 +5042,7 @@ function renderMealMainScreen() {
         scheduleMealRootScrollAvailabilitySync();
     }, 0);
 
+    setMealMainLoadingState(true);
     getFoodsMap();
     subscribeMeals();
 
@@ -4831,7 +5142,7 @@ function renderMealMonthlySummaryPage() {
     const yearPrevBtn = createElement('button', 'meal-monthly-summary-picker-year-btn');
     yearPrevBtn.type = 'button';
     yearPrevBtn.setAttribute('aria-label', 'Предыдущий год');
-    yearPrevBtn.textContent = '?';
+    yearPrevBtn.textContent = '−';
 
     const yearLabel = createElement('div', 'meal-monthly-summary-picker-year');
 
@@ -5087,10 +5398,6 @@ function renderMealMonthlySummaryPage() {
         `;
     }
 
-    function renderOnlineOnlyState() {
-        body.innerHTML = `<div class="meal-monthly-summary-error">${MEAL_ACTIVITY_SUMMARY_ONLINE_ONLY_MESSAGE}</div>`;
-    }
-
     function isSummaryMonthShowingToday() {
         const t = parseLocalDate(todayStr);
         return t.getFullYear() === visibleMonth.getFullYear() && t.getMonth() === visibleMonth.getMonth();
@@ -5124,12 +5431,6 @@ function renderMealMonthlySummaryPage() {
     async function loadAndRenderMonth() {
         const currentToken = ++renderToken;
         syncMonthButtonLabel();
-
-        if (isOfflineModeActive()) {
-            renderOnlineOnlyState();
-            return;
-        }
-
         renderLoadingState();
 
         try {
@@ -10815,7 +11116,7 @@ function makeFancyDateButton(initialValue = '') {
 
     const text = document.createElement('span');
     const icon = document.createElement('span');
-    icon.textContent = '??';
+    icon.textContent = '📅';
 
     function formatDisplayDate(dateStr) {
         if (!dateStr) return 'Выбрать';
@@ -10890,7 +11191,7 @@ function makeFancyDateButtonModal(initialValue = '', onChange = null) {
 
     const text = document.createElement('span');
     const icon = document.createElement('span');
-    icon.textContent = '??';
+    icon.textContent = '📅';
 
     function formatDisplayDateValue(dateStr) {
         if (!dateStr) return 'Выбрать';
@@ -13521,7 +13822,7 @@ function renderMealSearch() {
         { passive: true }
     );
 
-    /** Позиция карусели — источник правды для вкладки до debounce input (иначе поиск В«базы» не стартует). */
+    /** Позиция карусели — источник правды для вкладки до debounce input (иначе поиск «базы» не стартует). */
     function syncMealSearchTabFromCarouselScroll() {
         if (state._mealSearchRestoreSkipCarouselSyncOnce) return;
         const n = mealSearchTabsOrder.length;
@@ -13814,7 +14115,7 @@ function renderMealSearch() {
         const docs = snap.docs || [];
         if (!docs.length) {
             if (!append) {
-                listBase.innerHTML = `<div class="meal-search-empty">Ничего не найдено в общем каталоге. Сюда попадают только продукты, сохранённые в вашу библиотеку (не FatSecret). Если записей ещё нет — добавьте свой продукт во вкладке В«продукты».</div>`;
+                listBase.innerHTML = `<div class="meal-search-empty">Ничего не найдено в общем каталоге. Сюда попадают только продукты, сохранённые в вашу библиотеку (не FatSecret). Если записей ещё нет — добавьте свой продукт во вкладке «продукты».</div>`;
             }
             basePager.exhausted = true;
             return;
@@ -15535,7 +15836,7 @@ function isRecipeDraftValid() {
     return (
         hasTitle &&
         hasServings &&
-        filledIngredients.length >= 2 &&
+        filledIngredients.length >= 3 &&
         hasPhoto
     );
 }
@@ -15779,7 +16080,7 @@ function renderCreateRecipe() {
     function validateRecipeForm() {
         const hasRequiredTitle = isFilled(draft.title);
         const hasRequiredServings = isFilled(draft.servings);
-        const hasEnoughIngredients = Array.isArray(draft.ingredients) && draft.ingredients.length >= 2;
+        const hasEnoughIngredients = Array.isArray(draft.ingredients) && draft.ingredients.length >= 3;
 
         const isValid =
             hasRequiredTitle &&
@@ -16156,7 +16457,7 @@ async function renderEditRecipe() {
     function validateRecipeForm() {
         const hasRequiredTitle = isFilled(draft.title);
         const hasRequiredServings = isFilled(draft.servings);
-        const hasEnoughIngredients = Array.isArray(draft.ingredients) && draft.ingredients.length >= 2;
+        const hasEnoughIngredients = Array.isArray(draft.ingredients) && draft.ingredients.length >= 3;
         const hasChanges = getEditRecipeSnapshot(draft) !== initialEditRecipeSnapshot;
 
         const isValid =
@@ -16251,7 +16552,7 @@ async function renderEditRecipe() {
     validateRecipeForm();
 }
 // =================================================================
-// ?? FIREBASE
+// 📦 FIREBASE
 // =================================================================
 async function getFoods(query = '') {
     const foodsMap = await getFoodsMap();
@@ -16751,7 +17052,7 @@ function createMealPhotoSwipeItem({ item, index, mealId }) {
     const text = createElement('div', 'meal-food-text meal-food-text--photo');
     text.style.cursor = 'pointer';
     const preview = createElement('img', 'meal-photo-thumb');
-    applyOfflineMediaSource(preview, item.photoUrl, 'photo');
+    preview.src = item.photoUrl;
     preview.alt = item.name || 'Фото продукта';
 
     const meta = createElement('div', 'meal-photo-meta');
@@ -17243,7 +17544,6 @@ async function subscribeMeals() {
         const cachedSnap = await getDocFromCache(mealRef);
         if (cachedSnap.exists() && state.selectedDate === selectedDateAtSubscribe) {
             const cachedData = cachedSnap.data();
-            const mealsContainer = document.getElementById('meals-container');
             state.mealsData = cachedData;
             mealsDataLoadedDate = selectedDateAtSubscribe;
             initOpenStateForCurrentDay(cachedData);
@@ -17251,21 +17551,17 @@ async function subscribeMeals() {
             updateCachedWeekPresenceForDate(selectedDateAtSubscribe, hasFoodForSelectedDate);
             updateCachedMonthMealsDailySummaryForDate(selectedDateAtSubscribe, cachedData);
             applyWeekRowPresence({ [selectedDateAtSubscribe]: hasFoodForSelectedDate });
-            if (!mealsContainer || mealsContainer.childElementCount === 0) {
-                rebuildMealsSection();
-            } else {
-                syncMealSectionStructure(cachedData);
-            }
-            renderMeals(cachedData);
+            syncMealSectionStructure(cachedData);
+            await renderMeals(cachedData);
+            setMealMainLoadingState(false);
             scheduleMealRootScrollAvailabilitySync();
         }
     } catch (_) { /* no cache hit */ }
 
-    unsubscribeMeals = onSnapshot(mealRef, (docSnap) => {
+    unsubscribeMeals = onSnapshot(mealRef, async (docSnap) => {
         if (selectedDateAtSubscribe !== state.selectedDate) return;
 
         const data = docSnap.exists() ? docSnap.data() : {};
-
         state.mealsData = data;
         mealsDataLoadedDate = selectedDateAtSubscribe;
         initOpenStateForCurrentDay(data);
@@ -17273,25 +17569,9 @@ async function subscribeMeals() {
         updateCachedWeekPresenceForDate(selectedDateAtSubscribe, hasFoodForSelectedDate);
         updateCachedMonthMealsDailySummaryForDate(selectedDateAtSubscribe, data);
         applyWeekRowPresence({ [selectedDateAtSubscribe]: hasFoodForSelectedDate });
-        const mealsContainer = document.getElementById('meals-container');
-
-        if (!mealsContainer || mealsContainer.childElementCount === 0) {
-            rebuildMealsSection();
-            renderMeals(data);
-            scheduleMealRootScrollAvailabilitySync();
-            return;
-        }
-
-        if (syncMealSectionStructure(data)) {
-            state.mealsData = data;
-            initOpenStateForCurrentDay(data);
-
-            renderMeals(data);
-            scheduleMealRootScrollAvailabilitySync();
-            return;
-        }
-
-        renderMeals(data);
+        syncMealSectionStructure(data);
+        await renderMeals(data);
+        setMealMainLoadingState(false);
         scheduleMealRootScrollAvailabilitySync();
     });
 }
@@ -17342,7 +17622,7 @@ async function getFoodsMap(force = false) {
 }
 
 // =================================================================
-// ?? MEAL SEARCH: lightweight previews (DB queries with limit)
+// 🔎 MEAL SEARCH: lightweight previews (DB queries with limit)
 // =================================================================
 const MEAL_SEARCH_PREVIEW_LIMIT = 20;
 
@@ -17699,37 +17979,193 @@ async function renderMeals(mealsData) {
     }
 
     const foodsMap = await getFoodsMap();
-
     if (state.selectedDate !== expectedDate || state.selectedCycleId !== expectedCycleId) {
         return;
     }
-
     renderMealsFromData(mealsData, foodsMap);
+}
+
+function getMealListEntryKey(item, index) {
+    const baseId = String(item?.id || '').trim();
+    if (baseId) {
+        return `${isMealPhotoItem(item) ? 'photo' : 'item'}:${baseId}`;
+    }
+    return `${isMealPhotoItem(item) ? 'photo' : 'item'}:idx:${index}`;
+}
+
+function getMealListEntrySignature({ item, index, food }) {
+    return JSON.stringify({
+        index,
+        isPhoto: isMealPhotoItem(item),
+        id: item?.id || '',
+        foodId: item?.foodId || '',
+        recipeId: item?.recipeId || '',
+        grams: Number(item?.grams || 0),
+        servings: Number(item?.servings || 0),
+        planned: item?.planned === true,
+        name: item?.name || '',
+        description: item?.description || '',
+        baseAmount: Number(item?.baseAmount || 0),
+        baseUnit: item?.baseUnit || '',
+        protein: Number(item?.protein || 0),
+        fat: Number(item?.fat || 0),
+        carbs: Number(item?.carbs || 0),
+        calories: Number(item?.calories || 0),
+        photoUrl: item?.photoUrl || '',
+        isRecipe: item?.isRecipe === true,
+        isQuickAdded: item?.isQuickAdded === true,
+        hideWeightDisplay: item?.hideWeightDisplay === true,
+        foodName: food?.name || '',
+        foodDescription: food?.description || '',
+        foodBaseAmount: Number(food?.baseAmount || 0),
+        foodBaseUnit: food?.baseUnit || '',
+        foodProtein: Number(food?.protein || 0),
+        foodFat: Number(food?.fat || 0),
+        foodCarbs: Number(food?.carbs || 0),
+        foodCalories: Number(food?.calories || 0)
+    });
+}
+
+function createMealListEntryNode({ item, index, mealId, food }) {
+    const node = isMealPhotoItem(item)
+        ? createMealPhotoSwipeItem({ item, index, mealId })
+        : createMealFoodSwipeItem({ item, index, mealId, food });
+
+    node.dataset.entryKey = getMealListEntryKey(item, index);
+    node.dataset.entrySignature = getMealListEntrySignature({ item, index, food });
+    return node;
+}
+
+function createMealListFooter(mealId) {
+    const footer = createElement('div', 'meal-food-list-footer');
+    footer.dataset.footer = '1';
+
+    const fBtn1 = createElement('button', 'meal-food-list-footer-btn meal-food-list-footer-btn--camera');
+    fBtn1.type = 'button';
+    fBtn1.setAttribute('aria-label', 'Сделать фото');
+    fBtn1.innerHTML = getMealCameraIconMarkup();
+    fBtn1.onclick = () => openMealPhotoCaptureFlow(mealId);
+
+    const fBtn2 = createElement('button', 'meal-food-list-footer-btn meal-food-list-footer-btn--quick-add');
+    fBtn2.type = 'button';
+    fBtn2.setAttribute('aria-label', 'Быстрое добавление');
+    fBtn2.innerHTML = getMealQuickAddIconMarkup();
+    fBtn2.onclick = () => openQuickAddForm('main', mealId);
+
+    const fBtn3 = createElement('button', 'meal-food-list-footer-btn meal-food-list-footer-btn--add');
+    fBtn3.type = 'button';
+    fBtn3.setAttribute('aria-label', 'Добавить');
+    fBtn3.innerHTML = `
+            <span class="meal-food-list-footer-btn-icon">${getMealAddIconMarkup()}</span>
+            <span class="meal-food-list-footer-btn-text">Добавить продукт</span>
+        `;
+    fBtn3.onclick = () => openMealSearchForMeal(mealId);
+
+    footer.append(fBtn1, fBtn2, fBtn3);
+    return footer;
+}
+
+function syncMealFoodListDom(list, { mealId, items, foodsMap }) {
+    if (!list) return false;
+
+    const existingEntryNodes = [...list.querySelectorAll(':scope > .food-swipe--meal-item')];
+    const existingByKey = new Map(
+        existingEntryNodes
+            .map((node) => [String(node.dataset.entryKey || '').trim(), node])
+            .filter(([key]) => key)
+    );
+
+    const desiredKeys = new Set();
+    let footer = list.querySelector(':scope > .meal-food-list-footer');
+    let structureChanged = false;
+
+    items.forEach((item, index) => {
+        let food = null;
+
+        if (!isMealPhotoItem(item)) {
+            const snapshotFood = {
+                name: item.name,
+                description: item.description,
+                baseAmount: Number(item.baseAmount),
+                baseUnit: item.baseUnit,
+                protein: Number(item.protein),
+                fat: Number(item.fat),
+                carbs: Number(item.carbs),
+                calories: Number(item.calories)
+            };
+
+            const hasSnapshotFood =
+                snapshotFood.name &&
+                Number.isFinite(snapshotFood.baseAmount) &&
+                !!snapshotFood.baseUnit;
+
+            food = hasSnapshotFood ? snapshotFood : foodsMap?.[item.foodId];
+            if (!food) return;
+        }
+
+        const entryKey = getMealListEntryKey(item, index);
+        desiredKeys.add(entryKey);
+
+        const nextSignature = getMealListEntrySignature({ item, index, food });
+        const existingNode = existingByKey.get(entryKey);
+        let nextNode = existingNode;
+
+        if (!existingNode || existingNode.dataset.entrySignature !== nextSignature) {
+            nextNode = createMealListEntryNode({ item, index, mealId, food });
+            structureChanged = true;
+
+            if (existingNode) {
+                existingNode.replaceWith(nextNode);
+            }
+            existingByKey.set(entryKey, nextNode);
+        }
+
+        list.insertBefore(nextNode, footer || null);
+    });
+
+    existingEntryNodes.forEach((node) => {
+        const entryKey = String(node.dataset.entryKey || '').trim();
+        if (entryKey && !desiredKeys.has(entryKey)) {
+            node.remove();
+            structureChanged = true;
+        }
+    });
+
+    if (items.length > 0) {
+        if (!footer) {
+            footer = createMealListFooter(mealId);
+            structureChanged = true;
+        }
+        list.append(footer);
+    } else if (footer) {
+        footer.remove();
+        structureChanged = true;
+    }
+
+    return structureChanged;
 }
 
 function renderMealsFromData(mealsData, foodsMap) {
     const { total, mealTotals } = calcMealsTotalsFast(mealsData, foodsMap);
     mealTotalsCache[getMealTotalsCacheKey()] = total;
     renderMealMacrosRow(total);
+    let shouldReinitSwipe = false;
 
     getMealKeysFromData(mealsData || {}).forEach(mealId => {
         const list = document.getElementById(`${mealId}-list`);
         const macrosWrap = document.getElementById(`${mealId}-macros`);
         const macrosContent = document.getElementById(`${mealId}-macros-content`);
         const arrow = document.getElementById(`${mealId}-arrow`);
-        const mealNote = getMealSectionNote(mealsData, mealId);
 
         if (!list || !macrosWrap || !macrosContent) return;
-
-        syncMealSectionNoteDom(mealId, mealNote);
-
-        list.innerHTML = '';
+        syncMealSectionNoteDom(mealId, getMealSectionNote(mealsData, mealId));
 
         const items = Array.isArray(mealsData[mealId]) ? mealsData[mealId] : [];
         const mealTotal = mealTotals[mealId] || { cal: 0, p: 0, f: 0, c: 0 };
         const hasItems = items.length > 0;
 
         if (!hasItems) {
+            shouldReinitSwipe = syncMealFoodListDom(list, { mealId, items: [], foodsMap }) || shouldReinitSwipe;
             macrosWrap.style.display = 'none';
             list.style.display = 'none';
             macrosWrap.classList.remove('meal-card-macros--expanded');
@@ -17778,44 +18214,12 @@ function renderMealsFromData(mealsData, foodsMap) {
             headerKcalEl.innerHTML = `<span>к-</span> ${Math.round(mealTotal.cal)}`;
         }
 
-        items.forEach((item, index) => {
-            if (isMealPhotoItem(item)) {
-                list.append(createMealPhotoSwipeItem({
-                    item,
-                    index,
-                    mealId
-                }));
-                return;
-            }
+        shouldReinitSwipe = syncMealFoodListDom(list, { mealId, items, foodsMap }) || shouldReinitSwipe;
 
-            const snapshotFood = {
-                name: item.name,
-                description: item.description,
-                baseAmount: Number(item.baseAmount),
-                baseUnit: item.baseUnit,
-                protein: Number(item.protein),
-                fat: Number(item.fat),
-                carbs: Number(item.carbs),
-                calories: Number(item.calories)
-            };
-
-            const hasSnapshotFood =
-                snapshotFood.name &&
-                Number.isFinite(snapshotFood.baseAmount) &&
-                !!snapshotFood.baseUnit;
-
-            const food = hasSnapshotFood ? snapshotFood : foodsMap?.[item.foodId];
-            if (!food) return;
-
-            list.append(createMealFoodSwipeItem({
-                item,
-                index,
-                mealId,
-                food
-            }));
-        });
-
-        const footer = createElement('div', 'meal-food-list-footer');
+        let footer = list.querySelector(':scope > .meal-food-list-footer');
+        if (false) {
+        if (!footer) {
+            footer = createElement('div', 'meal-food-list-footer');
         const fBtn1 = createElement('button', 'meal-food-list-footer-btn meal-food-list-footer-btn--camera');
         fBtn1.type = 'button';
         fBtn1.setAttribute('aria-label', 'Сделать фото');
@@ -17837,7 +18241,9 @@ function renderMealsFromData(mealsData, foodsMap) {
         fBtn3.onclick = () => openMealSearchForMeal(mealId);
 
         footer.append(fBtn1, fBtn2, fBtn3);
-        list.append(footer);
+        }
+        }
+        list.append(list.querySelector(':scope > .meal-food-list-footer') || createMealListFooter(mealId));
 
         const openKey = getMealOpenKey(state.selectedDate, mealId);
         const isOpen = !!mealOpenState[openKey];
@@ -17856,10 +18262,12 @@ function renderMealsFromData(mealsData, foodsMap) {
         }
     });
 
-    setTimeout(() => {
-        initMealSwipe();
-        scheduleMealRootScrollAvailabilitySync();
-    }, 0);
+    if (shouldReinitSwipe) {
+        setTimeout(() => {
+            initMealSwipe();
+            scheduleMealRootScrollAvailabilitySync();
+        }, 0);
+    }
 
     if (mealScrollRestorePending) {
         requestAnimationFrame(() => {
@@ -18170,7 +18578,7 @@ function setMealHeaderSwipeRadiusDuringSwipe(swipeItemEl, isSwiping) {
     header.style.borderRadius = '';
     header.style.borderBottomLeftRadius = macrosVisible ? '0px' : '';
     header.style.borderBottomRightRadius = macrosVisible ? '0px' : '';
-    header.style.borderBottom = macrosVisible ? '2px solid #ffff' : '';
+    header.style.borderBottom = macrosVisible ? '1px solid #ffff' : '';
     header.style.boxShadow = macrosVisible ? 'none' : '';
 
 }
@@ -18195,6 +18603,7 @@ function initMealSwipe() {
         rootSelector: '.meal-swipe',
         contentSelector: '.meal-card-header-content',
         maxSwipe: 120,
+        getMaxSwipe: (item) => Number(item?.dataset?.swipeRight || 120),
         onSwipeActiveVisual,
         onSwipeClosedVisual,
         onBeforeOpen: crossCloseOtherStrip,
@@ -18233,6 +18642,4 @@ function initMealSwipe() {
         mealSwipeDocumentBound = true;
     }
 }
-
-
 

@@ -2297,7 +2297,7 @@ function ensureSupplementTableSheetEditorShell() {
     const formatTabs = createElement('div', 'supplement-sheet-editor__format-tabs');
     const formatTab = createElement('button', 'supplement-sheet-editor__format-tab is-active', 'Текст');
     formatTab.type = 'button';
-    const formatTabCell = createElement('button', 'supplement-sheet-editor__format-tab supplement-sheet-editor__format-tab--ghost', 'РЇС‡РµР№РєР°');
+    const formatTabCell = createElement('button', 'supplement-sheet-editor__format-tab supplement-sheet-editor__format-tab--ghost', 'Ячейка');
     formatTabCell.type = 'button';
     formatTabCell.disabled = true;
     formatTabs.append(formatTab, formatTabCell);
@@ -2333,13 +2333,13 @@ function ensureSupplementTableSheetEditorShell() {
         commitSupplementTableSheetDraftPatch({ style: { strike: nextStrike } });
     });
     textStyleRow.append(formatBoldBtn, formatItalicBtn, formatUnderlineBtn, formatStrikeBtn);
-    const formatAlignLeftBtn = createElement('button', 'supplement-sheet-editor__format-quick-btn', 'в‰Ў');
+    const formatAlignLeftBtn = createElement('button', 'supplement-sheet-editor__format-quick-btn', '≡');
     formatAlignLeftBtn.type = 'button';
     formatAlignLeftBtn.textContent = '≡';
     formatAlignLeftBtn.addEventListener('click', () => {
         commitSupplementTableSheetDraftPatch({ style: { align: 'left' } });
     });
-    const formatAlignCenterBtn = createElement('button', 'supplement-sheet-editor__format-quick-btn', 'в‰Ј');
+    const formatAlignCenterBtn = createElement('button', 'supplement-sheet-editor__format-quick-btn', '≣');
     formatAlignCenterBtn.type = 'button';
     formatAlignCenterBtn.textContent = '≣';
     formatAlignCenterBtn.addEventListener('click', () => {

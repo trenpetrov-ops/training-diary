@@ -4446,6 +4446,13 @@ function openCommentModal(exerciseId, currentNote, titleText, onSave) {
 
 
     // Обработка выбора файла
+   mediaContainer.__afterRender = () => {
+     mediaContainer.prepend(addMediaBtn);
+   };
+   const syncCommentMediaContainer = () => {
+     renderMediaPreview(mediaContainer, media);
+   };
+   syncCommentMediaContainer();
 fileInput.addEventListener('change', async (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -4472,7 +4479,7 @@ fileInput.addEventListener('change', async (e) => {
 
     // === Добавляем медиа ===
     media.push({ url, type: 'photo' });
-    renderMediaPreview(mediaContainer, media);
+    syncCommentMediaContainer();
 
     // === Показываем уведомление ===
     showToast(
@@ -4499,8 +4506,9 @@ fileInput.addEventListener('change', async (e) => {
 
 // ✅ Только кнопка "Сохранить"
 const controls = createElement('div', 'modal-controls');
+const cancelBtn = createElement('button', 'btn cancel-btn', 'Отмена');
 const saveBtn = createElement('button', 'btn btn-primary', 'Сохранить');
-controls.append(saveBtn);
+controls.append(cancelBtn, saveBtn);
 
 // ✅ Закрытие модалки по клику на фон (overlay)
 let commentModalSaved = false;
@@ -4516,6 +4524,9 @@ overlay.addEventListener('click', () => {
 
 // ❗ Чтобы клик по модалке не закрывал её
 modal.addEventListener('click', (e) => e.stopPropagation());
+cancelBtn.addEventListener('click', () => {
+    void closeCommentModal();
+});
 
 // ✅ Сохранение данных
 saveBtn.addEventListener('click', () => {
@@ -4523,9 +4534,7 @@ saveBtn.addEventListener('click', () => {
     onSave(textarea.value.trim(), media);
     overlay.remove();
 });
-    controls.append( saveBtn);
-
-    modal.append(title, textarea, mediaContainer, addMediaBtn, fileInput, controls);
+    modal.append(title, textarea, mediaContainer, fileInput, controls);
     overlay.append(modal);
     presentKeyboardDockedModal(overlay, modal);
 }
@@ -5219,14 +5228,13 @@ function openDuplicateSetModal(message, onYes, onNo) {
 // =================================================================
 // ✅ Вспомогательная функция предпросмотра медиа с превью фото и видео
 // =================================================================
-function renderMediaPreview(container, media) {
+function renderMediaPreview(container, media, afterRender = null) {
     container.innerHTML = ''; // Очистить контейнер
 
     media.forEach((file, index) => {
         const mediaItem = createElement('div', 'media-item');
         mediaItem.style.position = 'relative';
         mediaItem.style.display = 'inline-block';
-        mediaItem.style.marginRight = '12px';
 
         // === Если фото ===
         if (file.type === 'photo') {
@@ -5277,6 +5285,9 @@ function renderMediaPreview(container, media) {
         mediaItem.append(delBtn);
         container.append(mediaItem);
     });
+    if (typeof container.__afterRender === 'function') {
+        container.__afterRender();
+    }
 }
 
 // =================================================================
@@ -12118,6 +12129,31 @@ const authLoginBtn = document.getElementById('auth-login-btn');
 const authScreenEl = document.getElementById('auth-screen');
 const AUTH_LOGIN_FIELD_IDS = ['auth-email', 'auth-password'];
 const AUTH_REGISTER_FIELD_IDS = ['auth-first-name', 'auth-last-name', 'auth-patronymic', 'auth-birth-date', 'auth-email', 'auth-password'];
+let isAuthSubmitPending = false;
+
+function getAuthSubmitButtonIdleLabel() {
+    return isLoginMode ? 'Войти' : 'Зарегистрироваться';
+}
+
+function getAuthSubmitButtonPendingLabel() {
+    return isLoginMode ? 'Входим...' : 'Создаем аккаунт...';
+}
+
+function setAuthSubmitPendingState(isPending) {
+    isAuthSubmitPending = isPending === true;
+
+    if (authLoginBtn) {
+        authLoginBtn.disabled = isAuthSubmitPending;
+        authLoginBtn.textContent = isAuthSubmitPending
+            ? getAuthSubmitButtonPendingLabel()
+            : getAuthSubmitButtonIdleLabel();
+        authLoginBtn.setAttribute('aria-busy', isAuthSubmitPending ? 'true' : 'false');
+    }
+
+    if (authToggleBtn) {
+        authToggleBtn.disabled = isAuthSubmitPending;
+    }
+}
 
 function getAuthFieldIdsInOrder() {
     return isLoginMode ? AUTH_LOGIN_FIELD_IDS : AUTH_REGISTER_FIELD_IDS;
@@ -12265,6 +12301,41 @@ async function handleAuthSubmit() {
     }
 }
 
+async function handleAuthSubmitWithPending() {
+    if (isAuthSubmitPending) return;
+
+    const email = document.getElementById('auth-email')?.value?.trim() || '';
+    const password = document.getElementById('auth-password')?.value || '';
+
+    setAuthSubmitPendingState(true);
+    try {
+        if (isLoginMode) {
+            pendingExclusiveSessionLoginAttempt = {
+                mode: 'email-password-login',
+                startedAt: Date.now()
+            };
+
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+                showToast('Вход выполнен успешно!');
+            } finally {
+                pendingExclusiveSessionLoginAttempt = null;
+            }
+            return;
+        }
+
+        await submitRegistrationFlow(email, password);
+    } catch (error) {
+        if (error?.code === 'exclusive_session_takeover_cancelled' || error?.message === 'exclusive_session_takeover_cancelled') {
+            return;
+        }
+        console.error("Ошибка аутентификации:", error);
+        showToast('Ошибка: ' + (error.message.includes('auth/invalid-credential') ? 'Неверный email или пароль.' : error.message));
+    } finally {
+        setAuthSubmitPendingState(false);
+    }
+}
+
 if (authToggleBtn && authLoginBtn) {
     authToggleBtn.addEventListener('click', () => {
         isLoginMode = !isLoginMode;
@@ -12365,6 +12436,22 @@ if (authToggleBtn && authLoginBtn) {
         blurActiveAuthField();
         authLoginBtn.click();
     });
+}
+
+if (authToggleBtn && authLoginBtn) {
+    setAuthSubmitPendingState(false);
+
+    authToggleBtn.addEventListener('click', () => {
+        if (!isAuthSubmitPending) {
+            setAuthSubmitPendingState(false);
+        }
+    });
+
+    authLoginBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        void handleAuthSubmitWithPending();
+    }, true);
 }
 
 

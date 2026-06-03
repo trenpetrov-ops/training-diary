@@ -1340,7 +1340,7 @@ button.btn.delete-media-btn svg {
     width: 185px;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 4px;
 }
 .comExer button.btn.btn-secondary:active {
     transform: scale(1.05);
@@ -4407,24 +4407,42 @@ button.btn.delete-media-btn svg {
         height: 19px;
     }
 button.btn.btn-secondary span {
-        padding-left: 2px;
-        font-weight: 600;
+        padding-left: 0px;
+        font-weight: 500;
+        font-size: 10px;
+        white-space: normal;
+        display: none;
     }
+.media-container {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 15px;
+    flex-wrap: wrap;
+    margin-bottom: 13px;
+}
 .comExer button.btn.btn-secondary {
         background: none;
-        color: #5d5b5b;
+        color: #5d5b5be6;
         border: none;
         padding: 0;
-        margin-bottom: 10px;
+        margin-bottom: 0px;
         cursor: pointer;
-        margin-top: 6px;
-        width: 185px;
+        margin-top: 0px;
+        width: 62px;
+        height: 62px;
         display: flex;
         align-items: center;
+        flex-direction: column;
+        justify-content: center;
+        background: #f4f4f4;
+        border: 1px solid #e8e8e8;
     }
 .comExer button.btn.btn-secondary svg {
-        width: 24px;
-        height: 24px;
+        width: 28px;
+        height: 29px;
+        display: block;
     }
 .comExer .modal-controls {
         margin: 0;
@@ -6532,7 +6550,7 @@ button.action-btn.action-delete svg {
 .meal-swipe--inline-header .meal-card-header-actions-slot {
         display: flex;
         align-items: center;
-        background: #e5e5e5;
+        background: #ffffff;
         box-sizing: border-box;
         width: 156px;
         justify-content: flex-start;
@@ -11516,9 +11534,9 @@ button.action-btn.action-delete:active svg {
 .meal-swipe--inline-header .meal-card-header-actions-slot {
     display: flex;
     align-items: center;
-    background: #d3d7de;
+    background: #e19b43;
     box-sizing: border-box;
-    width: 156px;
+    width: 209px;
     justify-content: flex-start;
     margin-left: 10px;
 }
@@ -11711,6 +11729,34 @@ button.meal-food-list-footer-btn.meal-food-list-footer-btn--quick-add {
 .meal-header-kcal > span {
     font-size: 14px;
     font-weight: 700;
+}
+.meal-swipe--reorder-active .meal-card-header {
+    box-shadow: inset 0 0 0 1px rgba(89, 165, 248, 0.22);
+}
+.meal-reorder-ghost {
+    position: fixed;
+    left: 0;
+    top: 0;
+    z-index: 1400;
+    pointer-events: none;
+    opacity: 0.96;
+    transform: translateZ(0);
+    filter: drop-shadow(0 14px 28px rgba(17, 24, 39, 0.18));
+}
+.meal-reorder-ghost .meal-card {
+    border-radius: 8px;
+}
+.meal-reorder-placeholder {
+    margin: 0 0 10px;
+    border-radius: 8px;
+    border: 1px dashed rgba(89, 165, 248, 0.4);
+    background: rgba(89, 165, 248, 0.08);
+}
+html.meal-reorder-lock, body.meal-reorder-lock {
+    overscroll-behavior: none;
+}
+html.meal-reorder-lock #root {
+    touch-action: none;
 }
 .meal-add-icon {
     display: flex;
@@ -12503,21 +12549,27 @@ button#meal-calendar-btn svg {
     cursor: pointer;
     transition: background 0.2s;
     padding: 0;
-    width: 59px;
+    width: 60px;
     height: 100%;
     display: flex;
     justify-content: space-evenly;
     align-items: center;
 }
+button.action-btn.action-edit.meal-header-action-btn.meal-action-note {background: #5d6670;}
+
+button.action-btn.action-edit.meal-action-stub {
+    background: #e19b43;
+}
 button.action-btn.action-delete.meal-action-delete {
     background: #cd3931;
-    width: 83px;
-    padding-right: 21px;
+    width: 91px;
+    padding-right: 25px;
 }
 .meal-swipe .action-btn svg {
     width: 22px;
     height: 22px;
     color: #353c49;
+    color: white;
 }
 .meal-swipe .action-delete svg {
     width: 19px;
@@ -13238,7 +13290,7 @@ button.delete-food-from-meal-btn {
 }
 .meal-card-macros {
     display: flex;
-    padding: 11px 26px 11px 43px;
+    padding: 12px 26px 12px 43px;
     font-size: 14px;
     color: #111827d4;
     border-top: 1px solid #eeeff3;
@@ -13310,7 +13362,7 @@ button.delete-food-from-meal-btn {
     width: 15px;
     height: 15px;
     flex-shrink: 0;
-    margin-top: 5px;
+    margin-top: 0px;
     color: #696565;
     transform: rotate(270deg);
 }
@@ -13318,6 +13370,7 @@ button.delete-food-from-meal-btn {
     display: block;
     width: 15px;
     height: 15px;
+    margin-left: 1px;
 }
 .meal-arrow.arrow-rotate-open {
     animation: mealArrowRotateOpen 0.28s ease forwards;
@@ -15916,8 +15969,8 @@ button.meal-goal-interval-delete-btn {
     overflow: hidden;
 }
 .add-meal-wrap {
+    width: calc(100% - 16px);
     margin: 0 auto;
-    padding: 0 10px;
 }
 button#add-meal-section-btn {
     width: 100%;
@@ -15926,7 +15979,7 @@ button#add-meal-section-btn {
     margin: 0;
     padding: 13px 15px;
     height: 43px;
-    margin-top: 0px;
+    margin-top: 5px;
     font-weight: 600;
     font-size: 12px;
     box-shadow: 0px 1px 3px #00000030 !important;
@@ -19676,69 +19729,6 @@ html.program-reorder-lock, body.program-reorder-lock {
     overscroll-behavior: none !important;
 }
 html.program-reorder-lock #root {
-    overflow: hidden !important;
-    overscroll-behavior: none !important;
-}
-.meal-swipe--reorder-active {
-    position: relative;
-    z-index: 24;
-    overflow: visible;
-    box-shadow: 0 14px 28px rgba(15, 23, 42, 0.14);
-}
-.meal-swipe--dragging-source {
-    box-shadow: none;
-}
-.meal-section-reorder-ghost {
-    position: fixed;
-    z-index: 9999;
-    pointer-events: none;
-    transform: translate3d(0, 0, 0);
-    opacity: 0.98;
-    border-radius: 8px;
-    box-shadow: 0 16px 36px rgba(15, 23, 42, 0.22);
-    background: #ffffff;
-}
-.meal-section-reorder-placeholder {
-    border: 2px dashed rgba(82, 145, 215, 0.7);
-    border-radius: 8px;
-    background: rgba(82, 145, 215, 0.08);
-    box-sizing: border-box;
-}
-.meal-swipe--reorder-active .meal-card-header {
-    position: relative;
-    background: #f7f9fc;
-}
-.meal-swipe--reorder-active .meal-card-header::before,
-.meal-swipe--reorder-active .meal-card-header::after {
-    position: absolute;
-    right: 50px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    background: #ffffff;
-    color: #268eff;
-    font-size: 13px;
-    font-weight: 800;
-    line-height: 1;
-    box-shadow: 0 6px 14px rgba(38, 142, 255, 0.18);
-}
-.meal-swipe--reorder-active.meal-swipe--can-move-up .meal-card-header::before {
-    content: "\2191";
-    top: -10px;
-}
-.meal-swipe--reorder-active.meal-swipe--can-move-down .meal-card-header::after {
-    content: "\2193";
-    bottom: -10px;
-}
-html.meal-reorder-lock, body.meal-reorder-lock {
-    overflow: hidden !important;
-    touch-action: none !important;
-    overscroll-behavior: none !important;
-}
-html.meal-reorder-lock #root {
     overflow: hidden !important;
     overscroll-behavior: none !important;
 }

@@ -2,62 +2,19 @@ import { createKeyedBackgroundWriter } from '../background-write-queue.js';
 import { deleteDoc, deleteField, doc, setDoc, updateDoc } from '../firestore-ops.js';
 
 const mealsDocWriter = createKeyedBackgroundWriter({ delayMs: 420 });
-const MEAL_ORDER_FIELD = 'mealOrder';
-const MEAL_NOTES_FIELD = 'mealNotes';
-const MEAL_NOTE_MAX_LENGTH = 40;
-
-function normalizeMealNoteText(note) {
-    return String(note ?? '')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, MEAL_NOTE_MAX_LENGTH);
-}
+export const MEAL_NOTES_FIELD = 'mealNotes';
 
 export function cloneMealItemsArray(items = []) {
     return (Array.isArray(items) ? items : []).map((item) => ({ ...item }));
 }
 
-function normalizeMealOrder(mealsData = {}, fallbackMealIds = []) {
-    const explicitOrder = Array.isArray(mealsData?.[MEAL_ORDER_FIELD]) ? mealsData[MEAL_ORDER_FIELD] : [];
-    const knownMealIds = new Set(
-        [
-            ...Object.keys(mealsData || {}).filter((mealId) => /^meal\d+$/.test(mealId)),
-            ...explicitOrder.filter((mealId) => /^meal\d+$/.test(String(mealId || '').trim())),
-            ...(Array.isArray(fallbackMealIds) ? fallbackMealIds : [])
-        ]
-            .map((mealId) => String(mealId || '').trim())
-            .filter(Boolean)
-    );
-    const ordered = [];
-    const seen = new Set();
-
-    explicitOrder.forEach((mealId) => {
-        const normalizedMealId = String(mealId || '').trim();
-        if (!knownMealIds.has(normalizedMealId) || seen.has(normalizedMealId)) return;
-        seen.add(normalizedMealId);
-        ordered.push(normalizedMealId);
-    });
-
-    fallbackMealIds.forEach((mealId) => {
-        const normalizedMealId = String(mealId || '').trim();
-        if (!knownMealIds.has(normalizedMealId) || seen.has(normalizedMealId)) return;
-        seen.add(normalizedMealId);
-        ordered.push(normalizedMealId);
-    });
-
-    return ordered;
-}
-
-function normalizeMealNotes(mealsData = {}) {
-    const source = mealsData?.[MEAL_NOTES_FIELD];
-    if (!source || typeof source !== 'object' || Array.isArray(source)) {
-        return {};
-    }
-
+function normalizeMealNotesMap(notes = {}) {
     const normalized = {};
-    Object.keys(source).forEach((mealId) => {
+    Object.keys(notes || {}).forEach((mealId) => {
         if (!/^meal\d+$/.test(mealId)) return;
-        const note = normalizeMealNoteText(source[mealId]);
+        const note = String(notes[mealId] ?? '')
+            .replace(/\s+/g, ' ')
+            .trim();
         if (!note) return;
         normalized[mealId] = note;
     });
@@ -80,22 +37,10 @@ export function normalizeMealsDataSnapshot(mealsData = {}, options = {}) {
         }
     });
 
-    const normalizedMealOrder = normalizeMealOrder(
-        mealsData,
-        [
-            ...Object.keys(normalized).filter((mealId) => /^meal\d+$/.test(mealId)),
-            ...Array.from(preserveEmptyMealIds)
-        ]
-    );
-    if (normalizedMealOrder.length) {
-        normalized[MEAL_ORDER_FIELD] = normalizedMealOrder;
+    const normalizedNotes = normalizeMealNotesMap(mealsData?.[MEAL_NOTES_FIELD]);
+    if (Object.keys(normalizedNotes).length > 0) {
+        normalized[MEAL_NOTES_FIELD] = normalizedNotes;
     }
-
-    const normalizedMealNotes = normalizeMealNotes(mealsData);
-    if (Object.keys(normalizedMealNotes).length > 0) {
-        normalized[MEAL_NOTES_FIELD] = normalizedMealNotes;
-    }
-
     return normalized;
 }
 
@@ -103,9 +48,9 @@ function hasAnyMealField(data = {}) {
     return Object.keys(data).some((key) => /^meal\d+$/.test(key) && Array.isArray(data[key]));
 }
 
-function hasAnyMealNote(data = {}) {
-    const source = data?.[MEAL_NOTES_FIELD];
-    return !!source && typeof source === 'object' && !Array.isArray(source) && Object.keys(source).length > 0;
+function hasAnyMealNotes(data = {}) {
+    const notes = data?.[MEAL_NOTES_FIELD];
+    return !!notes && typeof notes === 'object' && !Array.isArray(notes) && Object.keys(notes).length > 0;
 }
 
 export function hasAnyFoodInMealsSnapshot(data = {}) {
@@ -119,7 +64,7 @@ export function saveMealsDataDocument(cycleRef, dateStr, mealsData, options = {}
 
     const snapshot = normalizeMealsDataSnapshot(mealsData, options);
     const mealRef = doc(cycleRef, 'meals', dateStr);
-    if (hasAnyMealField(snapshot) || hasAnyMealNote(snapshot)) {
+    if (hasAnyMealField(snapshot) || hasAnyMealNotes(snapshot)) {
         return setDoc(mealRef, snapshot);
     }
     return deleteDoc(mealRef);

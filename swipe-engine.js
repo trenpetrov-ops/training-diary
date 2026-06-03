@@ -86,7 +86,7 @@ export function attachSwipeRow({
     swipeRoot,
     contentEl,
     maxSwipe,
-    openAt = Math.max(26, Math.round(maxSwipe * 0.38)),
+    openAt = null,
     velocityThreshold = 0.28,
     rootSelectorForSameType = null,
     onSwipeActiveVisual = null,
@@ -97,12 +97,19 @@ export function attachSwipeRow({
     addDocumentClickOutside = true,
     edgeWidth = 0,
     edgeWidthLeft = 0,
-    maxSwipeLeft = 0
+    maxSwipeLeft = 0,
+    getMaxSwipe = null
 }) {
     if (!swipeRoot || !contentEl) return;
 
     const item = swipeRoot;
     const openAtLeft = maxSwipeLeft > 0 ? Math.max(26, Math.round(maxSwipeLeft * 0.38)) : 0;
+    const resolveMaxSwipe = () => {
+        const value = typeof getMaxSwipe === 'function' ? Number(getMaxSwipe(item)) : Number(maxSwipe);
+        if (!Number.isFinite(value)) return 0;
+        return Math.max(0, value);
+    };
+    const resolveOpenAt = () => Number.isFinite(openAt) ? openAt : Math.max(26, Math.round(resolveMaxSwipe() * 0.38));
 
     let startX = 0;
     let startY = 0;
@@ -147,11 +154,14 @@ export function attachSwipeRow({
 
         const targetContent = target === item ? contentEl : resolveSwipeContent(target);
         if (!targetContent) return;
+        const resolvedMaxSwipe = target === item
+            ? resolveMaxSwipe()
+            : Math.max(0, Number(target.dataset.swipeRight || maxSwipe || 0));
 
         target.classList.add('open');
         target.classList.remove('open-left');
         targetContent.style.transition = transitionSnap();
-        targetContent.style.transform = `translateX(-${maxSwipe}px)`;
+        targetContent.style.transform = `translateX(-${resolvedMaxSwipe}px)`;
         if (typeof onSwipeActiveVisual === 'function') {
             onSwipeActiveVisual(target);
         }
@@ -347,11 +357,12 @@ export function attachSwipeRow({
             let translate;
 
             if (swipeDirection === 'right') {
+                const resolvedMaxSwipe = resolveMaxSwipe();
                 if (item.classList.contains('open')) {
-                    const raw = deltaX - maxSwipe;
-                    translate = swipeRubberBand(raw, -maxSwipe - PULL_PAST_OPEN, PULL_PAST_CLOSED, SWIPE_RUBBER_BAND);
+                    const raw = deltaX - resolvedMaxSwipe;
+                    translate = swipeRubberBand(raw, -resolvedMaxSwipe - PULL_PAST_OPEN, PULL_PAST_CLOSED, SWIPE_RUBBER_BAND);
                 } else {
-                    translate = swipeRubberBand(deltaX, -maxSwipe - PULL_PAST_OPEN, PULL_PAST_CLOSED, SWIPE_RUBBER_BAND);
+                    translate = swipeRubberBand(deltaX, -resolvedMaxSwipe - PULL_PAST_OPEN, PULL_PAST_CLOSED, SWIPE_RUBBER_BAND);
                 }
             } else {
                 if (item.classList.contains('open-left')) {
@@ -407,15 +418,17 @@ export function attachSwipeRow({
         }
 
         if (swipeDirection === 'right') {
+            const resolvedMaxSwipe = resolveMaxSwipe();
+            const resolvedOpenAt = resolveOpenAt();
             const wasOpen = item.classList.contains('open');
             if (!wasOpen) {
-                if (v < -velocityThreshold || deltaX <= -openAt) {
+                if (v < -velocityThreshold || deltaX <= -resolvedOpenAt) {
                     openSwipe(item);
                 } else {
                     closeSwipe(item);
                 }
             } else {
-                const closeThreshold = Math.max(22, Math.round(maxSwipe * 0.34));
+                const closeThreshold = Math.max(22, Math.round(resolvedMaxSwipe * 0.34));
                 if (v > velocityThreshold || deltaX >= closeThreshold) {
                     closeSwipe(item);
                 } else {
@@ -476,7 +489,7 @@ export function bindSwipeBlock({
     rootSelector,
     contentSelector,
     maxSwipe,
-    openAt = Math.max(26, Math.round(maxSwipe * 0.38)),
+    openAt = null,
     velocityThreshold = 0.28,
     onSwipeActiveVisual = null,
     onSwipeClosedVisual = null,
@@ -485,7 +498,8 @@ export function bindSwipeBlock({
     pureTapIf = null,
     edgeWidth = 0,
     edgeWidthLeft = 0,
-    maxSwipeLeft = 0
+    maxSwipeLeft = 0,
+    getMaxSwipe = null
 }) {
     const swipeItems = document.querySelectorAll(rootSelector);
 
@@ -512,7 +526,8 @@ export function bindSwipeBlock({
             addDocumentClickOutside: true,
             edgeWidth,
             edgeWidthLeft,
-            maxSwipeLeft
+            maxSwipeLeft,
+            getMaxSwipe
         });
     });
 }
