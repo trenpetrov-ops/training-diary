@@ -2034,11 +2034,16 @@ function appendItemToSelectedMeal(item, mealId = state.currentMealId, options = 
     return true;
 }
 
-async function addFoodSnapshotToCurrentMeal(food, grams) {
-    appendItemToSelectedMeal({
+function buildMealFoodItemSnapshot(food = {}, options = {}) {
+    const resolvedFoodId = String(options.foodId || food.id || state.currentFoodId || '').trim();
+    const resolvedGrams = Number(
+        options.grams ?? food.defaultAmount ?? food.baseAmount ?? 100
+    );
+
+    return {
         id: crypto.randomUUID(),
-        foodId: state.currentFoodId,
-        grams: Number(grams || food.defaultAmount || food.baseAmount || 100),
+        foodId: resolvedFoodId,
+        grams: resolvedGrams,
         name: food.name || '',
         description: food.description || '',
         baseAmount: Number(food.baseAmount || 100),
@@ -2047,7 +2052,14 @@ async function addFoodSnapshotToCurrentMeal(food, grams) {
         fat: Number(food.fat || 0),
         carbs: Number(food.carbs || 0),
         calories: Number(food.calories || 0)
-    }, state.currentMealId, {
+    };
+}
+
+async function addFoodSnapshotToCurrentMeal(food, grams) {
+    appendItemToSelectedMeal(buildMealFoodItemSnapshot(food, {
+        foodId: state.currentFoodId,
+        grams
+    }), state.currentMealId, {
         delayMs: 260,
         errorMessage: 'Не удалось сохранить продукт в приёме'
     });
@@ -9548,13 +9560,19 @@ async function renderFoodDetails() {
                     await updateFoodDefaultAmount(state.currentFoodId, newAmount);
                 }
 
-                const foodsMap = await getFoodsMap(!isGlobalImportedFood);
                 const updatedFood = {
-                    ...(foodsMap[state.currentFoodId] || food || {}),
+                    ...(foodsMapCache?.[state.currentFoodId] || food || {}),
                     defaultAmount: isGlobalImportedFood
                         ? Number(food?.defaultAmount || food?.baseAmount || 100)
                         : Number(newAmount)
                 };
+
+                if (foodsMapCache && foodsMapLibraryKey === getMealLibraryContextKey()) {
+                    foodsMapCache[state.currentFoodId] = {
+                        ...(foodsMapCache[state.currentFoodId] || {}),
+                        ...updatedFood
+                    };
+                }
 
                 if (!updatedFood) {
                     showToast('Продукт не найден');
@@ -16688,19 +16706,29 @@ function createFoodSearchSwipeItem(food, onDeleted) {
 
     addBtn.onclick = async (e) => {
         e.stopPropagation();
-        await addFoodToMeal(food.id);
-        showToast('Продукт добавлен в прием');
-        addBtn.innerHTML = `
-             <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 512 512">
-                               <title>Checkmark-sharp SVG Icon</title>
-                               <path fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="44" d="M416 128L192 384l-96-96"></path>
-                             </svg>
-        `;
-        setTimeout(() => {
+        if (addBtn.disabled) return;
+
+        try {
+            addBtn.disabled = true;
+            await addFoodToMeal(food);
+            showToast('Продукт добавлен в прием');
             addBtn.innerHTML = `
-                  <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24"><title>Plus SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2" d="M12 20v-8m0 0V4m0 8h8m-8 0H4"></path></svg>
+                 <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 512 512">
+                                   <title>Checkmark-sharp SVG Icon</title>
+                                   <path fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="44" d="M416 128L192 384l-96-96"></path>
+                                 </svg>
             `;
-        }, 600);
+            setTimeout(() => {
+                addBtn.innerHTML = `
+                      <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24"><title>Plus SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2" d="M12 20v-8m0 0V4m0 8h8m-8 0H4"></path></svg>
+                `;
+                addBtn.disabled = false;
+            }, 600);
+        } catch (error) {
+            console.error(error);
+            showToast('Не удалось добавить продукт');
+            addBtn.disabled = false;
+        }
     };
 
     header.append(info, addBtn);
@@ -17469,28 +17497,28 @@ function prependRecipeCardToSearchDOM(recipe) {
     setTimeout(() => initMealSwipe(), 0);
 }
 
-async function addFoodToMeal(foodId) {
-    const foodsMap = await getFoodsMap();
-    const food = foodsMap[foodId];
+async function addFoodToMeal(foodOrId) {
+    const directFood = foodOrId && typeof foodOrId === 'object' ? foodOrId : null;
+    const foodId = String(directFood?.id || foodOrId || '').trim();
+    let food = directFood;
+
+    if (!food) {
+        if (foodsMapCache && foodsMapLibraryKey === getMealLibraryContextKey() && foodsMapCache[foodId]) {
+            food = foodsMapCache[foodId];
+        } else {
+            const foodsMap = await getFoodsMap();
+            food = foodsMap[foodId];
+        }
+    }
 
     if (!food) {
         showToast('Продукт не найден');
         return;
     }
 
-    appendItemToSelectedMeal({
-        id: crypto.randomUUID(),
-        foodId,
-        grams: Number(food.defaultAmount || food.baseAmount || 100),
-        name: food.name || '',
-        description: food.description || '',
-        baseAmount: Number(food.baseAmount || 100),
-        baseUnit: food.baseUnit || 'г',
-        protein: Number(food.protein || 0),
-        fat: Number(food.fat || 0),
-        carbs: Number(food.carbs || 0),
-        calories: Number(food.calories || 0)
-    }, state.currentMealId, {
+    appendItemToSelectedMeal(buildMealFoodItemSnapshot(food, {
+        foodId
+    }), state.currentMealId, {
         delayMs: 260,
         errorMessage: 'Не удалось сохранить продукт в приёме'
     });

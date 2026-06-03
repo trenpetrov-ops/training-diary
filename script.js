@@ -7051,9 +7051,16 @@ exerciseHeader.addEventListener('click', () => {
 
 
             const exerciseTitle = createElement('div', 'exercise-title');
+            const exerciseTitleCopy = createElement('div', 'exercise-title-copy');
+            exerciseTitleCopy.append(createElement('span', 'exercise-name', exercise.name));
+            if (String(exercise.description || '').trim()) {
+                exerciseTitleCopy.append(
+                    createElement('div', 'exercise-description', exercise.description.trim())
+                );
+            }
             exerciseTitle.append(
                 createElement('span', 'exercise-number', `${index + 1}.`),
-                createElement('span', 'exercise-name', exercise.name)
+                exerciseTitleCopy
             );
 
 
@@ -7711,6 +7718,8 @@ function openAddExerciseModal(program) {
 
     const input = createElement('input', 'modal-input');
     input.placeholder = 'Название упражнения';
+    const descriptionInput = createElement('input', 'modal-input');
+    descriptionInput.placeholder = 'Уточнение';
 
     const btnGroup = createElement('div', 'modal-buttons');
 
@@ -7725,7 +7734,14 @@ function openAddExerciseModal(program) {
         const name = input.value.trim();
         if (!name) return showToast('Введите название упражнения!');
 
-        const newExercise = { id: Date.now().toString(), name, sets: [{ weight: '', reps: '' }], note: '' };
+        const description = descriptionInput.value.trim();
+        const newExercise = {
+            id: Date.now().toString(),
+            name,
+            description,
+            sets: [{ weight: '', reps: '' }],
+            note: ''
+        };
         program.exercises = program.exercises || [];
         program.exercises.push(newExercise);
 
@@ -7735,7 +7751,7 @@ function openAddExerciseModal(program) {
     });
 
     btnGroup.append(cancelBtn, saveBtn);
-    modalContent.append(title, input, btnGroup);
+    modalContent.append(title, input, descriptionInput, btnGroup);
     modal.append(modalContent);
     presentKeyboardDockedModal(modal, modalContent);
 
@@ -7828,6 +7844,10 @@ function openExerciseMenuModal(program, exercise) {
       const nameInput = createElement('input', 'modal-input');
       nameInput.type = 'text';
       nameInput.value = exercise.name;
+      const descriptionInput = createElement('input', 'modal-input');
+      descriptionInput.type = 'text';
+      descriptionInput.placeholder = 'Уточнение';
+      descriptionInput.value = String(exercise.description || '');
 
       const controls = createElement('div', 'modal-buttons');
       const cancel = createElement('button', 'btn cancel-btn', 'Отмена');
@@ -7845,6 +7865,7 @@ function openExerciseMenuModal(program, exercise) {
           }
 
           exercise.name = nextName;
+          exercise.description = descriptionInput.value.trim();
           queueProgramExercisesSave(selectedProgram.id, selectedProgram.exercises, {
               errorMessage: 'Не удалось сохранить изменения тренировки'
           });
@@ -7854,7 +7875,7 @@ function openExerciseMenuModal(program, exercise) {
       });
 
       controls.append(cancel, save);
-      modal.append(title, nameInput, controls);
+      modal.append(title, nameInput, descriptionInput, controls);
       overlay.appendChild(modal);
       presentKeyboardDockedModal(overlay, modal);
   }
@@ -11171,6 +11192,7 @@ let rootScrollLockTimeoutId = 0;
 let rootScrollLockBindingsReady = false;
 let rootScrollLockObserver = null;
 let lastKnownNativeStatusBarHeight = 0;
+let authBootstrapRunId = 0;
 
 function isMealOverlaySubpageActive() {
     return state.currentPage === 'meal' && Boolean(state.mealView && state.mealView !== 'main');
@@ -12206,11 +12228,12 @@ async function submitEmailPasswordLogin(email, password) {
     };
 
     try {
-        await signInWithEmailAndPassword(auth, email, password); showToast('Вход выполнен успешно!'); return;
+        await signInWithEmailAndPassword(auth, email, password);
         showToast('Вход выполнен успешно!');
+        return { ok: true };
     } catch (error) {
         if (error?.code === 'exclusive_session_takeover_cancelled' || error?.message === 'exclusive_session_takeover_cancelled') {
-            return;
+            return { ok: false, cancelled: true };
         }
         throw error;
     } finally {
@@ -12307,24 +12330,20 @@ async function handleAuthSubmitWithPending() {
     const email = document.getElementById('auth-email')?.value?.trim() || '';
     const password = document.getElementById('auth-password')?.value || '';
 
+    let keepPendingUntilBootstrap = false;
     setAuthSubmitPendingState(true);
     try {
         if (isLoginMode) {
-            pendingExclusiveSessionLoginAttempt = {
-                mode: 'email-password-login',
-                startedAt: Date.now()
-            };
-
-            try {
-                await signInWithEmailAndPassword(auth, email, password);
-                showToast('Вход выполнен успешно!');
-            } finally {
-                pendingExclusiveSessionLoginAttempt = null;
+            const loginResult = await submitEmailPasswordLogin(email, password);
+            if (loginResult?.cancelled) {
+                return;
             }
+            keepPendingUntilBootstrap = true;
             return;
         }
 
         await submitRegistrationFlow(email, password);
+        keepPendingUntilBootstrap = true;
     } catch (error) {
         if (error?.code === 'exclusive_session_takeover_cancelled' || error?.message === 'exclusive_session_takeover_cancelled') {
             return;
@@ -12332,7 +12351,9 @@ async function handleAuthSubmitWithPending() {
         console.error("Ошибка аутентификации:", error);
         showToast('Ошибка: ' + (error.message.includes('auth/invalid-credential') ? 'Неверный email или пароль.' : error.message));
     } finally {
-        setAuthSubmitPendingState(false);
+        if (!keepPendingUntilBootstrap) {
+            setAuthSubmitPendingState(false);
+        }
     }
 }
 
@@ -12350,51 +12371,10 @@ if (authToggleBtn && authLoginBtn) {
     syncAuthRegisterFieldsVisibility(isLoginMode);
     updateAuthKeyboardHints();
 
-    authLoginBtn.addEventListener('click', async () => {
-        const email = document.getElementById('auth-email').value.trim();
-        const password = document.getElementById('auth-password').value;
-        try {
-            if (isLoginMode) {
-                await submitEmailPasswordLogin(email, password); return;
-                showToast('Вход выполнен успешно!');
-            } else {
-                const firstName = document.getElementById('auth-first-name')?.value?.trim() || '';
-                const lastName = document.getElementById('auth-last-name')?.value?.trim() || '';
-                const patronymic = document.getElementById('auth-patronymic')?.value?.trim() || '';
-                const birthDate = document.getElementById('auth-birth-date')?.value || '';
-
-                if (!firstName || !lastName || !patronymic || !birthDate) {
-                    showToast('Заполните имя, фамилию, отчество и дату рождения.');
-                    return;
-                }
-                if (!email || !password) {
-                    showToast('Укажите email и пароль.');
-                    return;
-                }
-
-                const cred = await createUserWithEmailAndPassword(auth, email, password);
-                await ensureExclusiveSessionClaim(cred.user, {
-                    reason: 'register',
-                    forceTokenRefresh: true,
-                    ignoreOfflineGuard: true
-                });
-                if (auth.currentUser?.uid !== cred.user.uid) {
-                    return;
-                }
-                const code = await createUserProfileAndAssignCode(cred.user.uid, {
-                    firstName,
-                    lastName,
-                    patronymic,
-                    birthDate
-                });
-                await refreshUserProfileFromServer();
-                render();
-                showPostRegistrationModal(code);
-            }
-        } catch (error) {
-            console.error("Ошибка аутентификации:", error);
-            showToast('Ошибка: ' + (error.message.includes('auth/invalid-credential') ? 'Неверный email или пароль.' : error.message));
-        }
+    authLoginBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        if (isAuthSubmitPending) return;
+        void handleAuthSubmitWithPending();
     });
 
     authScreenEl?.addEventListener('pointerdown', (event) => {
@@ -12436,22 +12416,7 @@ if (authToggleBtn && authLoginBtn) {
         blurActiveAuthField();
         authLoginBtn.click();
     });
-}
-
-if (authToggleBtn && authLoginBtn) {
     setAuthSubmitPendingState(false);
-
-    authToggleBtn.addEventListener('click', () => {
-        if (!isAuthSubmitPending) {
-            setAuthSubmitPendingState(false);
-        }
-    });
-
-    authLoginBtn.addEventListener('click', (event) => {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        void handleAuthSubmitWithPending();
-    }, true);
 }
 
 
@@ -12502,6 +12467,7 @@ document.getElementById('mode-logout-btn')?.addEventListener('click', async () =
 // ... (Код onAuthStateChanged без изменений) ...
 
 onAuthStateChanged(auth, async (user) => {
+    const bootstrapRunId = ++authBootstrapRunId;
     const loading = document.getElementById('loading-screen');
 
     // Пока грузится — показываем лоадер
@@ -12535,10 +12501,7 @@ onAuthStateChanged(auth, async (user) => {
             return;
         }
         if (sessionClaim?.reauthenticated) {
-            await ensureExclusiveSessionMeta(auth.currentUser || user).catch((error) => {
-                console.warn('[session] post-reauth token bootstrap failed:', error);
-                return null;
-            });
+            return;
         }
 
         try {
@@ -12578,9 +12541,14 @@ onAuthStateChanged(auth, async (user) => {
         console.error('[bootstrap] onAuthStateChanged failed:', error);
         showBootstrapFallbackScreen(user);
     } finally {
-        window.setTimeout(() => {
-            hideInitialLoadingScreen();
-        }, 300); // можно увеличить если захочешь плавности
+        if (bootstrapRunId === authBootstrapRunId) {
+            window.setTimeout(() => {
+                if (bootstrapRunId !== authBootstrapRunId) return;
+                setAuthSubmitPendingState(false);
+                hideInitialLoadingScreen();
+                scheduleRootScrollLockState();
+            }, 300); // можно увеличить если захочешь плавности
+        }
     }
 });
 

@@ -2053,8 +2053,8 @@ span.exercise-header-arrow {
 }
 button.modal-set-add-part-btn svg {
     flex-shrink: 0;
-    width: 11px;
-    height: 11px;
+    width: 12px;
+    height: 12px;
 }
 .modal-set h3 {
     font-size: 17px;
@@ -4350,6 +4350,7 @@ button.btn.edit-note-btn svg {
         display: flex;
         flex-direction: column;
         min-height: 23px;
+        border-top: 0.5px solid #e5e5ea2b;
     }
 .exercise-note-display .comment-text {
         font-style: italic;
@@ -4406,12 +4407,11 @@ button.btn.delete-media-btn svg {
         width: 19px;
         height: 19px;
     }
-button.btn.btn-secondary span {
-        padding-left: 0px;
-        font-weight: 500;
-        font-size: 10px;
+.modal-set button.btn.btn-secondary span {
+        padding-left: 5px;
+        font-weight: 600;
+        font-size: 13px;
         white-space: normal;
-        display: none;
     }
 .media-container {
     display: flex;
@@ -4439,6 +4439,9 @@ button.btn.btn-secondary span {
         background: #f4f4f4;
         border: 1px solid #e8e8e8;
     }
+.media-container button.btn.btn-secondary span.add-media-text {
+    display: none;
+}
 .comExer button.btn.btn-secondary svg {
         width: 28px;
         height: 29px;
@@ -5003,7 +5006,7 @@ div#program-details-content h3 {
         flex-shrink: 0;
     }
 .modal-set-add-part-btn {
-        margin-top: 24px;
+        margin-top: 21px;
         box-sizing: border-box;
         display: inline-flex;
         align-items: center;
@@ -12384,7 +12387,7 @@ button.meal-calendar-day.has-entry {
 .week-strip-header {
     align-items: center;
     justify-content: space-between;
-    margin: 6px 2px 12px;
+    margin: 6px 2px 9px;
     display: grid;
     grid-template-columns: 1fr 6fr 2fr;
     padding: 0 10px;
@@ -12409,8 +12412,8 @@ button#meal-calendar-btn svg {
 .week-strip-today-btn {
     border: none;
     background: none;
-    font-size: 16px;
-    font-weight: 500;
+    font-size: 15px;
+    font-weight: 400;
     padding: 0;
     margin: 0;
     padding-right: 8px;
@@ -16180,6 +16183,15 @@ button.btn.btn-secondary.profile-copy-btn {
     font-size: 15px !important;
     font-weight: 600 !important;
 }
+.auth-submit-btn:disabled,
+.auth-submit-btn[aria-busy="true"] {
+    background: #b9c1cb !important;
+    border-color: #b9c1cb !important;
+    color: #ffffff !important;
+    box-shadow: none !important;
+    cursor: default;
+    opacity: 1;
+}
 .auth-submit-btn:active {
     transform: scale(0.98);
     opacity: 0.95;
@@ -16193,6 +16205,10 @@ button.btn.btn-secondary.profile-copy-btn {
     font-size: 15px;
     font-weight: 600;
     border-radius: 12px;
+}
+.auth-toggle-btn:disabled {
+    opacity: 0.56;
+    cursor: default;
 }
 .auth-toggle-btn:active {
     background: rgba(10, 132, 255, 0.08);
@@ -19614,6 +19630,24 @@ html.supplement-column-drag-lock #root {
 }
 .food-swipe--exercise-item .exercise-title {
     min-width: 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+.food-swipe--exercise-item .exercise-title-copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+.food-swipe--exercise-item .exercise-name {
+    display: block;
+}
+.food-swipe--exercise-item .exercise-description {
+    display: block;
+    margin-top: 2px;
+    color: #7a7a7a;
+    font-size: 12px;
+    line-height: 1.25;
 }
 .food-swipe--exercise-item .exercise-swipe-actions {
     min-width: 214px;

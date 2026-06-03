@@ -525,13 +525,7 @@ exports.claimExclusiveSession = onRequest(
         return jsonResponse(res, 409, claimResult);
       }
 
-      if (claimResult.tookOver) {
-        await admin.auth().revokeRefreshTokens(uid);
-        claimResult.reauthCustomToken = await admin.auth().createCustomToken(uid);
-        claimResult.revokedOtherSessions = true;
-      } else {
-        claimResult.revokedOtherSessions = false;
-      }
+      claimResult.revokedOtherSessions = false;
 
       return jsonResponse(res, 200, claimResult);
     } catch (error) {
