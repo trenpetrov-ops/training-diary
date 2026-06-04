@@ -523,7 +523,12 @@ function getWeekDates(dateStr) {
     return week;
 }
 
-const WEEK_DAY_CHECK_MARK = '\u2713';
+const WEEK_DAY_CHECK_MARKUP = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 512 512">
+        <title>Checkmark-sharp SVG Icon</title>
+        <path fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="44" d="M416 128L192 384l-96-96"></path>
+    </svg>
+`;
 
 function getWeekPresenceCacheKey(weekDates = []) {
     const first = weekDates[0] || 'no-start';
@@ -595,8 +600,8 @@ function applyWeekRowPresence(presence = {}, root = mealMainEl) {
         btn.classList.toggle('has-food', Boolean(presence[date]));
 
         const check = btn.querySelector('.week-day-check');
-        if (check && check.textContent !== WEEK_DAY_CHECK_MARK) {
-            check.textContent = WEEK_DAY_CHECK_MARK;
+        if (check && check.innerHTML.trim() !== WEEK_DAY_CHECK_MARKUP.trim()) {
+            check.innerHTML = WEEK_DAY_CHECK_MARKUP;
         }
     });
 }
@@ -3066,7 +3071,8 @@ function renderMealWeekRowContent(weekRow, weekDates = [], todayStr, weekPresenc
         item.dataset.date = dateStr;
 
         const circle = createElement('div', 'week-day-circle');
-        const check = createElement('div', 'week-day-check', WEEK_DAY_CHECK_MARK);
+        const check = createElement('div', 'week-day-check');
+        check.innerHTML = WEEK_DAY_CHECK_MARKUP;
         circle.append(check);
 
         const label = createElement('div', 'week-day-name', dayNames[dayIndex]);
@@ -4986,7 +4992,8 @@ function renderMealMainScreen() {
         item.dataset.date = dateStr;
 
         const circle = createElement('div', 'week-day-circle');
-        const check = createElement('div', 'week-day-check', WEEK_DAY_CHECK_MARK);
+        const check = createElement('div', 'week-day-check');
+        check.innerHTML = WEEK_DAY_CHECK_MARKUP;
 
         circle.append(check);
 

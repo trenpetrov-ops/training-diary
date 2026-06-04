@@ -6434,6 +6434,7 @@ function attachProgramReorderLongPress({ itemEl, parentEl }) {
 
 function __closeSwipe(swipeRoot) {
   if (!swipeRoot) return;
+  setExerciseSwipeShadowSuppressed(swipeRoot, false);
   closeSwipeRowVisual(swipeRoot, () => {});
   swipeRoot.classList.remove('open-left', 'open-right');
 
@@ -6442,6 +6443,17 @@ function __closeSwipe(swipeRoot) {
 
 function closeAllSwipes() {
   __closeSwipe(__openSwipeRoot);
+}
+
+function getExerciseItemForSwipe(swipeRoot) {
+  if (!swipeRoot || typeof swipeRoot.closest !== 'function') return null;
+  return swipeRoot.closest('.exercise-item');
+}
+
+function setExerciseSwipeShadowSuppressed(swipeRoot, suppressed) {
+  const exerciseItem = getExerciseItemForSwipe(swipeRoot);
+  if (!exerciseItem) return;
+  exerciseItem.style.boxShadow = suppressed ? 'none' : '';
 }
 
 // Закрываем свайпы при любом клике вне
@@ -6465,12 +6477,14 @@ function attachSwipeActions(swipeRoot, selectedProgram, exercise) {
 
   swipeRoot.querySelector('.action-edit')?.addEventListener('click', (e) => {
     e.stopPropagation();
+    setExerciseSwipeShadowSuppressed(swipeRoot, false);
     closeSwipeRowVisual(swipeRoot, () => {});
     openEditExerciseModal(selectedProgram, exercise);
   });
 
   swipeRoot.querySelector('.action-delete')?.addEventListener('click', (e) => {
     e.stopPropagation();
+    setExerciseSwipeShadowSuppressed(swipeRoot, false);
     closeSwipeRowVisual(swipeRoot, () => {});
     openConfirmModal('Удалить упражнение?', async () => {
       const progRef = doc(getUserProgramsCollection(), selectedProgram.id);
@@ -6489,8 +6503,12 @@ function attachSwipeActions(swipeRoot, selectedProgram, exercise) {
     contentEl: content,
     maxSwipe: MAX_RIGHT,
     rootSelectorForSameType: '.exercise-swipe',
-    onSwipeActiveVisual: null,
-    onSwipeClosedVisual: null,
+    onSwipeActiveVisual: (root) => {
+      setExerciseSwipeShadowSuppressed(root, true);
+    },
+    onSwipeClosedVisual: (root) => {
+      setExerciseSwipeShadowSuppressed(root, false);
+    },
     onBeforeOpen: null,
     addDocumentClickOutside: true,
     edgeWidth: 0,
@@ -11193,7 +11211,6 @@ let rootScrollLockBindingsReady = false;
 let rootScrollLockObserver = null;
 let lastKnownNativeStatusBarHeight = 0;
 let authBootstrapRunId = 0;
-
 function isMealOverlaySubpageActive() {
     return state.currentPage === 'meal' && Boolean(state.mealView && state.mealView !== 'main');
 }
