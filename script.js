@@ -1301,6 +1301,81 @@ export function createElement(tag, classes, innerText = '') {
 }
 window.createElement = createElement;
 
+const MODAL_BUTTON_PRESS_CLASS_BY_VARIANT = Object.freeze({
+    neutral: 'modal-button-pressed-neutral',
+    primary: 'modal-button-pressed-primary',
+    danger: 'modal-button-pressed-danger'
+});
+const PRESS_EFFECT_CLASSES = Object.freeze([
+    ...Object.values(MODAL_BUTTON_PRESS_CLASS_BY_VARIANT),
+    'comment-trigger-pressed',
+    'edit-note-btn-pressed',
+    'exercise-action-edit-pressed',
+    'exercise-action-delete-pressed',
+    'icon-tile-pressed',
+    'list-card-pressed',
+    'set-add-btn-pressed',
+    'set-row-pressed'
+]);
+
+function clearModalButtonPressedState(button) {
+    if (!(button instanceof HTMLElement)) return;
+    PRESS_EFFECT_CLASSES.forEach((className) => {
+        button.classList.remove(className);
+    });
+    const currentPressEffectClass = button.dataset.pressEffectClass;
+    if (currentPressEffectClass) {
+        button.classList.remove(currentPressEffectClass);
+    }
+}
+
+function attachPressedClassEffect(element, pressedClass) {
+    if (!(element instanceof HTMLElement) || !pressedClass) return;
+    element.classList.add('modal-button-press-ready');
+    element.dataset.pressEffectClass = pressedClass;
+
+    if (element.dataset.pressEffectBound === '1') {
+        clearModalButtonPressedState(element);
+        return;
+    }
+
+    const activate = () => {
+        clearModalButtonPressedState(element);
+        element.classList.add(pressedClass);
+    };
+
+    const deactivate = () => {
+        clearModalButtonPressedState(element);
+    };
+
+    element.addEventListener('pointerdown', activate);
+    element.addEventListener('pointerup', deactivate);
+    element.addEventListener('pointercancel', deactivate);
+    element.addEventListener('pointerleave', deactivate);
+    element.addEventListener('blur', deactivate);
+    element.addEventListener('dragstart', deactivate);
+    element.addEventListener('click', () => {
+        requestAnimationFrame(() => {
+            deactivate();
+        });
+    });
+
+    element.dataset.pressEffectBound = '1';
+}
+
+function attachModalButtonPressEffect(button, variant = 'primary') {
+    if (!(button instanceof HTMLElement)) return;
+    button.dataset.modalPressVariant = variant;
+    attachPressedClassEffect(button, MODAL_BUTTON_PRESS_CLASS_BY_VARIANT[button.dataset.modalPressVariant]);
+}
+
+function attachModalButtonPressEffects(config = {}) {
+    Object.entries(config).forEach(([variant, buttons]) => {
+        const list = Array.isArray(buttons) ? buttons : [buttons];
+        list.forEach((button) => attachModalButtonPressEffect(button, variant));
+    });
+}
+
 // =================================================================
 // 👤 Профиль пользователя (ФИО, дата рождения, публичный номер)
 // =================================================================
@@ -1528,7 +1603,9 @@ function clearAuthCredentialInputs() {
 function openExclusiveSessionTakeoverModal(deviceLabel) {
     return new Promise((resolve) => {
         const overlay = createElement('div', 'modal-overlay');
+        overlay.style.zIndex = '10001';
         const modal = createElement('div', 'modal-content modal-compact');
+        modal.style.zIndex = '10002';
         const title = createElement('h3', 'modal-title', EXCLUSIVE_SESSION_TAKEOVER_TITLE);
         const text = createElement('p', 'duplicate-text', buildExclusiveSessionTakeoverMessage(deviceLabel));
         const followup = createElement('p', 'duplicate-text', 'Продолжить вход на этом устройстве?');
@@ -3147,6 +3224,7 @@ function renderClientsPage() {
     } else {
         state.clients.forEach(client => {
             const clientItem = createElement('div', 'list-item client-item');
+            attachPressedClassEffect(clientItem, 'list-card-pressed');
             clientItem.dataset.id = client.id;
 
             const pendingBadge =
@@ -3192,6 +3270,7 @@ function renderClientsPage() {
     // Кнопка "Добавить клиента"
     // -----------------------------------------------------------
     const addClientBtn = createElement('button', 'btn btn-primary add-client-btn');
+    attachPressedClassEffect(addClientBtn, 'list-card-pressed');
     addClientBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"><title>Plus SVG Icon</title><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2" d="M12 20v-8m0 0V4m0 8h8m-8 0H4"/></svg>';
 
     addClientBtn.addEventListener('click', () => {
@@ -3215,6 +3294,7 @@ function openClientMenuModal(client) {
 
     // Редактировать
     const editBtn = createElement('button', 'btn btn-primary');
+    attachPressedClassEffect(editBtn, 'icon-tile-pressed');
     editBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><title>Pen-to-square SVG Icon</title><path fill="currentColor" d="M471.6 21.7c-21.9-21.9-57.3-21.9-79.2 0l-30.1 30l97.9 97.9l30.1-30.1c21.9-21.9 21.9-57.3 0-79.2zm-299.2 220c-6.1 6.1-10.8 13.6-13.5 21.9l-29.6 88.8c-2.9 8.6-.6 18.1 5.8 24.6s15.9 8.7 24.6 5.8l88.8-29.6c8.2-2.7 15.7-7.4 21.9-13.5l167.3-167.4l-98-98zM96 64c-53 0-96 43-96 96v256c0 53 43 96 96 96h256c53 0 96-43 96-96v-96c0-17.7-14.3-32-32-32s-32 14.3-32 32v96c0 17.7-14.3 32-32 32H96c-17.7 0-32-14.3-32-32V160c0-17.7 14.3-32 32-32h96c17.7 0 32-14.3 32-32s-14.3-32-32-32z"/></svg>';
     editBtn.addEventListener('click', () => {
         document.body.removeChild(modal);
@@ -3223,6 +3303,7 @@ function openClientMenuModal(client) {
 
     // Удалить
     const deleteBtn = createElement('button', 'btn cancel-btn');
+    attachPressedClassEffect(deleteBtn, 'icon-tile-pressed');
     deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><title>Trash3-fill SVG Icon</title><path fill="currentColor" d="M11 1.5v1h3.5a.5.5 0 0 1 0 1h-.538l-.853 10.66A2 2 0 0 1 11.115 16h-6.23a2 2 0 0 1-1.994-1.84L2.038 3.5H1.5a.5.5 0 0 1 0-1H5v-1A1.5 1.5 0 0 1 6.5 0h3A1.5 1.5 0 0 1 11 1.5m-5 0v1h4v-1a.5.5 0 0 0-.5-.5h-3a.5.5 0 0 0-.5.5M4.5 5.029l.5 8.5a.5.5 0 1 0 .998-.06l-.5-8.5a.5.5 0 1 0-.998.06m6.53-.528a.5.5 0 0 0-.528.47l-.5 8.5a.5.5 0 0 0 .998.058l.5-8.5a.5.5 0 0 0-.47-.528M8 4.5a.5.5 0 0 0-.5.5v8.5a.5.5 0 0 0 1 0V5a.5.5 0 0 0-.5-.5"></path></svg>';
     deleteBtn.addEventListener('click', async () => {
         document.body.removeChild(modal);
@@ -3410,6 +3491,7 @@ function renderCyclesPage() {
     } else {
         state.cycles.forEach((cycle) => {
             const cycleItem = createElement('div', 'list-item program-item cycle-card');
+            attachPressedClassEffect(cycleItem, 'list-card-pressed');
             cycleItem.dataset.id = cycle.id;
             const isActive = state.selectedCycleId === cycle.id;
             if (isActive) cycleItem.classList.add('cycle-card--active');
@@ -3482,6 +3564,7 @@ function renderCyclesPage() {
     // Кнопка "Добавить цикл"
     // -----------------------------------------------------------
     const addCycleBtn = createElement('button', 'btn btn-primary add-cycle-btn add-cycle-btn--fullrow');
+    attachPressedClassEffect(addCycleBtn, 'list-card-pressed');
     addCycleBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 14 14"><title>Add-1-solid SVG Icon</title><path fill="currentColor" fill-rule="evenodd" d="M8 1a1 1 0 0 0-2 0v5H1a1 1 0 0 0 0 2h5v5a1 1 0 1 0 2 0V8h5a1 1 0 1 0 0-2H8z" clip-rule="evenodd"></path></svg>';
 
     addCycleBtn.addEventListener('click', () => {
@@ -3538,6 +3621,7 @@ function openCycleMenuModal(cycle) {
 
     // Кнопка "Редактировать"
     const editBtn = createElement('button', 'btn btn-primary');
+    attachPressedClassEffect(editBtn, 'icon-tile-pressed');
     editBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><title>Редактировать</title><path fill="currentColor" d="M 14.96 1.812 C 14.01 1.875 13.23 2.479 12.62 3.165 C 9.636 6.167 6.628 9.151 3.651 12.16 C 2.981 12.89 2.991 13.94 2.731 14.85 C 2.558 15.67 2.348 16.49 2.197 17.32 C 2.22 17.74 2.708 17.9 3.055 17.74 C 4.394 17.42 5.752 17.18 7.078 16.81 C 7.617 16.62 8.021 16.2 8.41 15.8 C 8.307 15.4 8.24 15 8.211 14.59 C 7.701 15.02 7.32 15.65 6.678 15.89 C 5.577 16.16 4.465 16.39 3.359 16.64 C 3.627 15.5 3.846 14.35 4.144 13.22 C 4.449 12.6 5.062 12.2 5.511 11.69 C 7.823 9.38 10.14 7.07 12.45 4.76 C 13.38 5.69 14.31 6.62 15.24 7.551 C 14.82 7.971 14.41 8.391 13.99 8.811 C 14.4 8.842 14.8 8.907 15.2 9.01 C 16 8.179 16.87 7.41 17.62 6.537 C 18.58 5.306 18.3 3.354 17.05 2.432 C 16.46 1.971 15.7 1.747 14.96 1.812 z M 15.6 2.848 C 16.69 3.048 17.46 4.279 17.1 5.346 C 16.93 5.981 16.38 6.384 15.95 6.84 C 15.02 5.91 14.08 4.98 13.15 4.051 C 13.7 3.495 14.29 2.812 15.14 2.818 C 15.29 2.801 15.45 2.84 15.6 2.848 z "/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" d="M12.07,13.39L13.71,12.47L15.35,13.39L15.35,15.22L13.71,16.15L12.07,15.22z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" d="M16.98,13.5L17.8,12.6L17.18,11.55L15.97,11.84L14.59,11.1L14.32,10.22L13.1,10.22L12.82,11.1L11.45,11.84L10.24,11.55L9.62,12.6L10.44,13.5L10.44,15.12L9.62,16.01L10.24,17.07L11.45,16.78L12.82,17.52L13.1,18.4L14.32,18.4L14.59,17.52L15.97,16.78L17.18,17.07L17.8,16.01L16.98,15.12z"/></svg>';
     editBtn.addEventListener('click', () => {
         document.body.removeChild(modal);
@@ -3546,6 +3630,7 @@ function openCycleMenuModal(cycle) {
 
     // Кнопка "Удалить"
     const deleteBtn = createElement('button', 'btn cancel-btn');
+    attachPressedClassEffect(deleteBtn, 'icon-tile-pressed');
     deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Trash-24 SVG Icon</title><path fill="currentColor" d="M16 1.75V3h5.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H8V1.75C8 .784 8.784 0 9.75 0h4.5C15.216 0 16 .784 16 1.75m-6.5 0V3h5V1.75a.25.25 0 0 0-.25-.25h-4.5a.25.25 0 0 0-.25.25M4.997 6.178a.75.75 0 1 0-1.493.144L4.916 20.92a1.75 1.75 0 0 0 1.742 1.58h10.684a1.75 1.75 0 0 0 1.742-1.581l1.413-14.597a.75.75 0 0 0-1.494-.144l-1.412 14.596a.25.25 0 0 1-.249.226H6.658a.25.25 0 0 1-.249-.226z"></path><path fill="currentColor" d="M9.206 7.501a.75.75 0 0 1 .793.705l.5 8.5A.75.75 0 1 1 9 16.794l-.5-8.5a.75.75 0 0 1 .705-.793Zm6.293.793A.75.75 0 1 0 14 8.206l-.5 8.5a.75.75 0 0 0 1.498.088l.5-8.5Z"></path></svg>';
     deleteBtn.addEventListener('click', () => {
         document.body.removeChild(modal);
@@ -3587,6 +3672,10 @@ function openEditCycleModal(cycle) {
 
     const cancelBtn = createElement('button', 'btn cancel-btn', 'Отмена');
     const saveBtn = createElement('button', 'btn btn-primary', 'Изменить');
+    attachModalButtonPressEffects({
+        neutral: cancelBtn,
+        primary: saveBtn
+    });
 
     cancelBtn.addEventListener('click', () => {
         document.body.removeChild(modal);
@@ -3643,6 +3732,10 @@ function openAddCycleModal(onConfirm) {
 
     const cancelBtn = createElement('button', 'btn cancel-btn', 'Отмена');
     const confirmBtn = createElement('button', 'btn btn-primary', 'Добавить');
+    attachModalButtonPressEffects({
+        neutral: cancelBtn,
+        primary: confirmBtn
+    });
 
     cancelBtn.addEventListener('click', () => {
         document.body.removeChild(modal);
@@ -3710,6 +3803,7 @@ function renderProgramsInCyclePage() {
     } else {
         state.programs.forEach(program => {
             const programItem = createElement('div', 'list-item program-item');
+            attachPressedClassEffect(programItem, 'list-card-pressed');
             programItem.dataset.id = program.id;
 
             programItem.innerHTML = `
@@ -3756,6 +3850,7 @@ function renderProgramsInCyclePage() {
     // Кнопка "Добавить программу"
     // -----------------------------------------------------------
     const addProgramBtn = createElement('button', 'btn btn-primary add-program-btn');
+    attachPressedClassEffect(addProgramBtn, 'list-card-pressed');
     addProgramBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 14 14"><title>Add-1-solid SVG Icon</title><path fill="currentColor" fill-rule="evenodd" d="M8 1a1 1 0 0 0-2 0v5H1a1 1 0 0 0 0 2h5v5a1 1 0 1 0 2 0V8h5a1 1 0 1 0 0-2H8z" clip-rule="evenodd"></path></svg>';
     addProgramBtn.addEventListener('click', () => {
         openAddProgramModal(
@@ -3801,6 +3896,7 @@ function openProgramMenuModal(program) {
 
     // Редактировать
     const editBtn = createElement('button', 'btn btn-primary');
+    attachPressedClassEffect(editBtn, 'icon-tile-pressed');
     editBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><title>Редактировать</title><path fill="currentColor" d="M 14.96 1.812 C 14.01 1.875 13.23 2.479 12.62 3.165 C 9.636 6.167 6.628 9.151 3.651 12.16 C 2.981 12.89 2.991 13.94 2.731 14.85 C 2.558 15.67 2.348 16.49 2.197 17.32 C 2.22 17.74 2.708 17.9 3.055 17.74 C 4.394 17.42 5.752 17.18 7.078 16.81 C 7.617 16.62 8.021 16.2 8.41 15.8 C 8.307 15.4 8.24 15 8.211 14.59 C 7.701 15.02 7.32 15.65 6.678 15.89 C 5.577 16.16 4.465 16.39 3.359 16.64 C 3.627 15.5 3.846 14.35 4.144 13.22 C 4.449 12.6 5.062 12.2 5.511 11.69 C 7.823 9.38 10.14 7.07 12.45 4.76 C 13.38 5.69 14.31 6.62 15.24 7.551 C 14.82 7.971 14.41 8.391 13.99 8.811 C 14.4 8.842 14.8 8.907 15.2 9.01 C 16 8.179 16.87 7.41 17.62 6.537 C 18.58 5.306 18.3 3.354 17.05 2.432 C 16.46 1.971 15.7 1.747 14.96 1.812 z M 15.6 2.848 C 16.69 3.048 17.46 4.279 17.1 5.346 C 16.93 5.981 16.38 6.384 15.95 6.84 C 15.02 5.91 14.08 4.98 13.15 4.051 C 13.7 3.495 14.29 2.812 15.14 2.818 C 15.29 2.801 15.45 2.84 15.6 2.848 z "/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" d="M12.07,13.39L13.71,12.47L15.35,13.39L15.35,15.22L13.71,16.15L12.07,15.22z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" d="M16.98,13.5L17.8,12.6L17.18,11.55L15.97,11.84L14.59,11.1L14.32,10.22L13.1,10.22L12.82,11.1L11.45,11.84L10.24,11.55L9.62,12.6L10.44,13.5L10.44,15.12L9.62,16.01L10.24,17.07L11.45,16.78L12.82,17.52L13.1,18.4L14.32,18.4L14.59,17.52L15.97,16.78L17.18,17.07L17.8,16.01L16.98,15.12z"/></svg>';
     editBtn.addEventListener('click', () => {
         document.body.removeChild(modal);
@@ -3809,6 +3905,7 @@ function openProgramMenuModal(program) {
 
     // Удалить
     const deleteBtn = createElement('button', 'btn cancel-btn');
+    attachPressedClassEffect(deleteBtn, 'icon-tile-pressed');
     deleteBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Trash-24 SVG Icon</title><path fill="currentColor" d="M16 1.75V3h5.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H8V1.75C8 .784 8.784 0 9.75 0h4.5C15.216 0 16 .784 16 1.75m-6.5 0V3h5V1.75a.25.25 0 0 0-.25-.25h-4.5a.25.25 0 0 0-.25.25M4.997 6.178a.75.75 0 1 0-1.493.144L4.916 20.92a1.75 1.75 0 0 0 1.742 1.58h10.684a1.75 1.75 0 0 0 1.742-1.581l1.413-14.597a.75.75 0 0 0-1.494-.144l-1.412 14.596a.25.25 0 0 1-.249.226H6.658a.25.25 0 0 1-.249-.226z"></path><path fill="currentColor" d="M9.206 7.501a.75.75 0 0 1 .793.705l.5 8.5A.75.75 0 1 1 9 16.794l-.5-8.5a.75.75 0 0 1 .705-.793Zm6.293.793A.75.75 0 1 0 14 8.206l-.5 8.5a.75.75 0 0 0 1.498.088l.5-8.5Z"></path></svg>';
     deleteBtn.addEventListener('click', () => {
         document.body.removeChild(modal);
@@ -3853,6 +3950,10 @@ function openEditProgramModal(program) {
 
     const cancelBtn = createElement('button', 'btn cancel-btn', 'Отмена');
     const saveBtn = createElement('button', 'btn btn-primary', 'Изменить');
+    attachModalButtonPressEffects({
+        neutral: cancelBtn,
+        primary: saveBtn
+    });
 
     cancelBtn.addEventListener('click', () => {
         document.body.removeChild(modal);
@@ -3947,6 +4048,10 @@ function openAddProgramModal(onConfirmNew, onConfirmCopy) {
     const confirmBtn = createElement('button', 'btn btn-primary add-program-confirm-btn', 'Добавить');
     confirmBtn.disabled = true;
     const cancelBtn = createElement('button', 'btn add-program-cancel-btn', 'Отмена');
+    attachModalButtonPressEffects({
+        neutral: cancelBtn,
+        primary: confirmBtn
+    });
 
     function closeAllDropdowns() {
         cycleDropdown.classList.remove('open');
@@ -4243,6 +4348,11 @@ function openEditSetModal(programId, exerciseId, setIndex, currentSet) {
     isMainCheckbox.type = 'checkbox';
     isMainCheckbox.checked = !!groupSets[0]?.isMain;
     const customCheckbox = createElement('span', 'checkbox-custom');
+    customCheckbox.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 512 512" aria-hidden="true">
+            <path fill="none" stroke="currentColor" stroke-linecap="square" stroke-miterlimit="10" stroke-width="44" d="M416 128L192 384l-96-96"></path>
+        </svg>
+    `;
     const checkboxLabel = createElement('span', 'checkbox-text', 'рабочий');
     checkboxWrapper.append(isMainCheckbox, customCheckbox, checkboxLabel);
     headerRow.append(title, checkboxWrapper);
@@ -4251,6 +4361,7 @@ function openEditSetModal(programId, exerciseId, setIndex, currentSet) {
     const rowMetas = [];
 
     const addPartBtn = createElement('button', 'btn btn-secondary modal-set-add-part-btn');
+    attachPressedClassEffect(addPartBtn, 'set-add-btn-pressed');
     addPartBtn.type = 'button';
     addPartBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 14 14"><title>Add-1-solid SVG Icon</title><path fill="currentColor" fill-rule="evenodd" d="M8 1a1 1 0 0 0-2 0v5H1a1 1 0 0 0 0 2h5v5a1 1 0 1 0 2 0V8h5a1 1 0 0 0 0-2H8z" clip-rule="evenodd"></path></svg><span>добавить сет</span>';
 
@@ -4260,6 +4371,9 @@ function openEditSetModal(programId, exerciseId, setIndex, currentSet) {
                         </svg>`;
 
     const btnOk = createElement('button', 'btn btn-primary modal-set-ok-btn', 'ОК');
+    attachModalButtonPressEffects({
+        primary: btnOk
+    });
 
     const syncAddBtnState = () => {
         addPartBtn.disabled = rowMetas.length >= __DROP_SET_MAX_PARTS;
@@ -4434,6 +4548,7 @@ function openCommentModal(exerciseId, currentNote, titleText, onSave) {
 
    // Кнопка "Медиа" с SVG вместо текста 📎
    const addMediaBtn = createElement('button', 'btn btn-secondary');
+   attachModalButtonPressEffect(addMediaBtn, 'neutral');
    addMediaBtn.innerHTML = `
 
        <svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 56 56"><title>Camera-on-rectangle SVG Icon</title><path fill="currentColor" d="M6.155 41.944h3.763V47c0 4.038 2.078 6.076 6.155 6.076h33.772C53.922 53.076 56 51.038 56 47V26.479c0-4.038-2.078-6.077-6.155-6.077H45.26c-1.53 0-2-.294-2.882-1.293l-.313-.334v-4.312c0-4.038-2.059-6.076-6.135-6.076H6.155C2.058 8.387 0 10.425 0 14.463v21.424c0 4.038 2.058 6.057 6.155 6.057m.058-3.156c-1.96 0-3.057-1.039-3.057-3.077V14.64c0-2.039 1.097-3.097 3.057-3.097H35.87c1.94 0 3.038 1.058 3.038 3.097v1.372c-.568-.216-1.235-.314-2.098-.314h-7.82c-2.019 0-3.019.588-3.999 1.666l-1.587 1.745c-.863.98-1.353 1.293-2.882 1.293h-4.45c-4.076 0-6.154 2.039-6.154 6.077v12.309Zm9.919 11.133c-1.94 0-3.058-1.058-3.058-3.096v-20.19c0-2.019 1.117-3.077 3.058-3.077h5.174c1.764 0 2.725-.333 3.685-1.43l1.549-1.706c1.117-1.255 1.685-1.568 3.43-1.568h5.86c1.726 0 2.294.314 3.43 1.568l1.53 1.705c.98 1.098 1.92 1.431 3.685 1.431h5.312c1.94 0 3.057 1.058 3.057 3.077v20.19c0 2.038-1.117 3.096-3.057 3.096Zm16.837-3.136c5.92 0 10.682-4.743 10.682-10.721c0-5.96-4.743-10.703-10.682-10.703a10.654 10.654 0 0 0-10.702 10.702c0 5.979 4.763 10.722 10.702 10.722m14.073-15.504c1.333 0 2.43-1.078 2.43-2.411a2.43 2.43 0 1 0-4.86 0c0 1.333 1.097 2.41 2.43 2.41M32.97 43.806a7.734 7.734 0 0 1-7.742-7.742c0-4.293 3.469-7.723 7.742-7.723a7.7 7.7 0 0 1 7.722 7.722a7.704 7.704 0 0 1-7.722 7.743"/></svg>
@@ -4508,6 +4623,10 @@ fileInput.addEventListener('change', async (e) => {
 const controls = createElement('div', 'modal-controls');
 const cancelBtn = createElement('button', 'btn cancel-btn', 'Отмена');
 const saveBtn = createElement('button', 'btn btn-primary', 'Сохранить');
+attachModalButtonPressEffects({
+    neutral: cancelBtn,
+    primary: saveBtn
+});
 controls.append(cancelBtn, saveBtn);
 
 // ✅ Закрытие модалки по клику на фон (overlay)
@@ -7112,6 +7231,7 @@ exerciseHeader.addEventListener('click', () => {
                         (newNote, media) => saveExerciseNote(selectedProgram.id, exercise.id, newNote, media)
                     );
                 });
+                attachPressedClassEffect(editNoteBtn, 'edit-note-btn-pressed');
             }
 
             const headerArrow = createElement('span', 'exercise-header-arrow');
@@ -7135,6 +7255,7 @@ exerciseHeader.addEventListener('click', () => {
                 <svg xmlns="http://www.w3.org/2000/svg" version="1.1" xmlns:xlink="http://www.w3.org/1999/xlink" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><title>Edit exercise</title><path fill="currentColor" d="M 14.96 1.812 C 14.01 1.875 13.23 2.479 12.62 3.165 C 9.636 6.167 6.628 9.151 3.651 12.16 C 2.981 12.89 2.991 13.94 2.731 14.85 C 2.558 15.67 2.348 16.49 2.197 17.32 C 2.22 17.74 2.708 17.9 3.055 17.74 C 4.394 17.42 5.752 17.18 7.078 16.81 C 7.617 16.62 8.021 16.2 8.41 15.8 C 8.307 15.4 8.24 15 8.211 14.59 C 7.701 15.02 7.32 15.65 6.678 15.89 C 5.577 16.16 4.465 16.39 3.359 16.64 C 3.627 15.5 3.846 14.35 4.144 13.22 C 4.449 12.6 5.062 12.2 5.511 11.69 C 7.823 9.38 10.14 7.07 12.45 4.76 C 13.38 5.69 14.31 6.62 15.24 7.551 C 14.82 7.971 14.41 8.391 13.99 8.811 C 14.4 8.842 14.8 8.907 15.2 9.01 C 16 8.179 16.87 7.41 17.62 6.537 C 18.58 5.306 18.3 3.354 17.05 2.432 C 16.46 1.971 15.7 1.747 14.96 1.812 z M 15.6 2.848 C 16.69 3.048 17.46 4.279 17.1 5.346 C 16.93 5.981 16.38 6.384 15.95 6.84 C 15.02 5.91 14.08 4.98 13.15 4.051 C 13.7 3.495 14.29 2.812 15.14 2.818 C 15.29 2.801 15.45 2.84 15.6 2.848 z "/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" d="M12.07,13.39L13.71,12.47L15.35,13.39L15.35,15.22L13.71,16.15L12.07,15.22z"/><path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10" d="M16.98,13.5L17.8,12.6L17.18,11.55L15.97,11.84L14.59,11.1L14.32,10.22L13.1,10.22L12.82,11.1L11.45,11.84L10.24,11.55L9.62,12.6L10.44,13.5L10.44,15.12L9.62,16.01L10.24,17.07L11.45,16.78L12.82,17.52L13.1,18.4L14.32,18.4L14.59,17.52L15.97,16.78L17.18,17.07L17.8,16.01L16.98,15.12z"/></svg>
               </span>
             `;
+            attachPressedClassEffect(editBtn, 'exercise-action-edit-pressed');
             editSlot.append(editBtn);
 
             const deleteSlot = createElement('div', 'food-swipe-delete-slot exercise-swipe-delete-slot');
@@ -7143,6 +7264,7 @@ exerciseHeader.addEventListener('click', () => {
             deleteBtn.innerHTML = `
               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><title>Trash-24 SVG Icon</title><path fill="currentColor" d="M16 1.75V3h5.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H8V1.75C8 .784 8.784 0 9.75 0h4.5C15.216 0 16 .784 16 1.75m-6.5 0V3h5V1.75a.25.25 0 0 0-.25-.25h-4.5a.25.25 0 0 0-.25.25M4.997 6.178a.75.75 0 1 0-1.493.144L4.916 20.92a1.75 1.75 0 0 0 1.742 1.58h10.684a1.75 1.75 0 0 0 1.742-1.581l1.413-14.597a.75.75 0 0 0-1.494-.144l-1.412 14.596a.25.25 0 0 1-.249.226H6.658a.25.25 0 0 1-.249-.226z"></path><path fill="currentColor" d="M9.206 7.501a.75.75 0 0 1 .793.705l.5 8.5A.75.75 0 1 1 9 16.794l-.5-8.5a.75.75 0 0 1 .705-.793Zm6.293.793A.75.75 0 1 0 14 8.206l-.5 8.5a.75.75 0 0 0 1.498.088l.5-8.5Z"></path></svg>
             `;
+            attachPressedClassEffect(deleteBtn, 'exercise-action-delete-pressed');
             deleteSlot.append(deleteBtn);
 
             actionsStrip.append(editSlot, deleteSlot);
@@ -7206,6 +7328,7 @@ exerciseHeader.addEventListener('click', () => {
                     const headSet = groupSets[0];
 
                     const setRow = createElement('div', `set-row ${headSet.isMain ? 'main-set' : ''}${isDropGroup ? ' set-row--drop-group' : ''}`);
+                    attachPressedClassEffect(setRow, 'set-row-pressed');
                     const approachOrd = __getApproachOrdinalForSet(exercise.sets, gStart);
                     setRow.dataset.approachKey = `${String(exercise.id)}:${gStart}`;
                     setRow.dataset.approachOrder = String(approachOrd);
@@ -7297,6 +7420,7 @@ exerciseHeader.addEventListener('click', () => {
 
             // Кнопки под подходами (добавить подход, комментарий к упражнению + индикаторы медиа)
             const addSetBtn = createElement('button', 'add-set-btn');
+            attachPressedClassEffect(addSetBtn, 'set-add-btn-pressed');
             addSetBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 14 14"><title>Add-1-solid SVG Icon</title><path fill="currentColor" fill-rule="evenodd" d="M8 1a1 1 0 0 0-2 0v5H1a1 1 0 0 0 0 2h5v5a1 1 0 1 0 2 0V8h5a1 1 0 1 0 0-2H8z" clip-rule="evenodd"></path></svg><span>добавить подход</span>';
 
             addSetBtn.addEventListener('click', (e) => {
@@ -7458,6 +7582,7 @@ exerciseHeader.addEventListener('click', () => {
     // Кнопка "Добавить упражнение"
     // -----------------------------
     const addExerciseBtn = createElement('button', 'btn btn-primary add-exercise-btn', 'добавить упражнение');
+    attachPressedClassEffect(addExerciseBtn, 'list-card-pressed');
     addExerciseBtn.addEventListener('click', () => {
         openAddExerciseModal(selectedProgram);
     });
@@ -7471,6 +7596,7 @@ const commentWrapper = createElement('div', 'comment-wrapper');
 
 // --- создаём общий контейнер (он и будет кликабельным) ---
 const commentButtonGroup = createElement('div', 'comment-btn-group');
+attachPressedClassEffect(commentButtonGroup, 'comment-trigger-pressed');
 
 // --- иконка (SVG внутри кнопки) ---
 const commentBtn = createElement('button', `btn comment-toggle-btn ${hasTrainingNote ? 'has-note' : ''}`);
@@ -7581,6 +7707,7 @@ contentContainer.append(commentWrapper);
   // Кнопка "Завершить тренировку"
   // -----------------------------
   const completeTrainingBtn = createElement('button', 'btn complete-training-btn', 'Завершить тренировку');
+  attachPressedClassEffect(completeTrainingBtn, 'complete-training-btn-pressed');
   completeTrainingBtn.addEventListener('click', () => {
     openConfirmModal('Завершить и сохранить тренировку в дневник?', async () => {
 
@@ -7743,6 +7870,10 @@ function openAddExerciseModal(program) {
 
     const cancelBtn = createElement('button', 'btn cancel-btn', 'Отмена');
     const saveBtn = createElement('button', 'btn btn-primary', 'Добавить');
+    attachModalButtonPressEffects({
+        neutral: cancelBtn,
+        primary: saveBtn
+    });
 
     cancelBtn.addEventListener('click', () => {
         document.body.removeChild(modal);
@@ -7798,6 +7929,7 @@ function openExerciseMenuModal(program, exercise) {
 
     // Кнопка Редактировать
     const editBtn = createElement('button', 'btn btn-primary');
+    attachPressedClassEffect(editBtn, 'icon-tile-pressed');
 
 // SVG-код для иконки редактирования (карандаша)
     const editSvgIcon = `
@@ -7814,6 +7946,7 @@ function openExerciseMenuModal(program, exercise) {
 
     // Кнопка Удалить
     const deleteBtn = createElement('button', 'btn cancel-btn');
+    attachPressedClassEffect(deleteBtn, 'icon-tile-pressed');
     const deleteSvgIcon = `
 <svg xmlns="http://www.w3.org/2000/svg"  viewBox="0 0 16 16"><title>Trash3-fill SVG Icon</title><path fill="currentColor" d="M11 1.5v1h3.5a.5.5 0 0 1 0 1h-.538l-.853 10.66A2 2 0 0 1 11.115 16h-6.23a2 2 0 0 1-1.994-1.84L2.038 3.5H1.5a.5.5 0 0 1 0-1H5v-1A1.5 1.5 0 0 1 6.5 0h3A1.5 1.5 0 0 1 11 1.5m-5 0v1h4v-1a.5.5 0 0 0-.5-.5h-3a.5.5 0 0 0-.5.5M4.5 5.029l.5 8.5a.5.5 0 1 0 .998-.06l-.5-8.5a.5.5 0 1 0-.998.06m6.53-.528a.5.5 0 0 0-.528.47l-.5 8.5a.5.5 0 0 0 .998.058l.5-8.5a.5.5 0 0 0-.47-.528M8 4.5a.5.5 0 0 0-.5.5v8.5a.5.5 0 0 0 1 0V5a.5.5 0 0 0-.5-.5"/></svg>
 `;
@@ -7870,6 +8003,10 @@ function openExerciseMenuModal(program, exercise) {
       const controls = createElement('div', 'modal-buttons');
       const cancel = createElement('button', 'btn cancel-btn', 'Отмена');
       const save = createElement('button', 'btn btn-primary', 'Изменить');
+      attachModalButtonPressEffects({
+          neutral: cancel,
+          primary: save
+      });
 
       cancel.addEventListener('click', () => {
           document.body.removeChild(overlay);
@@ -10844,6 +10981,10 @@ export function openConfirmModal(message, onConfirm) {
     `;
     modal.append(modalContent);
     document.body.append(modal);
+    attachModalButtonPressEffects({
+        neutral: modal.querySelector('.cancel-btn'),
+        danger: modal.querySelector('.confirm-btn')
+    });
 
     // Активация анимации
     setTimeout(() => modal.classList.add('active'), 50);
@@ -11092,6 +11233,7 @@ function openMenuModal() {
     // SVG кнопка смены режима
     const modeBtn = document.createElement('button');
     modeBtn.className = 'menu-icon-btn';
+    attachPressedClassEffect(modeBtn, 'icon-tile-pressed');
     modeBtn.innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" width="37" height="37" viewBox="0 0 56 56"><title>Arrow-2-squarepath SVG Icon</title><path fill="currentColor" d="M40.131 7.904h-18.27c-1.28 0-2.02.65-1.997 1.795c.022 1.145.718 1.818 1.997 1.818h18.203c2.245 0 3.501 1.19 3.501 3.524v24.375l-3.366-3.59l-2.133-2.11c-.763-.741-1.84-.831-2.603-.068c-.763.763-.718 1.863.045 2.626l7.564 7.519c1.459 1.459 3.097 1.459 4.556 0l7.564-7.519c.785-.763.808-1.863.045-2.626c-.763-.763-1.818-.696-2.582.067l-2.154 2.11l-3.322 3.569V14.862c0-4.646-2.379-6.958-7.048-6.958m-24.24 41.32h18.27c1.28 0 2.02-.65 1.998-1.795c-.023-1.167-.719-1.818-1.998-1.818H15.936c-2.245 0-3.48-1.19-3.48-3.524V17.712l3.345 3.569l2.155 2.132c.763.74 1.818.83 2.604.045c.763-.74.718-1.84-.045-2.604l-7.564-7.541c-1.482-1.437-3.098-1.437-4.58 0L.809 20.854C.9 21.618 0 22.717.763 23.458c.763.786 1.84.696 2.604-.045l2.154-2.132l3.322-3.546v24.532c0 4.646 2.357 6.958 7.048 6.958"></path></svg>
     `;
@@ -11105,6 +11247,7 @@ function openMenuModal() {
 
     const profileBtn = document.createElement('button');
     profileBtn.className = 'menu-icon-btn';
+    attachPressedClassEffect(profileBtn, 'icon-tile-pressed');
     profileBtn.title = 'Личный кабинет';
     profileBtn.innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><title>Person SVG Icon</title><path fill="currentColor" d="M12 12q-1.65 0-2.825-1.175T8 8t1.175-2.825T12 4t2.825 1.175T16 8t-1.175 2.825T12 12m-8 8v-1.8q0-.85.438-1.55T5.6 15.85q1.55-.775 3.15-1.163T12 14.5q1.65 0 3.25.388t3.15 1.162q.775.4 1.213 1.1T20 18.2V20zm2-2h12v-.8q0-.3-.137-.512t-.363-.288q-1.425-.725-2.787-1.112T12 16.5q-1.65 0-3.012.388T6.5 18.1q-.225.125-.363.3T6 18.8zm6-8.5q.825 0 1.413-.587T14 8t-.587-1.412T12 6t-1.412.588T10 8t.588 1.413T12 11.5m0 8"/></svg>
@@ -11120,6 +11263,7 @@ function openMenuModal() {
     // SVG кнопка выхода
     const logoutBtn = document.createElement('button');
     logoutBtn.className = 'menu-icon-btn';
+    attachPressedClassEffect(logoutBtn, 'icon-tile-pressed');
     logoutBtn.innerHTML = `
         <svg xmlns="http://www.w3.org/2000/svg" width="37" height="37" viewBox="0 0 16 16"><title>Box-arrow-left SVG Icon</title><g fill="currentColor" fill-rule="evenodd"><path d="M6 12.5a.5.5 0 0 0 .5.5h8a.5.5 0 0 0 .5-.5v-9a.5.5 0 0 0-.5-.5h-8a.5.5 0 0 0-.5.5v2a.5.5 0 0 1-1 0v-2A1.5 1.5 0 0 1 6.5 2h8A1.5 1.5 0 0 1 16 3.5v9a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 5 12.5v-2a.5.5 0 0 1 1 0z"></path><path d="M.146 8.354a.5.5 0 0 1 0-.708l3-3a.5.5 0 1 1 .708.708L1.707 7.5H10.5a.5.5 0 0 1 0 1H1.707l2.147 2.146a.5.5 0 0 1-.708.708z"></path></g></svg>
     `;
@@ -12442,7 +12586,9 @@ if (authToggleBtn && authLoginBtn) {
 // =================================================================
 
 // 🔥 ОБРАБОТЧИК: СОБСТВЕННЫЕ ТРЕНИРОВКИ
-document.getElementById('select-own-mode')?.addEventListener('click', () => {
+const selectOwnModeBtn = document.getElementById('select-own-mode');
+attachPressedClassEffect(selectOwnModeBtn, 'list-card-pressed');
+selectOwnModeBtn?.addEventListener('click', () => {
     resetModeScopedState();
     state.currentMode = 'own';
     state.currentPage = 'programs';
@@ -12452,7 +12598,9 @@ document.getElementById('select-own-mode')?.addEventListener('click', () => {
 });
 
 // 🔥 ОБРАБОТЧИК: ПЕРСОНАЛЬНЫЕ (ТРЕНЕР)
-document.getElementById('select-personal-mode')?.addEventListener('click', () => {
+const selectPersonalModeBtn = document.getElementById('select-personal-mode');
+attachPressedClassEffect(selectPersonalModeBtn, 'list-card-pressed');
+selectPersonalModeBtn?.addEventListener('click', () => {
     resetModeScopedState();
     state.currentMode = 'personal';
     state.currentPage = 'programs';

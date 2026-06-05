@@ -480,6 +480,27 @@ function restoreMealPageScroll() {
     });
 }
 
+function resetMealSearchStateOnExit() {
+    if (!state.mealSearchQueryByTab || typeof state.mealSearchQueryByTab !== 'object') {
+        state.mealSearchQueryByTab = { all: '', products: '', recipes: '', base: '' };
+    } else {
+        state.mealSearchQueryByTab.all = '';
+        state.mealSearchQueryByTab.products = '';
+        state.mealSearchQueryByTab.recipes = '';
+        state.mealSearchQueryByTab.base = '';
+    }
+
+    state.mealSearchQueryNonBase = '';
+    state.mealSearchQueryBase = '';
+
+    const searchInputs = document.querySelectorAll('.meal-search-screen:not(.recipe-food-search-screen) .meal-search-input');
+    searchInputs.forEach((input) => {
+        if (!(input instanceof HTMLInputElement)) return;
+        input.value = '';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+}
+
 function syncMealRootScrollAvailability() {
     const root = document.getElementById('root');
     if (!root) return;
@@ -8811,6 +8832,7 @@ async function renderEditFood() {
 
     const portionControl = createElement('div', 'create-food-portion-control');
     portionControl.append(portion, portionUnitWrap);
+    const portionRow = createFormRow('Размер порции', portionControl, true);
 
     function syncPortionInputState() {
         const isPortionMode = selectedUnit === 'порция';
@@ -8831,6 +8853,8 @@ async function renderEditFood() {
 
         portion.readOnly = !isPortionMode;
         portion.classList.toggle('is-locked', !isPortionMode);
+        portion.classList.toggle('create-food-input--with-portion-unit', isPortionMode);
+        portionRow.classList.toggle('create-food-row--with-portion-unit', isPortionMode);
         portionUnitWrap.style.display = isPortionMode ? '' : 'none';
         isPortionModeActive = isPortionMode;
     }
@@ -8893,7 +8917,7 @@ async function renderEditFood() {
         createFormRow('Название', name, true),
         createFormRow('Описание', description, false, 'is-textarea'),
         createFormRow('Ед. изм.', unitWrap, true),
-        createFormRow('Размер порции', portionControl, true),
+        portionRow,
         createFormRow('Белки', protein, true),
         createFormRow('Жиры', fat, true),
         createFormRow('Углеводы', carbs, true),
@@ -12484,6 +12508,7 @@ function renderMealSearch() {
 
     const handleMealSearchBack = () => {
         blurMealTabSearchInputs();
+        resetMealSearchStateOnExit();
         state.mealSearchTab = 'all';
         state.mealSearchScrollByTab = { all: 0, products: 0, recipes: 0, base: 0 };
         closeMealOverlayAndShowMealMain();
@@ -12734,6 +12759,7 @@ function renderMealSearch() {
                     text: 'Новый продукт',
                     label: 'Новый продукт',
                     onClick: () => {
+                        resetMealSearchStateOnExit();
                         state.mealSearchReturnTab = state.mealSearchTab || 'products';
                         state.createFoodBackTarget = 'search';
                         state.mealView = 'create';
@@ -12749,6 +12775,7 @@ function renderMealSearch() {
                     text: 'Новый рецепт',
                     label: 'Новый рецепт',
                     onClick: () => {
+                        resetMealSearchStateOnExit();
                         saveMealPageScroll();
                         mealScrollRestorePending = true;
                         state.mealSearchReturnTab = state.mealSearchTab || 'recipes';
@@ -15634,6 +15661,7 @@ function renderCreateFood() {
 
     const portionControl = createElement('div', 'create-food-portion-control');
     portionControl.append(portion, portionUnitWrap);
+    const portionRow = createFormRow('Размер порции', portionControl, true);
 
     function syncPortionInputState() {
         const isPortionMode = selectedUnit === 'порция';
@@ -15654,6 +15682,8 @@ function renderCreateFood() {
 
         portion.readOnly = !isPortionMode;
         portion.classList.toggle('is-locked', !isPortionMode);
+        portion.classList.toggle('create-food-input--with-portion-unit', isPortionMode);
+        portionRow.classList.toggle('create-food-row--with-portion-unit', isPortionMode);
         portionUnitWrap.style.display = isPortionMode ? '' : 'none';
         isPortionModeActive = isPortionMode;
     }
@@ -15684,7 +15714,7 @@ function renderCreateFood() {
         createFormRow('Название', name, true),
         createFormRow('Описание', description, false, 'is-textarea'),
         createFormRow('Ед. изм.', unitWrap, true),
-        createFormRow('Размер порции', portionControl, true),
+        portionRow,
         createFormRow('Белки', protein, true),
         createFormRow('Жиры', fat, true),
         createFormRow('Углеводы', carbs, true),

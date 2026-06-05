@@ -108,9 +108,9 @@ button {
     -webkit-tap-highlight-color: transparent;
     box-shadow: none !important;
 }
-button:focus, button:focus-visible, button:active {
-    outline: none !important;
-    box-shadow: none !important;
+button:focus, button:focus-visible {
+    outline: none;
+    box-shadow: none;
 }
 .container {
     display: flex !important;
@@ -324,10 +324,6 @@ button#meal-kcal-summary-btn svg {
     border-radius: 8px;
     color: #090909;
 }
-.menu-modal button.menu-icon-btn:active {
-    transform: scale(1.05);
-    transition: transform 0.2s ease;
-}
 .programs-list-page {
     flex: 1;
     display: flex;
@@ -534,10 +530,6 @@ input:focus {
     box-shadow: 0px 1px 3px #00000030;
     border: 0.5px solid #d9d9d9;
 }
-.add-client-btn:active, .list-item.client-item:active , .add-program-btn:active , .list-item.program-item:active , .add-cycle-btn:active {
-    transition: transform 0.2s ease;
-    box-shadow: none !important;
-}
 .list-item.client-item, .programs-list-page .list-item.program-item {
     font-size: 13px;
 }
@@ -584,10 +576,6 @@ button.btn.btn-primary.add-cycle-btn {
     max-width: 400px;
     transform: scale(0.9);
     transition: transform 0.3s ease;
-}
-.modal-cicle .modal-buttons button.btn.btn-primary:active {
-    transform: scale(1.1);
-    transition: transform 0.2s ease;
 }
 .modal-text-input {
     margin-bottom: 280px;
@@ -1229,6 +1217,77 @@ body .btn-timer.floating {
     margin-top: 25px;
     justify-content: flex-end;
 }
+.modal-button-press-ready {
+    transition: transform 0.12s ease, background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+button.btn.modal-button-press-ready.modal-button-pressed-neutral {
+    transform: scale(0.95) !important;
+    background: #e7e7e7 !important;
+    border-color: #e7e7e7 !important;
+}
+button.btn.modal-button-press-ready.modal-button-pressed-primary {
+    transform: scale(0.95) !important;
+    background: #397dc7 !important;
+    border-color: #397dc7 !important;
+    color: #ffffff !important;
+}
+button.btn.modal-button-press-ready.modal-button-pressed-danger {
+    transform: scale(0.95) !important;
+    background: #992f29 !important;
+    border-color: #992f29 !important;
+    color: #ffffff !important;
+}
+.modal-cicle button.btn.modal-button-pressed-primary,
+.modal-cicle--add-program button.btn.modal-button-pressed-primary {
+    box-shadow: none !important;
+}
+.icon-tile-pressed {
+    transform: scale(0.95) !important;
+    background: #edeef1 !important;
+    box-shadow: none !important;
+}
+.mode-btn.modal-button-press-ready.list-card-pressed {
+     transition: transform 0.12s ease, background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease !important;
+     background: #f9f9f9 !important;
+     box-shadow: none !important;
+}
+.list-card-pressed {
+    transition: transform 0.12s ease, background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease !important;
+    background: #f9f9f9 !important;
+    box-shadow: none !important;
+}
+.comment-btn-group.comment-trigger-pressed {
+    transform: scale(0.97);
+}
+.comment-btn-group.comment-trigger-pressed,
+.comment-btn-group.comment-trigger-pressed .comment-toggle-btn,
+.comment-btn-group.comment-trigger-pressed .comment-label,
+.comment-btn-group.comment-trigger-pressed .comment-toggle-btn svg,
+button.btn.edit-note-btn.edit-note-btn-pressed {
+    color: #727272 !important;
+}
+button.btn.edit-note-btn.edit-note-btn-pressed {
+    background: #edeef1 !important;
+}
+button.action-btn.action-plan.action-edit.exercise-action-edit-pressed {
+    background: #b4b8bd !important;
+}
+button.action-btn.action-delete.exercise-action-delete-pressed {
+    background: #992f29 !important;
+}
+.add-set-btn.set-add-btn-pressed,
+button.btn.modal-set-add-part-btn.set-add-btn-pressed {
+    transform: scale(0.97) !important;
+    color: #1f4b79 !important;
+}
+.set-row.set-row-pressed {
+    background: #edeef1 !important;
+}
+button.btn.complete-training-btn.complete-training-btn-pressed {
+    background: #397dc7 !important;
+    border-color: #3a7bc2 !important;
+    box-shadow: none !important;
+}
 .edit-note-btn {
     background: none;
     font-size: 16px;
@@ -1249,10 +1308,6 @@ button.btn.edit-note-btn svg {
     width: 19px;
     height: 19px;
     color: #949494;
-}
-button.btn.edit-note-btn:active svg {
-    transform: scale(1.3);
-    transition: transform 0.2s ease;
 }
 .exercise-note-display {
     padding: 6px 17px 18px 20px;
@@ -1342,20 +1397,12 @@ button.btn.delete-media-btn svg {
     align-items: center;
     gap: 4px;
 }
-.comExer button.btn.btn-secondary:active {
-    transform: scale(1.05);
-    transition: transform 0.2s ease;
-}
 .comExer button.btn.btn-secondary svg {
     width: 24px;
     height: 24px;
 }
 .comExer .modal-controls {
     margin: 0;
-}
-.comExer .modal-controls button.btn.btn-primary:active {
-    transform: scale(1.1);
-    transition: transform 0.2s ease;
 }
 .exercise-note-collapsed {
     padding: 9px 16px;
@@ -1432,10 +1479,6 @@ button.btn.delete-media-btn svg {
     align-items: flex-start;
     font-weight: 500;
 }
-.comment-btn-group:active, .comment-btn-group:active button.btn.comment-toggle-btn.has-note {
-    color: #317ccd;
-    transition: transform 0.2s ease;
-}
 span.comment-label {
 }
 button.btn.comment-toggle-btn svg {
@@ -1481,10 +1524,6 @@ button.btn.comment-toggle-btn svg {
     transition: width 0.2s linear;
 }
 .complete-training-btn {
-}
-.complete-training-btn:active {
-    transition: transform 0.2s ease;
-    box-shadow: none!important;
 }
 .supplements-controls-wrapper {
     display: flex;
@@ -1741,10 +1780,7 @@ div#program-details-content h3 {
 span.exercise-header-arrow {
     display: flex;
 }
-.exercise-item:active {
-    box-shadow: none !important;
-    transition: transform 0.2s ease;
-}
+
 .exercise-number {
 }
 .sets-container {
@@ -1960,16 +1996,15 @@ span.exercise-header-arrow {
     border-radius: 4px;
     position: relative;
 }
-.checkbox-input:checked + .checkbox-custom::after {
-    content: '';
-    position: absolute;
-    width: 15px;
-    height: 5px;
-    border-left: 4px solid #009832;
-    border-bottom: 3px solid #009832;
-    top: 3px;
-    left: 3px;
-    transform: rotate(-45deg);
+.checkbox-custom svg {
+    display: none;
+}
+.checkbox-input:checked + .checkbox-custom svg {
+    width: 25px;
+    height: 25px;
+    display: block;
+    margin-top: -6px;
+    color: #009832;
 }
 .checkbox-text {
     font-size: 14px;
@@ -2077,10 +2112,6 @@ button.modal-set-add-part-btn svg {
     margin-top: 1px;
     padding: 10px 16px;
 }
-.modal-set button.btn.btn-primary:active {
-    transform: scale(1.1);
-    transition: transform 0.2s ease;
-}
 button.btn.delete-set-btn {
     background: none;
     color: #ed392f;
@@ -2152,9 +2183,7 @@ button.add-set-btn svg {
     width: 10px;
     height: 10px;
 }
-.add-set-btn:active svg {
-    transform: scale(1.3);
-}
+
 .modal-content.duplicate-modal {
     max-width: 300px;
     padding: 20px;
@@ -2182,10 +2211,6 @@ button.add-set-btn svg {
     background: #f4f4f4;
     border: 1px solid #ececec;
 }
-.duplicate-controls .btn:active {
-    transform: scale(1.06);
-    transition: transform 0.2s ease;
-}
 .modal-remove-edit {
     text-align: center;
     display: flex;
@@ -2195,15 +2220,11 @@ button.add-set-btn svg {
     background: #ffffff;
     box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
     padding: 7px;
-    margin-right: 13px;
     border: none;
     width: 75px;
     height: 75px;
 }
-.modal-remove-edit button.btn.btn-primary:active, .modal-remove-edit button.btn.cancel-btn:active {
-    transform: scale(1.05);
-    transition: transform 0.2s ease;
-}
+
 .modal-remove-edit button.btn.cancel-btn svg {
     color: #cd3931;
     height: 35px;
@@ -2213,7 +2234,6 @@ button.add-set-btn svg {
     color: #515151;
     height: 46px;
     width: 48px;
-    padding: 0px;
 }
 .modal-edit {
     display: flex;
@@ -2224,10 +2244,6 @@ button.add-set-btn svg {
     max-width: 400px;
     transform: scale(0.9);
     transition: transform 0.3s ease;
-}
-.modal-edit .modal-buttons button.btn.btn-primary:active {
-    transform: scale(1.1);
-    transition: transform 0.2s ease;
 }
 .modal-compact input {
     display: block;
@@ -2308,10 +2324,7 @@ button.btn.btn-primary.add-exercise-btn {
     box-shadow: 0px 1px 3px #00000030!important;
     border: 0.5px solid #d9d9d9;
 }
-button.btn.btn-primary.add-exercise-btn:active {
-    transition: transform 0.2s ease;
-    box-shadow: none !important;
-}
+
 .modal-overlay.program-details .modal-content {
     display: flex;
 }
@@ -2319,10 +2332,6 @@ button.btn.btn-primary.add-exercise-btn:active {
     margin-left: 10px;
     padding: 10px 14px;
     border: 1.5px solid #268eff;
-}
-.modal-overlay.program-details .modal-content .modal-buttons button:hover {
-    transform: scale(1.1);
-    background: #eff6ff;
 }
 .journal-filters {
     display: flex;
@@ -3271,7 +3280,7 @@ button#select-own-mode .mode-icon svg {
     padding: 4px 15px;
     width: 100%;
     cursor: pointer;
-    box-shadow: 0px 1px 3px #00000030!important;
+    box-shadow: 0px 1px 3px #0000001f!important;
     border: 0.5px solid #d9d9d9;
     height: 70px;
     justify-content: space-evenly;
@@ -3597,7 +3606,7 @@ input {
         overflow: hidden;
         border: 1px solid #93bdea !important;
         background: linear-gradient(135deg, #f0f7ff, #e8f0fe);
-        box-shadow: 0 1px 3px #5195e0 !important;
+        box-shadow: 0 1px 3px #5195e094 !important;
         border: 1px solid #d7d7d7;
     }
 .programs-list--cycles-board .cycle-card-header {
@@ -3679,7 +3688,7 @@ input {
         display: flex;
         flex-direction: column;
         color: #111827;
-        box-shadow: 0px 1px 3px #00000030;
+        box-shadow: 0px 1px 3px #0000001f;
         border: 0.5px solid #d9d9d9;
     }
 .list-item.client-item, .programs-list-page .list-item.program-item {
@@ -3696,12 +3705,25 @@ button.btn.btn-primary.add-cycle-btn, button.btn.btn-primary.add-client-btn, but
         align-items: center;
         justify-content: center;
         color: #5291d7;
-        box-shadow: 0px 1px 3px #00000030!important;
+        box-shadow: 0px 1px 3px #0000001f !important;
         border: 0.5px solid #d9d9d9;
     }
 button.btn.btn-primary.add-cycle-btn {
         background: #ffffff;
         color: #5291d7;
+    }
+.programs-list--cycles-board .cycle-card--active.list-card-pressed {
+        transition: transform 0.12s ease, background 0.12s ease, border-color 0.12s ease !important;
+        background: linear-gradient(135deg, #d8e7f8, #e5efff) !important;
+        box-shadow: none !important;
+    }
+button.btn.btn-primary.add-program-btn.list-card-pressed,
+button.btn.btn-primary.add-cycle-btn.list-card-pressed,
+button.btn.btn-primary.add-cycle-btn.add-cycle-btn--fullrow.list-card-pressed,
+.add-program-btn.list-card-pressed,
+.add-cycle-btn.list-card-pressed {
+        transition: transform 0.12s ease, background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease !important;
+        box-shadow: none !important;
     }
 .modal-overlay-exercise, .modal-overlay-cicle, .modal-overlay {
         display: flex;
@@ -3741,7 +3763,7 @@ button.btn.btn-primary {
         left: 0;
         width: 100%;
         height: 100%;
-        background: rgb(0 0 0 / 68%);
+        background: rgba(0,0,0,0.4);
         z-index: 1000;
         align-items: center;
         justify-content: center;
@@ -4328,6 +4350,7 @@ body .btn-timer.floating {
         display: flex;
         align-items: center;
         padding-top: 0px;
+        border-radius: 0 0 6px 0px;
     }
 button.btn.edit-note-btn svg {
         width: 22px;
@@ -4522,11 +4545,11 @@ button.btn.delete-media-btn svg {
 .comment-btn-group {
         display: flex;
         font-size: 13px;
-        align-items: flex-start;
+        align-items: center;
     }
 span.comment-label {
-        padding-top: 7px;
         color: #585858;
+        display: block;
     }
 button.btn.comment-toggle-btn svg {
         width: 25px;
@@ -4579,8 +4602,8 @@ button.btn.comment-toggle-btn svg {
         border-radius: 10px;
         margin: 0 auto;
         background: #3e8ce1;
-        box-shadow: 0 1px 3px #346caa!important;
-        border: 1px solid #466f9c;
+        box-shadow: 0 1px 3px #346caaa6 !important;
+        border: 1px solid #3984d7;
         font-weight: 400;
     }
 .supplements-controls-wrapper {
@@ -4756,7 +4779,7 @@ div#program-details-content h3 {
         border: none;
         background-color: #ffffff;
         border-radius: 8px;
-        box-shadow: 0px 1px 3px #00000030;
+        box-shadow: 0px 1px 3px #0000001f;
         border: 0.5px solid #d9d9d9;
     }
 .exercise-header {
@@ -4929,6 +4952,16 @@ div#program-details-content h3 {
         border-radius: 4px;
         position: relative;
     }
+.checkbox-custom svg {
+        display: none;
+    }
+.checkbox-input:checked + .checkbox-custom svg {
+        width: 25px;
+        height: 25px;
+        display: block;
+        margin-top: -6px;
+        color: #009832;
+    }
 .checkbox-text {
         font-size: 14px;
         color: #1c1c1e;
@@ -5012,7 +5045,7 @@ div#program-details-content h3 {
         align-items: center;
         justify-content: flex-start;
         gap: 3px;
-        color: #3e8ce1;
+        color: #317ccd;
         padding: 0;
         margin-left: 0;
         font-size: 12px;
@@ -5136,26 +5169,30 @@ button.add-set-btn span {
         text-align: center;
         display: flex;
         background: none;
+        gap: 13px;
     }
 .modal-remove-edit button.btn.btn-primary, .modal-remove-edit button.btn.cancel-btn {
         background: #ffffff;
-        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
         padding: 7px;
-        margin-right: 13px;
         border: none;
         width: 75px;
         height: 75px;
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25) !important;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
 .modal-remove-edit button.btn.cancel-btn svg {
         color: #cd3931;
         height: 32px;
         width: 35px;
+        display: block;
     }
 .modal-remove-edit button.btn.btn-primary svg {
         color: #515151;
         height: 39px;
-        width: 48px;
-        padding: 0px;
+        width: 39px;
+        display: block;
     }
 .modal-edit {
         display: flex;
@@ -5240,8 +5277,12 @@ button.btn.btn-primary.add-exercise-btn {
         margin-top: 5px;
         font-weight: 600;
         font-size: 12px;
-        box-shadow: 0px 1px 3px #00000030!important;
+        box-shadow: 0px 1px 3px #0000001f!important;
         border: 0.5px solid #d9d9d9;
+    }
+button.btn.btn-primary.add-exercise-btn.list-card-pressed {
+        background: #f9f9f9 !important;
+        box-shadow: none !important;
     }
 .modal-overlay.program-details .modal-content {
         display: flex;
@@ -10966,10 +11007,7 @@ button.btn.btn-secondary.profile-copy-btn {
         flex-direction: column;
         gap: 8px;
     }
-.mode-btn:active {
-    transition: transform 0.2s ease;
-    box-shadow: none !important;
-}
+
 .mode-select-box button#mode-logout-btn {
     color: #535353;
     background: none;
@@ -11437,10 +11475,6 @@ button.action-btn.action-delete svg {
     height: 22px;
     color: #ffffff;
 }
-button.action-btn.action-delete:active svg {
-    transform: scale(1.1);
-    transition: transform 0.2s ease;
-}
 .exercise-swipe .swipe-content {
     position: relative;
     z-index: 2;
@@ -11456,10 +11490,6 @@ button.action-btn.action-delete:active svg {
     font-size: 14px;
     cursor: pointer;
     transition: background 0.2s;
-}
-.action-btn:active svg {
-    transform: scale(1.1);
-    transition: transform 0.2s ease;
 }
 .exercise-swipe:not(.open) .swipe-actions {
     pointer-events: none;
@@ -12457,6 +12487,11 @@ button#meal-calendar-btn svg {
     opacity: 0;
     transform: scale(0.9);
     transition: opacity 0.08s ease, transform 0.08s ease;
+}
+.week-day-check svg {
+    display: block;
+    width: 17px;
+    height: 17px;
 }
 .week-day-item.has-food .week-day-check {
     opacity: 1;
@@ -15142,6 +15177,9 @@ button.edit-meal-search-main-action.recipe-details-action-delete svg {
     gap: 16px;
     grid-template-columns: 188px 1fr;
 }
+.create-food-row.create-food-row--with-portion-unit {
+    grid-template-columns: 148px 1fr !important;
+}
 .create-food-form-card :nth-child(5).create-food-row {
     gap: 16px;
     grid-template-columns: 188px 1fr;
@@ -15972,8 +16010,11 @@ button.meal-goal-interval-delete-btn {
     overflow: hidden;
 }
 .add-meal-wrap {
-    width: calc(100% - 16px);
     margin: 0 auto;
+    padding: 0 10px;
+}
+.meals-container-wrap .add-meal-wrap {
+    padding: 0 0;
 }
 button#add-meal-section-btn {
     width: 100%;
@@ -17337,8 +17378,8 @@ button.btn.btn-secondary.profile-copy-btn {
     display: none;
 }
 .supplements-topbar-calendar-btn, .supplements-topbar-table-btn {
-    min-height: 30px;
-    height: 30px;
+    min-height: 28px;
+    height: 28px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -17351,7 +17392,7 @@ button.btn.btn-secondary.profile-copy-btn {
     padding: 0 10px;
     flex: 0 0 auto;
     white-space: nowrap;
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
     padding: 0 37px;
     text-transform: uppercase;
