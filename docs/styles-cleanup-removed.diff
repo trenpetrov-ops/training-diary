@@ -1,0 +1,2465 @@
+﻿diff --git a/styles.css b/styles.css
+index b92c43b..bc7028f 100644
+--- a/styles.css
++++ b/styles.css
+@@ -13 +12,0 @@
+-    /* iOS: Ð¿Ð¾Ð´ Â«Ñ‡Ñ‘Ð»ÐºÐ¾Ð¹Â» / Dynamic Island Ð¾Ð±Ñ‹Ñ‡Ð½Ð¾ ~47â€“59px; Ð±ÐµÐ· Ð²Ñ‹Ñ€ÐµÐ·Ð° 0â€“20px */
+@@ -17 +15,0 @@
+-    /* ÐŸÑ€Ð¸ env() = 0 (Ð¸Ð½Ð¾Ð³Ð´Ð° Ð² Capacitor ÑÐ¾ ÑÐºÑ€Ñ‹Ñ‚Ñ‹Ð¼ ÑÑ‚Ð°Ñ‚ÑƒÑ-Ð±Ð°Ñ€Ð¾Ð¼) â€” Ð¿Ð¾Ð´Ð½Ð¸Ð¼Ð¸ Ð´Ð¾ 44â€“54px */
+@@ -23 +20,0 @@
+-    /* ÐŸÐ¾Ð»Ð½Ð°Ñ Ð²Ñ‹ÑÐ¾Ñ‚Ð° Ð²ÐµÑ€Ñ…Ð½ÐµÐ¹ Ð¿Ð¾Ð»Ð¾ÑÑ‹ (Ð´Ð»Ñ sticky / top: Ð² Ð´Ñ€ÑƒÐ³Ð¸Ñ… ÑÐºÑ€Ð°Ð½Ð°Ñ…) */
+@@ -29 +25,0 @@
+-    /* Ð¤Ð¸ÐºÑ. Ð½Ð¸Ð¶Ð½ÑÑ Ð½Ð°Ð²Ð¸Ð³Ð°Ñ†Ð¸Ñ: nav/bottom-nav.css â€” .navigation height 58px + margin-bottom 35px */
+@@ -34 +29,0 @@
+-/* ÃÅ¾Ã‘â€šÃÂºÃÂ»Ã‘Å½Ã‘â€¡ÃÂ°ÃÂµÃÂ¼ ÃÂ²Ã‘â€¹ÃÂ´ÃÂµÃÂ»ÃÂµÃÂ½ÃÂ¸ÃÂµ Ã‘â€šÃÂµÃÂºÃ‘ÂÃ‘â€šÃÂ° ÃÂ¸ ÃÂ´ÃÂ¾ÃÂ»ÃÂ³ÃÂ¸ÃÂ¹ tap highlight */
+@@ -92,2 +86,0 @@ html, body {
+-.container {
+-}
+@@ -163 +155,0 @@ button:focus, button:focus-visible, button:active {
+-    /* IE/Edge */
+@@ -165 +156,0 @@ button:focus, button:focus-visible, button:active {
+-    /* Firefox */
+@@ -206 +196,0 @@ html, body {
+-    /* ÐšÐ¾Ð½Ñ‚ÐµÐ½Ñ‚ Ð½Ðµ Â«Ð¿Ñ€ÑÑ‡ÐµÑ‚ÑÑÂ» Ð¿Ð¾Ð´ Ð½Ð¸Ð¶Ð½ÐµÐ¹ Ð¿Ð°Ð½ÐµÐ»ÑŒÑŽ Ð¿Ñ€Ð¸ Ð¿Ñ€Ð¾ÐºÑ€ÑƒÑ‚ÐºÐµ Ðº Ð½Ð¸Ð·Ñƒ */
+@@ -223 +212,0 @@ html, body {
+-    /* transition: border-bottom-color 0.12s ease; */
+@@ -380,2 +368,0 @@ h3 {
+-    /* transition: opacity 0.2s; */
+-    /* white-space: nowrap; */
+@@ -386 +372,0 @@ h3 {
+-    /* flex-shrink: 0; */
+@@ -440 +425,0 @@ input:focus {
+-/* Ð¡ÐµÑ‚ÐºÐ° Ñ†Ð¸ÐºÐ»Ð¾Ð²: Ð±ÐµÐ· Â«Ð´Ñ‹Ñ€Â», Ð°ÐºÑ‚Ð¸Ð²Ð½Ð°Ñ ÐºÐ°Ñ€Ñ‚Ð¾Ñ‡ÐºÐ° Ð½Ð° Ð´Ð²Ðµ ÐºÐ¾Ð»Ð¾Ð½ÐºÐ¸; minmax(0,1fr) â€” Ð±ÐµÐ· Ð²Ñ‹Ð»ÐµÐ·Ð°Ð½Ð¸Ñ Ð·Ð° ÑÐºÑ€Ð°Ð½ */
+@@ -523 +507,0 @@ input:focus {
+-    /* border-top: 1px solid #3e8ce1; */
+@@ -528,3 +511,0 @@ input:focus {
+-    /* border-top: 1px solid #dedede; */
+-    /* color: #1a3a5c; */
+-    /* background: rgba(0, 0, 0, 0.05); */
+@@ -542,3 +522,0 @@ input:focus {
+-.programs-list--cycles-board .add-cycle-btn--fullrow {
+-    /* grid-column: 1 / -1; */
+-}
+@@ -556,2 +533,0 @@ input:focus {
+-    /* box-shadow: 0 2px 0 #cccccc; */
+-    /* border: 1px solid #e0e0e0; */
+@@ -572,4 +547,0 @@ button.btn.btn-primary.add-cycle-btn, button.btn.btn-primary.add-client-btn, but
+-    /* border-bottom: 2.5px solid #e7e7e7; */
+-    /* border-left: 1px solid #e7e7e7; */
+-    /* border-top: 1px solid #e7e7e7; */
+-    /* border-right: 1px solid #e7e7e7; */
+@@ -582,2 +553,0 @@ button.btn.btn-primary.add-cycle-btn, button.btn.btn-primary.add-client-btn, but
+-    /* box-shadow: 0 2px 0 #cccccc!important; */
+-    /* border: 1px solid #e0e0e0; */
+@@ -602 +571,0 @@ button.btn.btn-primary.add-cycle-btn {
+-    /* background: rgb(0 0 0 / 68%); */
+@@ -635 +603,0 @@ button.btn.btn-primary {
+-    /* box-shadow: 0 1px 3px #346caa !important; */
+@@ -688 +655,0 @@ button.btn.menu-btn {
+-    /* border: 1px solid #c7c7cc; */
+@@ -920 +886,0 @@ small.unit-label {
+-    /* box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); */
+@@ -993,2 +958,0 @@ small.unit-label {
+-.mode-btn h4 {
+-}
+@@ -1349 +1312,0 @@ textarea.comment-input {
+-    /* transition: all 0.2s ease; */
+@@ -1381,4 +1343,0 @@ button.btn.delete-media-btn svg {
+-button.btn.btn-secondary span {
+-    /* padding-left: 10px; */
+-    /* padding-top: 4px; */
+-}
+@@ -1577 +1535,0 @@ div#supplements-content {
+-    /* padding: 0 10px; */
+@@ -1585,2 +1542,0 @@ div#supplements-content {
+-    /* border: 1px solid var(--color-border-light); */
+-    /* border-radius: 8px; */
+@@ -1671 +1626,0 @@ button.btn.btn-secondary.supplement-table-add-weeks-btn {
+-    /* background-color: #eeeff3f7; */
+@@ -1675 +1629,0 @@ button.btn.btn-secondary.supplement-table-add-weeks-btn {
+-    /* background-color: #f2efef54; */
+@@ -1768 +1721,0 @@ input {
+-    /* box-shadow: inset 0 0 0 0.5px #a9a9a9; */
+@@ -1796,5 +1748,0 @@ div#program-details-content h3 {
+-    /* border-bottom: 1.5px solid #dedede; */
+-    /* border-left: 0.5px solid #dedede; */
+-    /* border-right: 0.5px solid #dedede; */
+-    /* border-top: 0.5px solid #dedede; */
+-    /* overflow: hidden; */
+@@ -1889 +1836,0 @@ span.exercise-header-arrow {
+-    /* line-height: 1.35; */
+@@ -1905 +1851,0 @@ span.exercise-header-arrow {
+-    /* width: 26px; */
+@@ -1937 +1882,0 @@ span.exercise-header-arrow {
+-    /* width: 26px; */
+@@ -2083 +2027,0 @@ span.exercise-header-arrow {
+-
+@@ -2088 +2031,0 @@ span.exercise-header-arrow {
+-
+@@ -2092 +2034,0 @@ span.exercise-header-arrow {
+-
+@@ -2110 +2051,0 @@ span.exercise-header-arrow {
+-    /* flex: 1; */
+@@ -2171 +2111,0 @@ button.modal-set-add-part-btn svg {
+-    /* margin-left: 5px; */
+@@ -2181 +2120,0 @@ button.modal-set-add-part-btn svg {
+-    /* margin-left: 4px; */
+@@ -2448,2 +2386,0 @@ button.btn.btn-primary.add-exercise-btn:active {
+-    /* background: none; */
+-    /* color: #268eff; */
+@@ -2455,2 +2391,0 @@ button.btn.btn-primary.add-exercise-btn:active {
+-/* ========================================================== */
+-/* ========================================================== */
+@@ -2468 +2402,0 @@ button.btn.btn-primary.add-exercise-btn:active {
+-/* Journal page: keep 50px clearance above bottom nav */
+@@ -2470 +2403,0 @@ button.btn.btn-primary.add-exercise-btn:active {
+-    /* --bottom-nav-clearance already includes extraPadding 16px */
+@@ -2478 +2410,0 @@ button.btn.btn-primary.add-exercise-btn:active {
+-    /* 10px gap to bottom nav: -6 because clearance already contains +16 */
+@@ -2487 +2418,0 @@ button.btn.btn-primary.add-exercise-btn:active {
+-    /* background: linear-gradient(135deg, #f0f7ff, #e8f0fe); */
+@@ -2489 +2419,0 @@ button.btn.btn-primary.add-exercise-btn:active {
+-    /* border-left: 3px solid #4a90d9; */
+@@ -2590 +2519,0 @@ button.btn.btn-primary.add-exercise-btn:active {
+-    /* background: #f8f8f8; */
+@@ -2604 +2532,0 @@ button.btn.btn-primary.add-exercise-btn:active {
+-    /* border-color: #4a90d9; */
+@@ -2794 +2721,0 @@ div#journal-content {
+-/* Journal: no extra gap under calendar (filters are fixed) */
+@@ -2807 +2733,0 @@ div#journal-content {
+-/* Journal calendar: dynamic row height like supplements calendar */
+@@ -2905 +2830,0 @@ div#journal-content {
+-/* Journal calendar: previous/next month days */
+@@ -2938 +2862,0 @@ div#journal-content {
+-    /* font-size: 14px; */
+@@ -3098 +3021,0 @@ button.calendar-nav-btn svg {
+-    /* margin-left: 6px; */
+@@ -3105,8 +3027,0 @@ button.calendar-nav-btn svg {
+-.delete-record-btn {
+-    /* width: 100%; */
+-    /* margin-top: 20px; */
+-    /* background-color: #ff3b30; */
+-    /* color: white; */
+-    /* padding: 10px; */
+-    /* border-radius: 8px; */
+-}
+@@ -3134,8 +3048,0 @@ button.calendar-nav-btn svg {
+-.journal-record-details h3 {
+-    /* font-size: 17px; */
+-    /* font-weight: 600; */
+-    /* margin: 0 0 8px; */
+-    /* text-align: center; */
+-}
+-h3.training-comment-heading {
+-}
+@@ -3199,2 +3105,0 @@ div#journal-content .record-header .record-date {
+-    /* legacy invalid declaration intentionally left inactive */
+-    /* padding-left: 11px; */
+@@ -3206 +3110,0 @@ div#journal-content .record-header .record-date {
+-    /* border: 0.5px solid #dedede; */
+@@ -3211 +3114,0 @@ div#journal-content .record-header .record-date {
+-    /* border-bottom: 1px solid #bababa; */
+@@ -3213 +3115,0 @@ div#journal-content .record-header .record-date {
+-    /* box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); */
+@@ -3275 +3176,0 @@ div#journal-content .record-header .record-date {
+-/* Журнал: рабочий дроп-сет — две колонки: слева номер/«·», справа вес×повторы */
+@@ -3346,2 +3246,0 @@ div#journal-content .record-header .record-date {
+-/* ========================================================== */
+-/* ========================================================== */
+@@ -3368,2 +3266,0 @@ div#journal-content .record-header .record-date {
+-/* ========================================================== */
+-/* ========================================================== */
+@@ -3388,12 +3284,0 @@ div#journal-content .record-header .record-date {
+-/* ========================================================== */
+-/* ========================================================== */
+-/ .list-item .go-btn {
+-    background: #007aff;
+-    color: white;
+-    padding: 5px 12px;
+-    font-size: 14px;
+-    border-radius: 8px;
+-}
+-.toast-message {
+-}
+-/* ========================================================== */
+@@ -3420 +3304,0 @@ div#journal-content .record-header .record-date {
+-    /* box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); */
+@@ -3444,2 +3327,0 @@ div#journal-content .record-header .record-date {
+-/* ========================================================== */
+-/* ========================================================== */
+@@ -3475,2 +3356,0 @@ div#journal-content .record-header .record-date {
+-button#select-own-mode {
+-}
+@@ -3495 +3374,0 @@ button#select-own-mode .mode-icon svg {
+-    /* gap: 15px; */
+@@ -3500,55 +3379 @@ button#select-own-mode .mode-icon svg {
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-    @import url('https: //fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap'); body {
+-        font-family: -apple-system, BlinkMacSystemFont, 'Inter', "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+-        background-color: #f2f2f7;
+-        color: #1c1c1e;
+-        padding: 0;
+-        margin: 0;
+-        min-height: var(--app-height, 100vh);
+-        height: var(--app-height, 100vh);
+-        letter-spacing: -0.01em;
+-    }
+-    : root {
+-        /* iOS: Ð¿Ð¾Ð´ Â«Ñ‡Ñ‘Ð»ÐºÐ¾Ð¹Â» / Dynamic Island Ð¾Ð±Ñ‹Ñ‡Ð½Ð¾ ~47â€“59px; Ð±ÐµÐ· Ð²Ñ‹Ñ€ÐµÐ·Ð° 0â€“20px */
+-        --safe-top: env(safe-area-inset-top, 0px);
+-        --safe-bottom: env(safe-area-inset-bottom, 0px);
+-        /* ÐŸÑ€Ð¸ env() = 0 (Ð¸Ð½Ð¾Ð³Ð´Ð° Ð² Capacitor ÑÐ¾ ÑÐºÑ€Ñ‹Ñ‚Ñ‹Ð¼ ÑÑ‚Ð°Ñ‚ÑƒÑ-Ð±Ð°Ñ€Ð¾Ð¼) â€” Ð¿Ð¾Ð´Ð½Ð¸Ð¼Ð¸ Ð´Ð¾ 44â€“54px */
+-        --safe-top-min: 14px;
+-        --safe-top-fallback: max(var(--safe-top), var(--safe-top-min));
+-        --top-bar-pad-top: calc(var(--safe-top-fallback) + 10px);
+-        --top-bar-pad-bottom: 10px;
+-        --top-bar-row: 30px;
+-        /* ÐŸÐ¾Ð»Ð½Ð°Ñ Ð²Ñ‹ÑÐ¾Ñ‚Ð° Ð²ÐµÑ€Ñ…Ð½ÐµÐ¹ Ð¿Ð¾Ð»Ð¾ÑÑ‹ (Ð´Ð»Ñ sticky / top: Ð² Ð´Ñ€ÑƒÐ³Ð¸Ñ… ÑÐºÑ€Ð°Ð½Ð°Ñ…) */
+-        --top-bar-height: calc(var(--top-bar-pad-top) + var(--top-bar-row) + var(--top-bar-pad-bottom));
+-        --top-bar-offset: var(--top-bar-height);
+-        /* Ð¤Ð¸ÐºÑ. Ð½Ð¸Ð¶Ð½ÑÑ Ð½Ð°Ð²Ð¸Ð³Ð°Ñ†Ð¸Ñ: nav/bottom-nav.css â€” .navigation height 58px + margin-bottom 35px */
+-        --bottom-nav-clearance: calc(58px + 35px + 16px + var(--safe-bottom));
+-    }
+-    /* ÃÅ¾Ã‘â€šÃÂºÃÂ»Ã‘Å½Ã‘â€¡ÃÂ°ÃÂµÃÂ¼ ÃÂ²Ã‘â€¹ÃÂ´ÃÂµÃÂ»ÃÂµÃÂ½ÃÂ¸ÃÂµ Ã‘â€šÃÂµÃÂºÃ‘ÂÃ‘â€šÃÂ° ÃÂ¸ ÃÂ´ÃÂ¾ÃÂ»ÃÂ³ÃÂ¸ÃÂ¹ tap highlight */
++}
+@@ -3624,4 +3448,0 @@ button#select-own-mode .mode-icon svg {
+-    .program-card: focus, .program-card:focus-visible {
+-        outline: none !important;
+-        background-color: inherit !important;
+-    }
+@@ -3632,4 +3452,0 @@ button#select-own-mode .mode-icon svg {
+-    button: focus, button:focus-visible, button:active {
+-        outline: none !important;
+-        box-shadow: none !important;
+-    }
+@@ -3649,3 +3465,0 @@ button#select-own-mode .mode-icon svg {
+-    *:: -webkit-scrollbar {
+-        display: none;
+-    }
+@@ -3654 +3467,0 @@ button#select-own-mode .mode-icon svg {
+-        /* IE/Edge */
+@@ -3656 +3468,0 @@ button#select-own-mode .mode-icon svg {
+-        /* Firefox */
+@@ -3697 +3508,0 @@ button#select-own-mode .mode-icon svg {
+-        /* ÐšÐ¾Ð½Ñ‚ÐµÐ½Ñ‚ Ð½Ðµ Â«Ð¿Ñ€ÑÑ‡ÐµÑ‚ÑÑÂ» Ð¿Ð¾Ð´ Ð½Ð¸Ð¶Ð½ÐµÐ¹ Ð¿Ð°Ð½ÐµÐ»ÑŒÑŽ Ð¿Ñ€Ð¸ Ð¿Ñ€Ð¾ÐºÑ€ÑƒÑ‚ÐºÐµ Ðº Ð½Ð¸Ð·Ñƒ */
+@@ -3731,4 +3541,0 @@ button#select-own-mode .mode-icon svg {
+-    .top-back-btn: active svg {
+-        transform: scale(1.1);
+-        transition: transform 0.2s ease;
+-    }
+@@ -3744,4 +3550,0 @@ button#select-own-mode .mode-icon svg {
+-    .top-menu-btn: active svg {
+-        transform: scale(1.1);
+-        transition: transform 0.2s ease;
+-    }
+@@ -3780,4 +3582,0 @@ button#select-own-mode .mode-icon svg {
+-    .menu-modal button.menu-icon-btn: active {
+-        transform: scale(1.05);
+-        transition: transform 0.2s ease;
+-    }
+@@ -3803,4 +3601,0 @@ button#select-own-mode .mode-icon svg {
+-    button: focus, button:active {
+-        outline: none;
+-        box-shadow: none;
+-    }
+@@ -3856,3 +3650,0 @@ button#select-own-mode .mode-icon svg {
+-    .list-item: last-child, .journal-record:last-child {
+-        border-bottom: none;
+-    }
+@@ -3867 +3658,0 @@ button#select-own-mode .mode-icon svg {
+-        /* box-shadow: inset 0 0 0 0.5px #c7c7cc; */
+@@ -3870,4 +3660,0 @@ button#select-own-mode .mode-icon svg {
+-    input: focus {
+-        outline: none;
+-        box-shadow: inset 0 0 0 1.5px #007aff;
+-    }
+@@ -3888 +3674,0 @@ button#select-own-mode .mode-icon svg {
+-    /* Ð¡ÐµÑ‚ÐºÐ° Ñ†Ð¸ÐºÐ»Ð¾Ð²: Ð±ÐµÐ· Â«Ð´Ñ‹Ñ€Â», Ð°ÐºÑ‚Ð¸Ð²Ð½Ð°Ñ ÐºÐ°Ñ€Ñ‚Ð¾Ñ‡ÐºÐ° Ð½Ð° Ð´Ð²Ðµ ÐºÐ¾Ð»Ð¾Ð½ÐºÐ¸; minmax(0,1fr) â€” Ð±ÐµÐ· Ð²Ñ‹Ð»ÐµÐ·Ð°Ð½Ð¸Ñ Ð·Ð° ÑÐºÑ€Ð°Ð½ */
+@@ -3914 +3699,0 @@ button#select-own-mode .mode-icon svg {
+-        /* background: #6ba7ea00 !important; */
+@@ -3916,2 +3700,0 @@ button#select-own-mode .mode-icon svg {
+-        /* border-bottom: 1.5px solid #3e8ce1!important; */
+-        /* border-left: 3px solid #4a90d9!important; */
+@@ -3974 +3756,0 @@ button#select-own-mode .mode-icon svg {
+-        /* border-top: 1px solid #3e8ce1; */
+@@ -3979,3 +3760,0 @@ button#select-own-mode .mode-icon svg {
+-        /* border-top: 1px solid #dedede; */
+-        /* color: #1a3a5c; */
+-        /* background: rgba(0, 0, 0, 0.05); */
+@@ -3993 +3771,0 @@ button#select-own-mode .mode-icon svg {
+-        /* grid-column: 1 / -1; */
+@@ -4002,3 +3779,0 @@ button#select-own-mode .mode-icon svg {
+-        /* border-bottom: 2px solid #dedede; */
+-        /* border-left: 1px solid #dedede; */
+-        /* border-top: 1px solid #dedede; */
+@@ -4009,2 +3783,0 @@ button#select-own-mode .mode-icon svg {
+-        /* box-shadow: 0 2px 0 #cccccc; */
+-        /* border: 1px solid #e0e0e0; */
+@@ -4014,4 +3786,0 @@ button#select-own-mode .mode-icon svg {
+-    .add-client-btn: active, .list-item.client-item:active , .add-program-btn:active , .list-item.program-item:active , .add-cycle-btn:active {
+-        transition: transform 0.2s ease;
+-        box-shadow: none !important;
+-    }
+@@ -4025,4 +3793,0 @@ button#select-own-mode .mode-icon svg {
+-        /* border-bottom: 2.5px solid #e7e7e7; */
+-        /* border-left: 1px solid #e7e7e7; */
+-        /* border-top: 1px solid #e7e7e7; */
+-        /* border-right: 1px solid #e7e7e7; */
+@@ -4035,2 +3799,0 @@ button#select-own-mode .mode-icon svg {
+-        /* box-shadow: 0 2px 0 #cccccc!important; */
+-        /* border: 1px solid #e0e0e0; */
+@@ -4045,3 +3807,0 @@ button#select-own-mode .mode-icon svg {
+-    .program-item > div: first-child {
+-        flex-grow: 1;
+-    }
+@@ -4070,4 +3829,0 @@ button#select-own-mode .mode-icon svg {
+-    .modal-cicle .modal-buttons button.btn.btn-primary: active {
+-        transform: scale(1.1);
+-        transition: transform 0.2s ease;
+-    }
+@@ -4133 +3888,0 @@ button#select-own-mode .mode-icon svg {
+-        /* border: 1px solid #c7c7cc; */
+@@ -4170,3 +3924,0 @@ button#select-own-mode .mode-icon svg {
+-    .set-row: last-child {
+-        border-bottom: none;
+-    }
+@@ -4237,3 +3988,0 @@ button#select-own-mode .mode-icon svg {
+-    .journal-record: last-child {
+-        margin-bottom: 0;
+-    }
+@@ -4300,10 +4048,0 @@ button#select-own-mode .mode-icon svg {
+-    .list-item > div: first-child {
+-        flex: 1;
+-        min-width: 0;
+-        word-break: break-all;
+-        overflow-wrap: anywhere;
+-        white-space: normal;
+-        display: flex;
+-        flex-direction: column;
+-        justify-content: space-between;
+-    }
+@@ -4362 +4100,0 @@ button#select-own-mode .mode-icon svg {
+-        /* box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); */
+@@ -4436,10 +4173,0 @@ button#select-own-mode .mode-icon svg {
+-        /* display: flex; */
+-        /* align-items: center; */
+-        /* text-align: left; */
+-        /* background-color: white; */
+-        /* border: 1px solid #e5e5ea; */
+-        /* border-radius: 12px; */
+-        /* padding: 15px; */
+-        /* width: 100%; */
+-        /* cursor: pointer; */
+-        /* transition: background-color 0.2s, box-shadow 0.2s; */
+@@ -4538,4 +4265,0 @@ button#select-own-mode .mode-icon svg {
+-    button.btn.btn-timer: active svg {
+-        transform: scale(1.1);
+-        transition: transform 0.2s ease;
+-    }
+@@ -4586,4 +4309,0 @@ button#select-own-mode .mode-icon svg {
+-    .timer-presets button: active {
+-        transform: scale(1.1);
+-        transition: transform 0.2s ease;
+-    }
+@@ -4609,4 +4328,0 @@ button#select-own-mode .mode-icon svg {
+-    .timer-center button: active {
+-        transform: scale(1.1);
+-        transition: transform 0.2s ease;
+-    }
+@@ -4695,11 +4410,0 @@ button#select-own-mode .mode-icon svg {
+-    .timer-toggle-checkbox: checked + .timer-toggle-box::after {
+-        content: "";
+-        position: absolute;
+-        width: 15px;
+-        height: 5px;
+-        border-left: 4px solid #009832;
+-        border-bottom: 3px solid #009832;
+-        top: 3px;
+-        left: 3px;
+-        transform: rotate(-45deg);
+-    }
+@@ -4745,4 +4449,0 @@ button#select-own-mode .mode-icon svg {
+-    button.btn.edit-note-btn: active svg {
+-        transform: scale(1.3);
+-        transition: transform 0.2s ease;
+-    }
+@@ -4795,5 +4495,0 @@ button#select-own-mode .mode-icon svg {
+-    textarea.comment-input: focus {
+-        border-color: #3f7ae0;
+-        background-color: #fff;
+-        box-shadow: 0 0 4px rgba(63, 122, 224, 0.25);
+-    }
+@@ -4842,4 +4537,0 @@ button#select-own-mode .mode-icon svg {
+-    .comExer button.btn.btn-secondary: active {
+-        transform: scale(1.05);
+-        transition: transform 0.2s ease;
+-    }
+@@ -4853,4 +4544,0 @@ button#select-own-mode .mode-icon svg {
+-    .comExer .modal-controls button.btn.btn-primary: active {
+-        transform: scale(1.1);
+-        transition: transform 0.2s ease;
+-    }
+@@ -4931,4 +4618,0 @@ button#select-own-mode .mode-icon svg {
+-    .comment-btn-group: active, .comment-btn-group:active button.btn.comment-toggle-btn.has-note {
+-        color: #317ccd;
+-        transition: transform 0.2s ease;
+-    }
+@@ -4988,4 +4671,0 @@ button#select-own-mode .mode-icon svg {
+-        /* border-bottom: 2px solid #dedede; */
+-        /* border-left: 1px solid #dedede; */
+-        /* border-right: 1px solid #dedede; */
+-        /* border-top: 1px solid #dedede; */
+@@ -4993 +4672,0 @@ button#select-own-mode .mode-icon svg {
+-        /* background: linear-gradient(135deg, #f0f7ff, #e8f0fe); */
+@@ -4996 +4674,0 @@ button#select-own-mode .mode-icon svg {
+-        /* color: #3580d3; */
+@@ -4999,4 +4676,0 @@ button#select-own-mode .mode-icon svg {
+-    .complete-training-btn: active {
+-        transition: transform 0.2s ease;
+-        box-shadow: none!important;
+-    }
+@@ -5094,5 +4767,0 @@ button#select-own-mode .mode-icon svg {
+-    .dose-input: focus {
+-        background-color: #d5d5d5;
+-        border: 0 solid #ffd700;
+-        box-shadow: none;
+-    }
+@@ -5152,3 +4820,0 @@ button#select-own-mode .mode-icon svg {
+-    .list-item: last-child, .journal-record:last-child {
+-        border-bottom: none;
+-    }
+@@ -5166,4 +4831,0 @@ button#select-own-mode .mode-icon svg {
+-    input: focus {
+-        outline: none;
+-        box-shadow: inset 0 0 0 0.5px #a9a9a9;
+-    }
+@@ -5188,4 +4849,0 @@ button#select-own-mode .mode-icon svg {
+-        /* border-bottom: 1.5px solid #dedede; */
+-        /* border-left: 0.5px solid #dedede; */
+-        /* border-right: 0.5px solid #dedede; */
+-        /* border-top: 0.5px solid #dedede; */
+@@ -5216,4 +4873,0 @@ button#select-own-mode .mode-icon svg {
+-    .exercise-item: active {
+-        box-shadow: none !important;
+-        transition: transform 0.2s ease;
+-    }
+@@ -5378,11 +5031,0 @@ button#select-own-mode .mode-icon svg {
+-    .checkbox-input: checked + .checkbox-custom::after {
+-        content: '';
+-        position: absolute;
+-        width: 15px;
+-        height: 5px;
+-        border-left: 4px solid #009832;
+-        border-bottom: 3px solid #009832;
+-        top: 3px;
+-        left: 3px;
+-        transform: rotate(-45deg);
+-    }
+@@ -5495,4 +5137,0 @@ button#select-own-mode .mode-icon svg {
+-    .modal-set button.btn.btn-primary: active {
+-        transform: scale(1.1);
+-        transition: transform 0.2s ease;
+-    }
+@@ -5509,3 +5147,0 @@ button#select-own-mode .mode-icon svg {
+-    button.btn.delete-set-btn: active svg {
+-        transform: scale(1.3);
+-    }
+@@ -5532,3 +5167,0 @@ button#select-own-mode .mode-icon svg {
+-    .set-row: last-child {
+-        border-bottom: none;
+-    }
+@@ -5573,3 +5205,0 @@ button#select-own-mode .mode-icon svg {
+-    .add-set-btn: active svg {
+-        transform: scale(1.3);
+-    }
+@@ -5600,4 +5229,0 @@ button#select-own-mode .mode-icon svg {
+-    .duplicate-controls .btn: active {
+-        transform: scale(1.06);
+-        transition: transform 0.2s ease;
+-    }
+@@ -5618,4 +5243,0 @@ button#select-own-mode .mode-icon svg {
+-    .modal-remove-edit button.btn.btn-primary: active, .modal-remove-edit button.btn.cancel-btn:active {
+-        transform: scale(1.05);
+-        transition: transform 0.2s ease;
+-    }
+@@ -5643,4 +5264,0 @@ button#select-own-mode .mode-icon svg {
+-    .modal-edit .modal-buttons button.btn.btn-primary: active {
+-        transform: scale(1.1);
+-        transition: transform 0.2s ease;
+-    }
+@@ -5682,3 +5299,0 @@ button#select-own-mode .mode-icon svg {
+-    .h-wheel:: -webkit-scrollbar {
+-        display: none;
+-    }
+@@ -5719,2 +5333,0 @@ button#select-own-mode .mode-icon svg {
+-        /* border: 0.5px solid #e5e5e5; */
+-        /* border-bottom: 1.5px solid #dedede; */
+@@ -5728,4 +5340,0 @@ button#select-own-mode .mode-icon svg {
+-    button.btn.btn-primary.add-exercise-btn: active {
+-        transition: transform 0.2s ease;
+-        box-shadow: none !important;
+-    }
+@@ -5744,6 +5352,0 @@ button#select-own-mode .mode-icon svg {
+-    .modal-overlay.program-details .modal-content .modal-buttons button: hover {
+-        transform: scale(1.1);
+-        background: #eff6ff;
+-    }
+-    /* ========================================================== */
+-    /* ========================================================== */
+@@ -5873,3 +5475,0 @@ button#select-own-mode .mode-icon svg {
+-    .program-pill: active {
+-        transform: scale(0.96);
+-    }
+@@ -5917,23 +5516,0 @@ button#select-own-mode .mode-icon svg {
+-    .checkbox-container input: checked ~ .checkmark {
+-        background-color: #ffffff;
+-        border: 1px solid #b2b1b1;
+-    }
+-    .checkmark: after {
+-        content: "";
+-        position: absolute;
+-        display: none;
+-    }
+-    .checkbox-container input: checked ~ .checkmark:after {
+-        display: block;
+-    }
+-    .checkbox-container .checkmark: after {
+-        content: '';
+-        position: absolute;
+-        width: 15px;
+-        height: 5px;
+-        border-left: 4px solid #009832;
+-        border-bottom: 3px solid #009832;
+-        top: 3px;
+-        left: 3px;
+-        transform: rotate(-45deg);
+-    }
+@@ -6004,3 +5580,0 @@ button#select-own-mode .mode-icon svg {
+-    .select-option: hover {
+-        background: #f2f2f7;
+-    }
+@@ -6021,16 +5594,0 @@ button#select-own-mode .mode-icon svg {
+-    .custom-select .select-option:: before {
+-        content: '-';
+-        color: #999;
+-        margin-right: 8px;
+-    }
+-    .custom-select .select-option.selected:: after {
+-        content: '';
+-    }
+-    .custom-select .select-option.selected:: before {
+-        content: '';
+-        width: 15px;
+-        height: 5px;
+-        border-left: 4px solid #009832;
+-        border-bottom: 3px solid #009832;
+-        transform: rotate(-45deg);
+-    }
+@@ -6116,5 +5673,0 @@ button#select-own-mode .mode-icon svg {
+-    .calendar-cell: active {
+-        transform: scale(1.05);
+-        transition: transform 0.2s ease;
+-        z-index: 100;
+-    }
+@@ -6143,13 +5695,0 @@ button#select-own-mode .mode-icon svg {
+-    .calendar-cell.today .day-number:: after {
+-        content: '';
+-        display: block;
+-        width: 5px;
+-        height: 5px;
+-        border-radius: 50%;
+-        background-color: #007aff;
+-        margin: 9px auto 0 auto;
+-    }
+-    .calendar-cell.today.has-training .day-number:: after, .calendar-cell.today.planned .day-number::after {
+-        position: absolute;
+-        background: none;
+-    }
+@@ -6173,3 +5712,0 @@ button#select-own-mode .mode-icon svg {
+-    .training-dropdown-item: hover {
+-        background: #f2f2f7;
+-    }
+@@ -6226,3 +5762,0 @@ button#select-own-mode .mode-icon svg {
+-    .journal-record: last-child {
+-        margin-bottom: 0;
+-    }
+@@ -6318 +5851,0 @@ button#select-own-mode .mode-icon svg {
+-        /* border: 1.5px solid #535353; */
+@@ -6322,6 +5854,0 @@ button#select-own-mode .mode-icon svg {
+-        /* width: 100%; */
+-        /* margin-top: 20px; */
+-        /* background-color: #ff3b30; */
+-        /* color: white; */
+-        /* padding: 10px; */
+-        /* border-radius: 8px; */
+@@ -6349,3 +5875,0 @@ button#select-own-mode .mode-icon svg {
+-    .journal-record-details .back-btn: hover {
+-        text-decoration: underline;
+-    }
+@@ -6407 +5930,0 @@ button#select-own-mode .mode-icon svg {
+-        /* legacy invalid declaration intentionally left inactive */
+@@ -6542,6 +6064,0 @@ button#select-own-mode .mode-icon svg {
+-    .media-thumb: hover {
+-        transform: scale(1.05);
+-        transition: 0.2s;
+-    }
+-    /* ========================================================== */
+-    /* ========================================================== */
+@@ -6568,2 +6084,0 @@ button#select-own-mode .mode-icon svg {
+-    /* ========================================================== */
+-    /* ========================================================== */
+@@ -6588,9 +6102,0 @@ button#select-own-mode .mode-icon svg {
+-    /* ========================================================== */
+-    /* ========================================================== */
+-    / .list-item .go-btn {
+-        background: #007aff;
+-        color: white;
+-        padding: 5px 12px;
+-        font-size: 14px;
+-        border-radius: 8px;
+-    }
+@@ -6599 +6104,0 @@ button#select-own-mode .mode-icon svg {
+-    /* ========================================================== */
+@@ -6620 +6124,0 @@ button#select-own-mode .mode-icon svg {
+-        /* box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); */
+@@ -6644,2 +6147,0 @@ button#select-own-mode .mode-icon svg {
+-    /* ========================================================== */
+-    /* ========================================================== */
+@@ -6695,4 +6196,0 @@ button#select-own-mode .mode-icon svg {
+-        /* border-bottom: 2.5px solid #e7e7e7; */
+-        /* border-left: 1px solid #e7e7e7; */
+-        /* border-top: 1px solid #e7e7e7; */
+-        /* border-right: 1px solid #e7e7e7; */
+@@ -6702,4 +6199,0 @@ button#select-own-mode .mode-icon svg {
+-    .mode-btn: active {
+-        transition: transform 0.2s ease;
+-        box-shadow: none !important;
+-    }
+@@ -6732,2 +6225,0 @@ button#select-own-mode .mode-icon svg {
+-    /* ========================================================== */
+-    /* ========================================================== */
+@@ -6751,2 +6242,0 @@ button#select-own-mode .mode-icon svg {
+-    /* ========================================================== */
+-    /* ========================================================== */
+@@ -6763 +6252,0 @@ button#select-own-mode .mode-icon svg {
+-    /* cycle switch button removed from topbar */
+@@ -6765,3 +6253,0 @@ button#select-own-mode .mode-icon svg {
+-        /* display: flex; */
+-        /* align-items: center; */
+-        /* gap: 5px; */
+@@ -6772,4 +6257,0 @@ button#select-own-mode .mode-icon svg {
+-        /* padding: 8px 12px; */
+-        /* font-size: 16px; */
+-        /* font-weight: bold; */
+-        /* min-width: 40px; */
+@@ -6778,3 +6259,0 @@ button#select-own-mode .mode-icon svg {
+-        /* font-size: 1.1em; */
+-        /* font-weight: 600; */
+-        /* padding: 0 5px; */
+@@ -6798,3 +6276,0 @@ button#select-own-mode .mode-icon svg {
+-    .modal-content.modal-compact .modal-controls button.btn.btn-secondary.cancel-btn: active, .modal-content.modal-compact .modal-controls button.btn.btn-danger.confirm-btn:active {
+-        transition: transform 0.2s ease;
+-    }
+@@ -6821,4 +6296,0 @@ button#select-own-mode .mode-icon svg {
+-    .sup-name: hover {
+-        background: rgba(0, 0, 0, 0.05);
+-        border-radius: 6px;
+-    }
+@@ -6846 +6317,0 @@ button#select-own-mode .mode-icon svg {
+-        /* margin-top: 20px; */
+@@ -6881,2 +6351,0 @@ button#select-own-mode .mode-icon svg {
+-        /* overscroll-behavior-x: contain; */
+-        /* overscroll-behavior-y: contain; */
+@@ -6888 +6356,0 @@ button#select-own-mode .mode-icon svg {
+-        /* overflow-x: auto; */
+@@ -6890 +6357,0 @@ button#select-own-mode .mode-icon svg {
+-        /* display: flex; */
+@@ -6894,3 +6360,0 @@ button#select-own-mode .mode-icon svg {
+-    .supplement-table-wrapper:: -webkit-scrollbar {
+-        display: none;
+-    }
+@@ -6923,2 +6386,0 @@ button#select-own-mode .mode-icon svg {
+-        /* legacy invalid border-right declaration intentionally left inactive */
+-        /* border-left: 0.5px solid #dbc0b3; */
+@@ -6940,2 +6401,0 @@ button#select-own-mode .mode-icon svg {
+-        /* border-right: 0.5px solid #dbc0b3; */
+-        /* border-left: 0.5px solid #dbc0b3; */
+@@ -7014,5 +6473,0 @@ button#select-own-mode .mode-icon svg {
+-    .dose-input: focus {
+-        background-color: #d5d5d5;
+-        border: 0 solid #ffd700;
+-        box-shadow: none;
+-    }
+@@ -7066,3 +6520,0 @@ button#select-own-mode .mode-icon svg {
+-        /* font-size: 14px; */
+-        /* min-width: 30px; */
+-        /* height: 30px; */
+@@ -7081,3 +6532,0 @@ button#select-own-mode .mode-icon svg {
+-        /* padding: 8px 12px; */
+-        /* font-size: 0.95em; */
+-        /* min-width: 150px; */
+@@ -7159 +6607,0 @@ button#select-own-mode .mode-icon svg {
+-    /* ====== SWIPE ====== */
+@@ -7166,5 +6613,0 @@ button#select-own-mode .mode-icon svg {
+-        /* border-radius: 10px 10px 0px 9px; */
+-        /* border-top: 0.5px solid #dedede; */
+-        /* border-right: 0.5px solid #dedede; */
+-        /* border-left: 0.5px solid #dedede; */
+-        /* border-bottom: 0.5px solid #dedede; */
+@@ -7196,4 +6638,0 @@ button#select-own-mode .mode-icon svg {
+-    button.action-btn.action-delete: active svg {
+-        transform: scale(1.1);
+-        transition: transform 0.2s ease;
+-    }
+@@ -7216,4 +6654,0 @@ button#select-own-mode .mode-icon svg {
+-    .action-btn: active svg {
+-        transform: scale(1.1);
+-        transition: transform 0.2s ease;
+-    }
+@@ -7263,3 +6697,0 @@ button#select-own-mode .mode-icon svg {
+-    .training-dropdown-item: hover {
+-        background: #f2f2f2;
+-    }
+@@ -7274,3 +6705,0 @@ button#select-own-mode .mode-icon svg {
+-    .delete-plan-btn: hover {
+-        color: #ff3333;
+-    }
+@@ -7280 +6708,0 @@ button#select-own-mode .mode-icon svg {
+-        /* background: #fff; */
+@@ -7286 +6713,0 @@ button#select-own-mode .mode-icon svg {
+-        /* overflow: visible; */
+@@ -7288 +6714,0 @@ button#select-own-mode .mode-icon svg {
+-    /* ÐŸÑ€Ð¸Ñ‘Ð¼ Ð¿Ð¸Ñ‚Ð°Ð½Ð¸Ñ: ÐºÐ¾Ð¿Ð¸Ñ€Ð¾Ð²Ð°Ð½Ð¸Ðµ/ÑƒÐ´Ð°Ð»ÐµÐ½Ð¸Ðµ Ð² Ð¾Ð´Ð½Ð¾Ð¹ Ð¿Ð¾Ð»Ð¾ÑÐµ Ñ meal-card-header (ÐºÐ°Ðº food-swipe--meal-item); 120px = maxSwipe Ð² bindSwipeBlock. */
+@@ -7301,2 +6726,0 @@ button#select-own-mode .mode-icon svg {
+-        /* gap: 0px; */
+-        /* padding: 0 10px; */
+@@ -7305 +6728,0 @@ button#select-own-mode .mode-icon svg {
+-        /* border-radius: 0 10px 10px 0; */
+@@ -7317 +6739,0 @@ button#select-own-mode .mode-icon svg {
+-        /* overflow: hidden; */
+@@ -7322,2 +6743,0 @@ button#select-own-mode .mode-icon svg {
+-        /* border-radius: 10px; */
+-        /* margin-bottom: 10px; */
+@@ -7342,2 +6761,0 @@ button#select-own-mode .mode-icon svg {
+-        /* overflow: hidden; */
+-        /* background: #f0f0f0; */
+@@ -7345,3 +6762,0 @@ button#select-own-mode .mode-icon svg {
+-        /* border-radius: 10px 10px 0px 0px; */
+-        /* border-left: 1px solid #dedede; */
+-        /* border-right: 1px solid #dedede; */
+@@ -7356,2 +6770,0 @@ button#select-own-mode .mode-icon svg {
+-        /* background: #fff; */
+-        /* border-radius: 10px; */
+@@ -7360 +6772,0 @@ button#select-own-mode .mode-icon svg {
+-        /* box-shadow: 0px 1px 1px -1px rgb(0 0 0), 0 8px 20px rgb(0 0 0 / 84%); */
+@@ -7367 +6778,0 @@ button#select-own-mode .mode-icon svg {
+-        /* background: #fff; */
+@@ -7376,4 +6786,0 @@ button#select-own-mode .mode-icon svg {
+-        /* box-shadow: 0 2px 0px #bbbbbb; */
+-        /* border-left: 1px solid #e5e5e5; */
+-        /* border-right: 1px solid #e5e5e5; */
+-        /* border-bottom: 1px solid #e5e5e5; */
+@@ -7457 +6863,0 @@ button#select-own-mode .mode-icon svg {
+-        /* box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.05); */
+@@ -7486,3 +6891,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-header-kcal: empty {
+-        display: none;
+-    }
+@@ -7493 +6895,0 @@ button#select-own-mode .mode-icon svg {
+-    /* ÐšÐ½Ð¾Ð¿ÐºÐ° Â«Ð¿Ð»ÑŽÑÂ»: Ð¾Ñ‚ÐºÑ€Ñ‹Ð²Ð°ÐµÑ‚ Ð¿Ð¾Ð¸ÑÐº; ÐºÐ»Ð¸Ðº Ð¿Ð¾ Ð¾ÑÑ‚Ð°Ð»ÑŒÐ½Ð¾Ð¹ ÑˆÐ°Ð¿ÐºÐµ â€” Ñ€Ð°ÑÐºÑ€Ñ‹Ñ‚Ð¸Ðµ Ð¿Ñ€Ð¸Ñ‘Ð¼Ð°. */
+@@ -7517,2 +6918,0 @@ button#select-own-mode .mode-icon svg {
+-        /* box-shadow: 0 6px 10px -10px rgba(0, 0, 0, 0.18); */
+-        /* border-bottom: 1.5px solid #dedede; */
+@@ -7537 +6936,0 @@ button#select-own-mode .mode-icon svg {
+-        /* min-height: 233px; */
+@@ -7681 +7079,0 @@ button#select-own-mode .mode-icon svg {
+-        /* font-weight: 400; */
+@@ -7724 +7121,0 @@ button#select-own-mode .mode-icon svg {
+-        /* font-weight: 600; */
+@@ -7762 +7158,0 @@ button#select-own-mode .mode-icon svg {
+-            /* padding: 0px 12px 18px; */ /* border-radius: 22px; */
+@@ -7765 +7160,0 @@ button#select-own-mode .mode-icon svg {
+-            /* grid-template-columns: 1fr 200px 1fr; */
+@@ -7768,2 +7162,0 @@ button#select-own-mode .mode-icon svg {
+-            /* width: 196px; */
+-            /* height: 136px; */
+@@ -7772 +7164,0 @@ button#select-own-mode .mode-icon svg {
+-            /* top: 54px; */
+@@ -7775 +7166,0 @@ button#select-own-mode .mode-icon svg {
+-            /* min-height: 292px; */
+@@ -7804 +7194,0 @@ button#select-own-mode .mode-icon svg {
+-            /* font-size: 31px; */
+@@ -7807 +7196,0 @@ button#select-own-mode .mode-icon svg {
+-            /* font-size: 16px; */
+@@ -7810 +7198,0 @@ button#select-own-mode .mode-icon svg {
+-            /* font-size: 26px; */
+@@ -7813 +7200,0 @@ button#select-own-mode .mode-icon svg {
+-            /* font-size: 14px; */
+@@ -7816 +7202,0 @@ button#select-own-mode .mode-icon svg {
+-            /* font-size: 16px; */
+@@ -7819 +7204,0 @@ button#select-own-mode .mode-icon svg {
+-            /* font-size: 15px; */
+@@ -7822 +7206,0 @@ button#select-own-mode .mode-icon svg {
+-            /* font-size: 18px; */
+@@ -7825 +7208,0 @@ button#select-own-mode .mode-icon svg {
+-            /* gap: 12px; */
+@@ -7839 +7221,0 @@ button#select-own-mode .mode-icon svg {
+-    /* === =======================  CALENDAR ============================ */
+@@ -7954,14 +7335,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-calendar-day.has-entry:: after {
+-        content: '';
+-        position: absolute;
+-        bottom: 3px;
+-        left: 50%;
+-        transform: translateX(-50%);
+-        width: 4px;
+-        height: 4px;
+-        border-radius: 50%;
+-        background: #268eff;
+-    }
+-    .meal-calendar-day.is-outside.has-entry:: after {
+-        display: none;
+-    }
+@@ -7994 +7361,0 @@ button#select-own-mode .mode-icon svg {
+-    /* ===== WEEK STRIP ===== */
+@@ -7996 +7362,0 @@ button#select-own-mode .mode-icon svg {
+-        /* display: flex; */
+@@ -8034 +7399,0 @@ button#select-own-mode .mode-icon svg {
+-        /* margin: 0px 0 0px; */
+@@ -8094,5 +7458,0 @@ button#select-own-mode .mode-icon svg {
+-    .week-day-item: active .week-day-circle {
+-        transform: scale(0.96);
+-    }
+-    .meal-food-list : last-child {
+-    }
+@@ -8104 +7463,0 @@ button#select-own-mode .mode-icon svg {
+-    /* Ð•Ð´Ð¸Ð½ÑÑ‚Ð²ÐµÐ½Ð½Ñ‹Ð¹ Ñ€ÐµÐ±Ñ‘Ð½Ð¾Ðº â€” ÑÐºÐ¾Ð»ÑŒÐ·ÑÑ‰Ð¸Ð¹ Ð±Ð»Ð¾Ðº; Ð¸Ð½Ð°Ñ‡Ðµ flex-shrink Ð¼Ð¾Ð³ ÑÐ¶Ð¸Ð¼Ð°Ñ‚ÑŒ ÑˆÐ¸Ñ€Ð¸Ð½Ñƒ Ð¿Ñ€Ð¸ ÑÐ¼ÐµÐ½Ðµ viewport. */
+@@ -8115,4 +7473,0 @@ button#select-own-mode .mode-icon svg {
+-    .remove-btn: hover {
+-        transform: scale(1.2);
+-    }
+-    /* === =========================  SWIPE ============================ */
+@@ -8122,7 +7476,0 @@ button#select-own-mode .mode-icon svg {
+-    #meals-container > .meal-swipe--inline-header: first-child .meal-card-header {
+-        /* border-top:none; */
+-    }
+-    #meals-container > .meal-swipe--inline-header: first-child .meal-card-header {
+-        /* border-top:none; */
+-        /* border-radius: 10px 10px 0 0; */
+-    }
+@@ -8137 +7484,0 @@ button#select-own-mode .mode-icon svg {
+-        /* background: #f2f2f7; */
+@@ -8144 +7490,0 @@ button#select-own-mode .mode-icon svg {
+-        /* background: #f0f0f0; */
+@@ -8147,5 +7492,0 @@ button#select-own-mode .mode-icon svg {
+-        /* border: 0.5px solid #e7e7e8; */
+-        /* border-bottom: 1.5px solid #dedede; */
+-        /* border-left: 0.5px solid #dedede; */
+-        /* border-right: 0.5px solid #dedede; */
+-        /* border-top: 0.5px solid #dedede; */
+@@ -8170,11 +7510,0 @@ button#select-own-mode .mode-icon svg {
+-    /*.meal-swipe .swipe-content {
+-    position: relative;
+-    z-index: 2;
+-    background: white;
+-    width: 100%;
+-    transform: translateX(0);
+-    transition: transform 0.2s ease;
+-    will-change: transform;
+-    cursor: grab;
+-    box-sizing: border-box;
+-}*/
+@@ -8215,4 +7544,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-swipe .action-btn: active svg {
+-        transform: scale(1.1);
+-        transition: transform 0.2s ease;
+-    }
+@@ -8227 +7552,0 @@ button#select-own-mode .mode-icon svg {
+-        /* margin-top: 5px; */
+@@ -8235 +7559,0 @@ button#select-own-mode .mode-icon svg {
+-    /* === swipe PRODUCT  === */
+@@ -8287 +7610,0 @@ button#select-own-mode .mode-icon svg {
+-    /* Продукт в приёме: свайп только справа налево — «Запланировать» и «Удалить» в одной полосе справа (maxSwipe в bindSwipeBlock). */
+@@ -8414,2 +7736,0 @@ button#select-own-mode .mode-icon svg {
+-        /* background: #fff; */
+-        /* width: 100%; */
+@@ -8429,2 +7749,0 @@ button#select-own-mode .mode-icon svg {
+-        /* border-left: 1px solid #e5e5e5; */
+-        /* border-right: 1px solid #e5e5e5; */
+@@ -8434,6 +7752,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-food-list > .food-swipe: last-child .food-info-header {
+-        border-radius: 0;
+-        padding-bottom: 18px;
+-        box-shadow: none;
+-    }
+-    /* === PAGE ADD PRODUCT  === */
+@@ -8442 +7754,0 @@ button#select-own-mode .mode-icon svg {
+-    /* background: #f6f7fb; */
+@@ -8506,6 +7817,0 @@ button#select-own-mode .mode-icon svg {
+-    .create-food-form-card :nth-child(3).create-food-row .create-food-row-control input, .create-food-form-card : nth-child(4).create-food-row .create-food-row-control input {
+-        text-align: center;
+-    }
+-    .create-food-row: last-child {
+-        border-bottom: none;
+-    }
+@@ -8596 +7901,0 @@ button#select-own-mode .mode-icon svg {
+-
+@@ -8604 +7909 @@ button#select-own-mode .mode-icon svg {
+-    .create-food-input:: placeholder {
++    .create-food-input::placeholder {
+@@ -8608 +7912,0 @@ button#select-own-mode .mode-icon svg {
+-        /* min-height: 88px; */
+@@ -8612,2 +7915,0 @@ button#select-own-mode .mode-icon svg {
+-    }
+-        margin-top: 16px;
+@@ -8635 +7937 @@ button#select-own-mode .mode-icon svg {
+-    .create-food-submit-btn: disabled {
++    .create-food-submit-btn:disabled {
+@@ -8641 +7942,0 @@ button#select-own-mode .mode-icon svg {
+-            /* grid-template-columns: 104px 1fr; */ /* gap: 10px; */
+@@ -8644 +7944,0 @@ button#select-own-mode .mode-icon svg {
+-            /* font-size: 14px; */
+@@ -8647 +7946,0 @@ button#select-own-mode .mode-icon svg {
+-            /* font-size: 13px; */
+@@ -8705,7 +8003,0 @@ button#select-own-mode .mode-icon svg {
+-    .create-food-unit-dropdown-item:not(: last-child) {
+-        border-bottom: 1px solid #f0f1f5;
+-    }
+-    .create-food-unit-dropdown-item: active {
+-        background: #f6f7fb;
+-    }
+-    /* === cateory  === */
+@@ -8793,3 +8084,0 @@ button#select-own-mode .mode-icon svg {
+-    .recipe-category-sheet .recipe-category-sheet-item: active {
+-        transform: scale(0.985);
+-    }
+@@ -8800,6 +8088,0 @@ button#select-own-mode .mode-icon svg {
+-    .recipe-category-sheet .recipe-category-sheet-item: hover {
+-        background: #eceff3;
+-    }
+-    .recipe-category-sheet .recipe-category-sheet-item.active: hover {
+-        background: #111827;
+-    }
+@@ -8817,16 +8099,0 @@ button#select-own-mode .mode-icon svg {
+-    .recipe-category-sheet:: before {
+-        content: '';
+-        width: 42px;
+-        height: 5px;
+-        border-radius: 999px;
+-        background: #d1d5db;
+-        align-self: center;
+-        margin: 2px 0 10px;
+-        flex-shrink: 0;
+-    }
+-    /* === PAGE INFO PRODUCT  === */
+-    .create-food {
+-        /* display: flex; */
+-        /* flex-direction: column; */
+-        /* padding-bottom: 100px; */
+-    }
+@@ -8834 +8100,0 @@ button#select-own-mode .mode-icon svg {
+-        /* position: sticky; */
+@@ -8843,11 +8108,0 @@ button#select-own-mode .mode-icon svg {
+-    .topBar-create-food {
+-        /* width: 100%; */
+-        /* display: flex; */
+-        /* justify-content: space-between; */
+-        /* align-items: center; */
+-        /* min-height: var(--top-bar-height); */
+-        /* height: auto; */
+-        /* box-sizing: border-box; */
+-        /* background: #f2f2f7; */
+-        /* padding: var(--top-bar-pad-top) 10px var(--top-bar-pad-bottom) 10px; */
+-    }
+@@ -8875 +8129,0 @@ button#select-own-mode .mode-icon svg {
+-        /* background: #f2f2f7; */
+@@ -8877 +8130,0 @@ button#select-own-mode .mode-icon svg {
+-        /* padding: 8px 0 10px; */
+@@ -8882,3 +8134,0 @@ button#select-own-mode .mode-icon svg {
+-        /* content: ''; */
+-        /* position: absolute; */
+-        /* left: 0; */
+@@ -8886,7 +8135,0 @@ button#select-own-mode .mode-icon svg {
+-        /* bottom: 0; */
+-        /* height: 1px; */
+-        /* background: #dedede; */
+-        /* transform: scaleX(var(--sticky-border-progress, 0)); */
+-        /* transform-origin: 0 50%; */
+-        /* transition: transform 120ms linear; */
+-        /* pointer-events: none; */
+@@ -8933,4 +8175,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-card {
+-        /* background:#fff; */
+-        /* border-radius: 10px; */
+-    }
+@@ -8950 +8188,0 @@ button#select-own-mode .mode-icon svg {
+-        /* border-top: 1px solid #e5e5e5; */
+@@ -8953,3 +8190,0 @@ button#select-own-mode .mode-icon svg {
+-        /* border-left: 1px solid #e5e5e5; */
+-        /* border-right: 1px solid #e5e5e5; */
+-        /* border-bottom: 1px solid #e5e5e5; */
+@@ -8957,2 +8191,0 @@ button#select-own-mode .mode-icon svg {
+-        /* box-shadow: 0 2px 0px #cccccc; */
+-        /* border: 1px solid #e0e0e0; */
+@@ -8964 +8196,0 @@ button#select-own-mode .mode-icon svg {
+-        /* border-bottom: 2px solid #dedede; */
+@@ -8968,10 +8199,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-card-macros.meal-card-macros--expanded:: before {
+-        content: "";
+-        position: absolute;
+-        left: 0;
+-        top: 56px;
+-        width: 89%;
+-        border-top: 1px solid #e5e5e5;
+-        z-index: 99;
+-        transform: translateX(12%);
+-    }
+@@ -9093 +8314,0 @@ button#select-own-mode .mode-icon svg {
+-        /* font-weight: 500; */
+@@ -9128 +8348,0 @@ button#select-own-mode .mode-icon svg {
+-        /* height: calc(100dvh - 76px); */
+@@ -9144,6 +8363,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-search-screen--fill .meal-search-topbar {
+-        /* flex-shrink: 0; */
+-        /* position: relative; */
+-        /* z-index: 60; */
+-        /* background: #f2f2f7; */
+-    }
+@@ -9199 +8412,0 @@ button#select-own-mode .mode-icon svg {
+-        /* position: sticky; */
+@@ -9202 +8414,0 @@ button#select-own-mode .mode-icon svg {
+-        /* background: #f3f2f8; */
+@@ -9205 +8416,0 @@ button#select-own-mode .mode-icon svg {
+-        /* max-height: 220px; */
+@@ -9214,4 +8424,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-search-body {
+-        /* padding: 6px 7px 18px; */
+-        /* margin-top: 3px; */
+-    }
+@@ -9225,5 +8431,0 @@ button#select-own-mode .mode-icon svg {
+-        /* padding: 6px 7px 12px; */
+-        /* margin-top: 26px; */
+-    }
+-    .meal-search-screen--fill .meal-search-section-head {
+-
+@@ -9249 +8450,0 @@ button#select-own-mode .mode-icon svg {
+-
+@@ -9272,3 +8472,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-search-tab-carousel:: -webkit-scrollbar {
+-        display: none;
+-    }
+@@ -9282 +8479,0 @@ button#select-own-mode .mode-icon svg {
+-        /* ÐšÐ°Ðº Ð´Ð»Ð¸Ð½Ð½Ñ‹Ð¹ fling Ð² iOS paging: Ð½Ðµ Ñ‚Ñ€ÐµÐ±ÑƒÐµÐ¼ Ñ„Ð¸Ð·Ð¸Ñ‡ÐµÑÐºÐ¾Ð¹ Ð¾ÑÑ‚Ð°Ð½Ð¾Ð²ÐºÐ¸ Ð½Ð° ÐºÐ°Ð¶Ð´Ð¾Ð¹ ÑÑ‚Ñ€Ð°Ð½Ð¸Ñ†Ðµ Ð¿Ð¾ Ð´Ð¾Ñ€Ð¾Ð³Ðµ */
+@@ -9324,19 +8520,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-search-topbar {
+-        /* width: 100%; */
+-        /* display: flex; */
+-        /* justify-content: space-between; */
+-        /* align-items: center; */
+-        /* position: sticky; */
+-        /* top: 0; */
+-        /* z-index: 1000; */
+-        /* height: var(--top-bar-height); */
+-        /* min-height: var(--top-bar-height); */
+-        /* box-sizing: border-box; */
+-        /* background: #f2f2f7; */
+-        /* padding: 31px 33px 28px 33px; */
+-        /* height: 30px; */
+-        /* background: #eeeff3; */
+-    }
+-    .meal-search-topbar--bottom-nav-mode {
+-        /* justify-content: center; */
+-    }
+@@ -9347,2 +8524,0 @@ button#select-own-mode .mode-icon svg {
+-        /* width: 32px; */
+-        /* height: 22px; */
+@@ -9382,13 +8557,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-search-meal-trigger {
+-        /* display: inline-flex; */
+-        /* align-items: center; */
+-        /* gap: 4px; */
+-        /* border: none; */
+-        /* background: transparent; */
+-        /* color: #1f6fff; */
+-        /* font-size: 17px; */
+-        /* font-weight: 600; */
+-        /* line-height: 1; */
+-        /* padding: 4px 8px; */
+-        /* cursor: pointer; */
+-    }
+@@ -9397,2 +8559,0 @@ button#select-own-mode .mode-icon svg {
+-        /* align-items: center; */
+-        /* justify-content: center; */
+@@ -9414,15 +8574,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-search-picker-menu {
+-        /* position: absolute; */
+-        /* top: calc(100% + 10px); */
+-        /* left: 50%; */
+-        /* transform: translateX(-50%); */
+-        /* width: 330px; */
+-        /* max-width: calc(100vw - 36px); */
+-        /* background: #fff; */
+-        /* border-radius: 18px; */
+-        /* box-shadow: 0 16px 36px rgba(0, 0, 0, 0.12); */
+-        /* overflow: hidden; */
+-        /* opacity: 0; */
+-        /* pointer-events: none; */
+-        /* z-index: 45; */
+-    }
+@@ -9433,18 +8578,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-search-picker-item {
+-        /* width: 100%; */
+-        /* border: none; */
+-        /* border-bottom: 1px solid #ececec; */
+-        /* background: #fff; */
+-        /* text-align: left; */
+-        /* padding: 18px 28px; */
+-        /* font-size: 18px; */
+-        /* line-height: 1.1; */
+-        /* color: #111; */
+-        /* cursor: pointer; */
+-    }
+-    .meal-search-picker-item: last-child {
+-        border-bottom: none;
+-    }
+-    .meal-search-picker-item.active {
+-        /* background: #f7f8fc; */
+-    }
+@@ -9460 +8588 @@ button#select-own-mode .mode-icon svg {
+-        border: 0.5px solid #bcbcbc;
++        border: 1px solid #bcbcbc;
+@@ -9478,9 +8605,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-search-input: focus {
+-        outline: none!important;
+-        box-shadow: none;
+-        border: none;
+-    }
+-    .meal-search-input:: placeholder {
+-        color: #b1b1b8;
+-    }
+-    /* ÐžÐ±Ñ‘Ñ€Ñ‚ÐºÐ°: Ð¸Ð½Ð´Ð¸ÐºÐ°Ñ‚Ð¾Ñ€ ÐÐ• Ð²Ð½ÑƒÑ‚Ñ€Ð¸ .meal-search-tabs â€” Ð¸Ð½Ð°Ñ‡Ðµ overflow-x:auto Ð¾Ð±Ñ€ÐµÐ·Ð°ÐµÑ‚ Ñ‚Ñ€ÐµÑƒÐ³Ð¾Ð»ÑŒÐ½Ð¸Ðº Ð¿Ð¾ Ð¿Ñ€Ð°Ð²Ð¸Ð»Ð°Ð¼ CSS */
+@@ -9569,3 +8687,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-search-tabs:: -webkit-scrollbar {
+-        display: none;
+-    }
+@@ -9602,6 +8717,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-search-tab.active {
+-        /* font-weight: 600; */
+-    }
+-    .meal-search-tab.active:: after {
+-        content: none;
+-    }
+@@ -9705,2 +8814,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-search-main-action {
+-    }
+@@ -9729,3 +8836,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-quick-add-form-card .create-food-row--quick-add-last {
+-        /* border-bottom: none; */
+-    }
+@@ -9738,9 +8842,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-search-section-head {
+-        /* display: flex; */
+-        /* align-items: center; */
+-        /* gap: 12px; */
+-        /* margin-top: 6px; */
+-        /* margin-bottom: 9px; */
+-        /* justify-content: space-between; */
+-        /* padding: 0 11px; */
+-    }
+@@ -9790 +8885,0 @@ button#select-own-mode .mode-icon svg {
+-        /* background: #fff; */
+@@ -9877,2 +8971,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-search-topbar {
+-    }
+@@ -9894 +8986,0 @@ button#select-own-mode .mode-icon svg {
+-        /* font-weight: 500; */
+@@ -9911,2 +9002,0 @@ button#select-own-mode .mode-icon svg {
+-        /* align-items: center; */
+-        /* justify-content: center; */
+@@ -9923 +9012,0 @@ button#select-own-mode .mode-icon svg {
+-        /* background: rgb(0 0 0 / 0%); */
+@@ -9961,2 +9049,0 @@ button#select-own-mode .mode-icon svg {
+-        /* border-radius: 14px; */
+-        /* background: #f8f8f8; */
+@@ -9969 +9055,0 @@ button#select-own-mode .mode-icon svg {
+-        /* transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.18s ease; */
+@@ -9972,5 +9057,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-search-picker-item.active {
+-        /* background: rgba(74, 144, 217, 0.1); */
+-        /* border-color: rgba(74, 144, 217, 0.24); */
+-        /* color: #268eff; */
+-    }
+@@ -10079,3 +9159,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-sort-sheet-option: last-child {
+-        border-bottom: none;
+-    }
+@@ -10161,6 +9238,0 @@ button#select-own-mode .mode-icon svg {
+-    .food-meal-dropdown-item: last-child {
+-        border-bottom: none;
+-    }
+-    .food-meal-dropdown-item: active {
+-        background: #f3f4f6;
+-    }
+@@ -10209 +9280,0 @@ button#select-own-mode .mode-icon svg {
+-        /* legacy invalid declarations intentionally left inactive */
+@@ -10226 +9296,0 @@ button#select-own-mode .mode-icon svg {
+-        /* background: #fff; */
+@@ -10362 +9431,0 @@ button#select-own-mode .mode-icon svg {
+-    /*============ bottom sheet==============*/
+@@ -10443,3 +9511,0 @@ button#select-own-mode .mode-icon svg {
+-    .copy-meal-sheet-wheel:: -webkit-scrollbar {
+-        display: none;
+-    }
+@@ -10480,3 +9545,0 @@ button#select-own-mode .mode-icon svg {
+-    /* =========================
+-   PAGE ADD RECEPT
+-========================= */
+@@ -10528,3 +9590,0 @@ button#select-own-mode .mode-icon svg {
+-    .recipe-ingredient-row: last-child {
+-        border-bottom: none;
+-    }
+@@ -10581,10 +9640,0 @@ button#select-own-mode .mode-icon svg {
+-    .recipe-add-ingredient-btn {
+-        /* align-self: flex-start; */
+-        /* padding: 0; */
+-        /* border: 1px solid #268eff; */
+-        /* width: 86px; */
+-        /* height: 26px; */
+-        /* display: flex; */
+-        /* align-items: center; */
+-        /* border-radius: 7px; */
+-    }
+@@ -10607,4 +9656,0 @@ button#select-own-mode .mode-icon svg {
+-    /* =========================    RECEPT SERCH */
+-    /* =========================
+-   PAGE TARGET
+-========================= */
+@@ -10646,3 +9691,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-goal-row: last-child {
+-        border-bottom: none;
+-    }
+@@ -10671,3 +9713,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-goal-input:: placeholder {
+-        color: #b2b2b8;
+-    }
+@@ -10700,2 +9739,0 @@ button#select-own-mode .mode-icon svg {
+-    /* =========================
+-========================= */
+@@ -10730,4 +9767,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-goal-sheet-icon-btn.disabled, .meal-goal-sheet-icon-btn: disabled {
+-        opacity: 0.32;
+-        pointer-events: none;
+-    }
+@@ -10866,4 +9899,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-target-btn: active svg {
+-        transform: scale(1.08);
+-        transition: transform 0.2s ease;
+-    }
+@@ -10912 +9941,0 @@ button#select-own-mode .mode-icon svg {
+-        /* background: #f2f2f7; */
+@@ -10920 +9948,0 @@ button#select-own-mode .mode-icon svg {
+-        /* min-height: var(--top-bar-height); */
+@@ -10923,3 +9950,0 @@ button#select-own-mode .mode-icon svg {
+-        /* background: #f2f2f7; */
+-        /* padding: var(--top-bar-pad-top) 23px var(--top-bar-pad-bottom) 23px; */
+-        /* border-bottom: 1.5px solid transparent; */
+@@ -10928,5 +9952,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-goal-top-actions {
+-        /* display: flex; */
+-        /* align-items: center; */
+-        /* gap: 14px; */
+-    }
+@@ -10941,4 +9960,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-goal-top-btn.disabled, .meal-goal-top-btn: disabled {
+-        opacity: 0.32;
+-        pointer-events: none;
+-    }
+@@ -10967 +9982,0 @@ button#select-own-mode .mode-icon svg {
+-        /* flex: 1; */
+@@ -11011,3 +10025,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-goal-updated-kcal-btn: active {
+-        opacity: 0.7;
+-    }
+@@ -11023 +10034,0 @@ button#select-own-mode .mode-icon svg {
+-        /* background: #f2f2f7; */
+@@ -11034 +10044,0 @@ button#select-own-mode .mode-icon svg {
+-        /* background: #dedede; */
+@@ -11112,2 +10121,0 @@ button#select-own-mode .mode-icon svg {
+-    .topfone svg {
+-        /* display: block; */}
+@@ -11115,3 +10122,0 @@ button#select-own-mode .mode-icon svg {
+-        /* padding-top: 45px; */
+-        /* border-radius: 10px 10px 0 0px; */
+-        /* border-top: 1px solid #dedede; */
+@@ -11145 +10149,0 @@ button#select-own-mode .mode-icon svg {
+-        /* border-bottom: 2px solid #dedede; */
+@@ -11173,3 +10176,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-goal-kcal-input: disabled {
+-        opacity: 0.45;
+-    }
+@@ -11204,2 +10204,0 @@ button#select-own-mode .mode-icon svg {
+-        /* margin-top: 14px; */
+-        /* display: grid; */
+@@ -11221,4 +10219,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-goal-sheet-icon-btn, .meal-goal-macros-clear-btn {
+-        /* font-size: 22px; */
+-        /* line-height: 1; */
+-    }
+@@ -11254 +10248,0 @@ button#select-own-mode .mode-icon svg {
+-        /* margin: 0 auto; */
+@@ -11268,2 +10261,0 @@ button#select-own-mode .mode-icon svg {
+-        /* width: 30px; */
+-        /* height: 30px; */
+@@ -11301,14 +10292,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-goal-top-actions {
+-        /* display: flex; */
+-        /* align-items: center; */
+-        /* gap: 10px; */
+-    }
+-    .meal-goal-top-btn {
+-    }
+-    .meal-goal-top-btn-save {
+-        /* width: 36px; */
+-        /* height: 36px; */
+-        /* border-radius: 999px; */
+-        /* background: #078bef; */
+-        /* color: #ffffff; */
+-    }
+@@ -11317 +10294,0 @@ button#select-own-mode .mode-icon svg {
+-        /* Keep the meal content sized under the sticky top bar. */
+@@ -11330 +10306,0 @@ button#select-own-mode .mode-icon svg {
+-        /* padding: 10px; */
+@@ -11342,19 +10317,0 @@ button#select-own-mode .mode-icon svg {
+-    /*
+- * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+- *  Ð¡ÐšÐžÐ ÐžÐ¡Ð¢Ð¬ ÐŸÐžÐ¯Ð’Ð›Ð•ÐÐ˜Ð¯ / Ð˜Ð¡Ð§Ð•Ð—ÐÐÐ˜Ð¯ Ð¡Ð¢Ð ÐÐÐ˜Ð¦ MEAL-ÐžÐ’Ð•Ð Ð›Ð•Ð¯
+- *
+- *  --meal-search-appear   : Ð¿Ð¾ÑÐ²Ð»ÐµÐ½Ð¸Ðµ ÑÑ‚Ñ€Ð°Ð½Ð¸Ñ†Ñ‹ Ð¿Ð¾Ð¸ÑÐºÐ° Ð¿Ñ€Ð¾Ð´ÑƒÐºÑ‚Ð¾Ð²
+- *  --meal-search-disappear: Ð¸ÑÑ‡ÐµÐ·Ð°Ð½Ð¸Ðµ ÑÑ‚Ñ€Ð°Ð½Ð¸Ñ†Ñ‹ Ð¿Ð¾Ð¸ÑÐºÐ° Ð¿Ñ€Ð¾Ð´ÑƒÐºÑ‚Ð¾Ð²
+- *  --meal-detail-appear   : Ð¿Ð¾ÑÐ²Ð»ÐµÐ½Ð¸Ðµ ÑÑ‚Ñ€Ð°Ð½Ð¸Ñ†Ñ‹ Ð´ÐµÑ‚Ð°Ð»ÐµÐ¹ Ð¿Ñ€Ð¾Ð´ÑƒÐºÑ‚Ð°
+- *  --meal-detail-disappear: Ð¸ÑÑ‡ÐµÐ·Ð°Ð½Ð¸Ðµ ÑÑ‚Ñ€Ð°Ð½Ð¸Ñ†Ñ‹ Ð´ÐµÑ‚Ð°Ð»ÐµÐ¹ Ð¿Ñ€Ð¾Ð´ÑƒÐºÑ‚Ð°
+- *
+- *  Ð—Ð½Ð°Ñ‡ÐµÐ½Ð¸Ðµ = Ð´Ð»Ð¸Ñ‚ÐµÐ»ÑŒÐ½Ð¾ÑÑ‚ÑŒ Ð² ÑÐµÐºÑƒÐ½Ð´Ð°Ñ… (0 = Ð¼Ð³Ð½Ð¾Ð²ÐµÐ½Ð½Ð¾).
+- * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+- */
+-    : root {
+-        --meal-search-appear: 0s;
+-        --meal-search-disappear: 0s;
+-        --meal-detail-appear: 0s;
+-        --meal-detail-disappear: 0s;
+-    }
+-    /* Ð­ÐºÑ€Ð°Ð½ Ð¿Ð¾Ð²ÐµÑ€Ñ… Ð¿Ð¾Ð¸ÑÐºÐ°: Ð¾Ñ‚Ð´ÐµÐ»ÑŒÐ½Ð°Ñ Ð¿Ñ€Ð¾ÐºÑ€ÑƒÑ‚ÐºÐ° Ð²Ð½ÑƒÑ‚Ñ€Ð¸, Ñ‡Ñ‚Ð¾Ð±Ñ‹ Ð½Ðµ Ð¿ÐµÑ€ÐµÐºÐ»ÑŽÑ‡Ð°Ñ‚ÑŒ Ñ€ÐµÐ¶Ð¸Ð¼ ÐºÐ¾Ð½Ñ‚ÐµÐ¹Ð½ÐµÑ€Ð°. */
+@@ -11362,2 +10318,0 @@ button#select-own-mode .mode-icon svg {
+-        /* height: 100%; */
+-        /* overflow-y: auto; */
+@@ -11365,4 +10319,0 @@ button#select-own-mode .mode-icon svg {
+-        /* padding: 10px; */
+-        /* padding-top: 0; */
+-        /* box-sizing: border-box; */
+-        /* background: #f2f2f7; */
+@@ -11393 +10343,0 @@ button#select-own-mode .mode-icon svg {
+-    /* Ð›Ð¸Ñ‡Ð½Ñ‹Ð¹ ÐºÐ°Ð±Ð¸Ð½ÐµÑ‚ Ð¸ Ð¿ÑƒÐ±Ð»Ð¸Ñ‡Ð½Ñ‹Ð¹ Ð½Ð¾Ð¼ÐµÑ€ */
+@@ -11481,12 +10430,0 @@ button#select-own-mode .mode-icon svg {
+-    /* ========== Auth, client modals, cabinet â€” polished UI ========== */
+-    : root {
+-        --ui-auth-accent: #0a84ff;
+-        --ui-auth-accent-mid: #409cff;
+-        --ui-auth-glow: rgba(10, 132, 255, 0.35);
+-        --ui-surface: rgba(255, 255, 255, 0.92);
+-        --ui-border: rgba(60, 60, 67, 0.12);
+-        --ui-text-muted: #636366;
+-        --ui-radius-lg: 20px;
+-        --ui-radius-md: 14px;
+-        --ui-shadow-elevated: 0 22px 50px rgba(15, 23, 42, 0.12), 0 8px 20px rgba(15, 23, 42, 0.06);
+-    }
+@@ -11527,3 +10464,0 @@ button#select-own-mode .mode-icon svg {
+-        /* box-shadow: 0 10px 28px var(--ui-auth-glow); */
+-        /* border: 1.5px solid #268eff; */
+-        /* color: #268eff; */
+@@ -11581,4 +10515,0 @@ button#select-own-mode .mode-icon svg {
+-    .auth-field: focus, #auth-screen .auth-box input: focus {
+-        border-color: rgba(10, 132, 255, 0.55);
+-        box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.12);
+-    }
+@@ -11591,9 +10521,0 @@ button#select-own-mode .mode-icon svg {
+-        /* border-radius: var(--ui-radius-md) !important; */
+-        /* border: none !important; */
+-        /* color: #fff !important; */
+-        /* background: linear-gradient(180deg, var(--ui-auth-accent-mid), var(--ui-auth-accent)) !important; */
+-        /* box-shadow: 0 8px 24px var(--ui-auth-glow); */
+-    }
+-    .auth-submit-btn: active {
+-        transform: scale(0.98);
+-        opacity: 0.95;
+@@ -11607 +10528,0 @@ button#select-own-mode .mode-icon svg {
+-        /* color: var(--ui-auth-accent); */
+@@ -11612,4 +10532,0 @@ button#select-own-mode .mode-icon svg {
+-    .auth-toggle-btn: active {
+-        background: rgba(10, 132, 255, 0.08);
+-    }
+-    /* Modals: add client + shared cycle overlay */
+@@ -11661,3 +10577,0 @@ button#select-own-mode .mode-icon svg {
+-    .modal-hint--rich p: last-child {
+-        margin-bottom: 0;
+-    }
+@@ -11735,5 +10648,0 @@ button#select-own-mode .mode-icon svg {
+-    .modal-cicle--add-client .modal-input: focus {
+-        border-color: rgba(10, 132, 255, 0.55);
+-        box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.1);
+-        background: #fff;
+-    }
+@@ -11765 +10673,0 @@ button#select-own-mode .mode-icon svg {
+-    /* Add program modal */
+@@ -11788 +10695,0 @@ button#select-own-mode .mode-icon svg {
+-        /* transition: border-color 0.2s, box-shadow 0.2s; */
+@@ -11792,5 +10698,0 @@ button#select-own-mode .mode-icon svg {
+-    .modal-cicle--add-program .modal-input: focus {
+-        border-color: rgba(10, 132, 255, 0.55);
+-        box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.1);
+-        background: #fff;
+-    }
+@@ -11826,3 +10727,0 @@ button#select-own-mode .mode-icon svg {
+-    .add-program-dropdown-row: active {
+-        background: #f0f0f5;
+-    }
+@@ -11887,5 +10785,0 @@ button#select-own-mode .mode-icon svg {
+-    .add-program-dropdown-item: active, .add-program-dropdown-item.active {
+-        background: rgba(10, 132, 255, 0.1);
+-        color: #007aff;
+-        font-weight: 500;
+-    }
+@@ -11918,5 +10811,0 @@ button#select-own-mode .mode-icon svg {
+-    .add-program-confirm-btn.disabled, .add-program-confirm-btn: disabled {
+-        opacity: 0.4;
+-        cursor: not-allowed;
+-    }
+-    /* Post-registration success */
+@@ -11979,3 +10867,0 @@ button#select-own-mode .mode-icon svg {
+-    /* Ð›Ð¸Ñ‡Ð½Ñ‹Ð¹ ÐºÐ°Ð±Ð¸Ð½ÐµÑ‚ */
+-    .profile-cabinet-page {
+-    }
+@@ -11993,3 +10878,0 @@ button#select-own-mode .mode-icon svg {
+-    .profile-field-group: last-child {
+-        margin-bottom: 0;
+-    }
+@@ -12019,5 +10901,0 @@ button#select-own-mode .mode-icon svg {
+-    .profile-cabinet-form .profile-input: focus, .profile-cabinet-form .modal-input:focus {
+-        border-color: rgba(10, 132, 255, 0.5);
+-        box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.1);
+-        background: #fff;
+-    }
+@@ -12025,2 +10902,0 @@ button#select-own-mode .mode-icon svg {
+-        /* font-weight: 700; */
+-        /* letter-spacing: -0.02em; */
+@@ -12040,2 +10915,0 @@ button#select-own-mode .mode-icon svg {
+-    .public-user-code-host.profile-cabinet-code {
+-    }
+@@ -12073,3 +10946,0 @@ button#select-own-mode .mode-icon svg {
+-    .profile-invite-row: last-child {
+-        border-bottom: none;
+-    }
+@@ -12355 +11225,0 @@ button#select-own-mode .mode-icon svg {
+-    /* ===== Meal search: external base (FatSecret) ===== */
+@@ -12390,4 +11259,0 @@ button#select-own-mode .mode-icon svg {
+-    .meal-base-item: active {
+-        transform: scale(0.99);
+-    }
+-    /* (Ð£Ð±Ñ€Ð°Ð»Ð¸ ÐºÐ°ÑÑ‚Ð¾Ð¼Ð½ÑƒÑŽ ÐºÐ°Ñ€Ñ‚Ð¾Ñ‡ÐºÑƒ meal-base-item Ð¸ Ð¼Ð¾Ð´Ð°Ð»ÐºÑƒ: Ð±Ð°Ð·Ð° Ñ‚ÐµÐ¿ÐµÑ€ÑŒ Ñ€ÐµÐ½Ð´ÐµÑ€Ð¸Ñ‚ÑÑ Ð² Ð¾Ð±Ñ‰ÐµÐ¼ ÑÑ‚Ð¸Ð»Ðµ meal-search-item) */
+@@ -12425,2 +11290,0 @@ button#select-personal-mode span.mode-icon svg {
+-/* ========================================================== */
+-/* ========================================================== */
+@@ -12444,2 +11307,0 @@ button#select-personal-mode span.mode-icon svg {
+-/* ========================================================== */
+-/* ========================================================== */
+@@ -12449 +11310,0 @@ button#select-personal-mode span.mode-icon svg {
+-    /* gap: 13px; */
+@@ -12454 +11314,0 @@ button#select-personal-mode span.mode-icon svg {
+-    /* margin-left: 35px; */
+@@ -12457 +11316,0 @@ button#select-personal-mode span.mode-icon svg {
+-/* cycle switch button removed from topbar */
+@@ -12459,3 +11317,0 @@ button#select-personal-mode span.mode-icon svg {
+-    /* display: flex; */
+-    /* align-items: center; */
+-    /* gap: 5px; */
+@@ -12465,11 +11320,0 @@ button#select-personal-mode span.mode-icon svg {
+-.week-controls-group .btn {
+-    /* padding: 8px 12px; */
+-    /* font-size: 16px; */
+-    /* font-weight: bold; */
+-    /* min-width: 40px; */
+-}
+-.week-controls-group .week-label {
+-    /* font-size: 1.1em; */
+-    /* font-weight: 600; */
+-    /* padding: 0 5px; */
+-}
+@@ -12542 +11386,0 @@ button.btn.btn-danger.confirm-btn {
+-    /* margin-top: 20px; */
+@@ -12578,2 +11421,0 @@ button.btn.btn-danger.confirm-btn {
+-    /* overscroll-behavior-x: contain; */
+-    /* overscroll-behavior-y: contain; */
+@@ -12581 +11422,0 @@ button.btn.btn-danger.confirm-btn {
+-    /* border-radius: 8px; */
+@@ -12584,2 +11424,0 @@ button.btn.btn-danger.confirm-btn {
+-    /* outline: 1px solid #d2d2d2; */
+-    /* overflow-x: auto; */
+@@ -12587 +11425,0 @@ button.btn.btn-danger.confirm-btn {
+-    /* display: flex; */
+@@ -12620 +11457,0 @@ button.btn.btn-danger.confirm-btn {
+-    /* legacy invalid border-right declaration intentionally left inactive */
+@@ -12639,2 +11475,0 @@ button.btn.btn-danger.confirm-btn {
+-    /* border-right: 0.5px solid #dbc0b3; */
+-    /* border-left: 0.5px solid #dbc0b3; */
+@@ -12798,6 +11632,0 @@ button.btn.btn-primary.add-supplement-btn svg {
+-    /* padding: 0 10px; */
+-}
+-.supplements-page .btn-primary {
+-    /* padding: 8px 12px; */
+-    /* font-size: 0.95em; */
+-    /* min-width: 150px; */
+@@ -12879 +11707,0 @@ button.btn.btn-delete-photo {
+-/* ====== SWIPE ====== */
+@@ -12886,5 +11713,0 @@ button.btn.btn-delete-photo {
+-    /* border-radius: 10px 10px 0px 9px; */
+-    /* border-top: 0.5px solid #dedede; */
+-    /* border-right: 0.5px solid #dedede; */
+-    /* border-left: 0.5px solid #dedede; */
+-    /* border-bottom: 0.5px solid #dedede; */
+@@ -12967,2 +11789,0 @@ button.action-btn.action-delete:active svg {
+-    /* margin-top: 5px; */
+-    /* margin-left: 2px; */
+@@ -13000 +11820,0 @@ button.action-btn.action-delete:active svg {
+-    /* background: #fff; */
+@@ -13006 +11825,0 @@ button.action-btn.action-delete:active svg {
+-    /* overflow: visible; */
+@@ -13008 +11826,0 @@ button.action-btn.action-delete:active svg {
+-/* ÐŸÑ€Ð¸Ñ‘Ð¼ Ð¿Ð¸Ñ‚Ð°Ð½Ð¸Ñ: ÐºÐ¾Ð¿Ð¸Ñ€Ð¾Ð²Ð°Ð½Ð¸Ðµ/ÑƒÐ´Ð°Ð»ÐµÐ½Ð¸Ðµ Ð² Ð¾Ð´Ð½Ð¾Ð¹ Ð¿Ð¾Ð»Ð¾ÑÐµ Ñ meal-card-header (ÐºÐ°Ðº food-swipe--meal-item); 120px = maxSwipe Ð² bindSwipeBlock. */
+@@ -13021,2 +11838,0 @@ button.action-btn.action-delete:active svg {
+-    /* gap: 0px; */
+-    /* padding: 0 10px; */
+@@ -13025 +11840,0 @@ button.action-btn.action-delete:active svg {
+-    /* border-radius: 0 10px 10px 0; */
+@@ -13036,3 +11850,0 @@ button.action-btn.action-delete:active svg {
+-.meal-swipe.meal-swipe--inline-header {
+-    /* overflow: hidden; */
+-}
+@@ -13042,2 +11853,0 @@ button.action-btn.action-delete:active svg {
+-    /* border-radius: 10px; */
+-    /* margin-bottom: 10px; */
+@@ -13062,2 +11871,0 @@ button.action-btn.action-delete:active svg {
+-    /* overflow: hidden; */
+-    /* background: #f0f0f0; */
+@@ -13065,3 +11872,0 @@ button.action-btn.action-delete:active svg {
+-    /* border-radius: 10px 10px 0px 0px; */
+-    /* border-left: 1px solid #dedede; */
+-    /* border-right: 1px solid #dedede; */
+@@ -13076,2 +11880,0 @@ button.action-btn.action-delete:active svg {
+-    /* background: #fff; */
+-    /* border-radius: 10px; */
+@@ -13080 +11882,0 @@ button.action-btn.action-delete:active svg {
+-    /* box-shadow: 0px 1px 1px -1px rgb(0 0 0), 0 8px 20px rgb(0 0 0 / 84%); */
+@@ -13086,3 +11887,0 @@ button.action-btn.action-delete:active svg {
+-.meal-food-list {
+-    /* background: #fff; */
+-}
+@@ -13096,4 +11894,0 @@ button.action-btn.action-delete:active svg {
+-    /* box-shadow: 0 2px 0px #bbbbbb; */
+-    /* border-left: 1px solid #e5e5e5; */
+-    /* border-right: 1px solid #e5e5e5; */
+-    /* border-bottom: 1px solid #e5e5e5; */
+@@ -13114 +11908,0 @@ button.action-btn.action-delete:active svg {
+-    /* box-shadow: 0 1px 3px rgba(0,0,0,0.08); */
+@@ -13147,5 +11940,0 @@ button.meal-food-list-footer-btn.meal-food-list-footer-btn--quick-add {
+-.meal-food-list-footer-btn--quick-add {
+-    /* flex: 0 0 48px; */
+-    /* width: 48px; */
+-    /* padding: 0; */
+-}
+@@ -13188 +11976,0 @@ button.meal-food-list-footer-btn.meal-food-list-footer-btn--quick-add {
+-    /* box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.05); */
+@@ -13224 +12011,0 @@ button.meal-food-list-footer-btn.meal-food-list-footer-btn--quick-add {
+-/* ÐšÐ½Ð¾Ð¿ÐºÐ° Â«Ð¿Ð»ÑŽÑÂ»: Ð¾Ñ‚ÐºÑ€Ñ‹Ð²Ð°ÐµÑ‚ Ð¿Ð¾Ð¸ÑÐº; ÐºÐ»Ð¸Ðº Ð¿Ð¾ Ð¾ÑÑ‚Ð°Ð»ÑŒÐ½Ð¾Ð¹ ÑˆÐ°Ð¿ÐºÐµ â€” Ñ€Ð°ÑÐºÑ€Ñ‹Ñ‚Ð¸Ðµ Ð¿Ñ€Ð¸Ñ‘Ð¼Ð°. */
+@@ -13248,2 +12034,0 @@ button.meal-food-list-footer-btn.meal-food-list-footer-btn--quick-add {
+-    /* box-shadow: 0 6px 10px -10px rgba(0, 0, 0, 0.18); */
+-    /* border-bottom: 1.5px solid #dedede; */
+@@ -13268 +12052,0 @@ button.meal-food-list-footer-btn.meal-food-list-footer-btn--quick-add {
+-    /* min-height: 233px; */
+@@ -13412 +12195,0 @@ button.meal-food-list-footer-btn.meal-food-list-footer-btn--quick-add {
+-    /* font-weight: 400; */
+@@ -13455 +12237,0 @@ button.meal-food-list-footer-btn.meal-food-list-footer-btn--quick-add {
+-    /* font-weight: 600; */
+@@ -13626 +12407,0 @@ span.meal-summary-bar-value-target, span.meal-summary-bar-value-separator {
+-        /* padding: 0px 12px 18px; */ /* border-radius: 22px; */
+@@ -13629 +12409,0 @@ span.meal-summary-bar-value-target, span.meal-summary-bar-value-separator {
+-        /* grid-template-columns: 1fr 200px 1fr; */
+@@ -13632,2 +12411,0 @@ span.meal-summary-bar-value-target, span.meal-summary-bar-value-separator {
+-        /* width: 196px; */
+-        /* height: 136px; */
+@@ -13636 +12413,0 @@ span.meal-summary-bar-value-target, span.meal-summary-bar-value-separator {
+-        /* top: 54px; */
+@@ -13639 +12415,0 @@ span.meal-summary-bar-value-target, span.meal-summary-bar-value-separator {
+-        /* min-height: 292px; */
+@@ -13668 +12443,0 @@ span.meal-summary-bar-value-target, span.meal-summary-bar-value-separator {
+-        /* font-size: 31px; */
+@@ -13671 +12445,0 @@ span.meal-summary-bar-value-target, span.meal-summary-bar-value-separator {
+-        /* font-size: 16px; */
+@@ -13674 +12447,0 @@ span.meal-summary-bar-value-target, span.meal-summary-bar-value-separator {
+-        /* font-size: 26px; */
+@@ -13677 +12449,0 @@ span.meal-summary-bar-value-target, span.meal-summary-bar-value-separator {
+-        /* font-size: 14px; */
+@@ -13680 +12451,0 @@ span.meal-summary-bar-value-target, span.meal-summary-bar-value-separator {
+-        /* font-size: 16px; */
+@@ -13683 +12453,0 @@ span.meal-summary-bar-value-target, span.meal-summary-bar-value-separator {
+-        /* font-size: 15px; */
+@@ -13686 +12455,0 @@ span.meal-summary-bar-value-target, span.meal-summary-bar-value-separator {
+-        /* font-size: 18px; */
+@@ -13689 +12457,0 @@ span.meal-summary-bar-value-target, span.meal-summary-bar-value-separator {
+-        /* gap: 12px; */
+@@ -13703 +12470,0 @@ span.meal-summary-bar-value-target, span.meal-summary-bar-value-separator {
+-/* === =======================  CALENDAR ============================ */
+@@ -13720,2 +12486,0 @@ span.meal-summary-bar-value-target, span.meal-summary-bar-value-separator {
+-    /* border-bottom-left-radius: 10px; */
+-    /* border-bottom-right-radius: 10px; */
+@@ -13766 +12530,0 @@ span.meal-summary-bar-value-target, span.meal-summary-bar-value-separator {
+-    /* border-bottom: 1px solid #b5b5b5; */
+@@ -13816 +12579,0 @@ button.meal-calendar-day.has-entry {
+-    /* border: 1px solid #3e8ce1; */
+@@ -13872 +12634,0 @@ button.meal-calendar-day.has-entry {
+-/* ===== WEEK STRIP ===== */
+@@ -13874 +12635,0 @@ button.meal-calendar-day.has-entry {
+-    /* display: flex; */
+@@ -13912 +12672,0 @@ button#meal-calendar-btn svg {
+-    /* margin: 0px 0 0px; */
+@@ -13975,2 +12734,0 @@ button#meal-calendar-btn svg {
+-.meal-food-list :last-child {
+-}
+@@ -13982 +12739,0 @@ button#meal-calendar-btn svg {
+-/* Ð•Ð´Ð¸Ð½ÑÑ‚Ð²ÐµÐ½Ð½Ñ‹Ð¹ Ñ€ÐµÐ±Ñ‘Ð½Ð¾Ðº â€” ÑÐºÐ¾Ð»ÑŒÐ·ÑÑ‰Ð¸Ð¹ Ð±Ð»Ð¾Ðº; Ð¸Ð½Ð°Ñ‡Ðµ flex-shrink Ð¼Ð¾Ð³ ÑÐ¶Ð¸Ð¼Ð°Ñ‚ÑŒ ÑˆÐ¸Ñ€Ð¸Ð½Ñƒ Ð¿Ñ€Ð¸ ÑÐ¼ÐµÐ½Ðµ viewport. */
+@@ -13996 +12752,0 @@ button#meal-calendar-btn svg {
+-/* === =========================  SWIPE ============================ */
+@@ -14000,7 +12755,0 @@ button#meal-calendar-btn svg {
+-#meals-container > .meal-swipe--inline-header:first-child .meal-card-header {
+-    /* border-top:none; */
+-}
+-#meals-container > .meal-swipe--inline-header:first-child .meal-card-header {
+-    /* border-top:none; */
+-    /* border-radius: 10px 10px 0 0; */
+-}
+@@ -14015 +12763,0 @@ button#meal-calendar-btn svg {
+-    /* background: #f2f2f7; */
+@@ -14022 +12769,0 @@ button#meal-calendar-btn svg {
+-    /* background: #f0f0f0; */
+@@ -14025,5 +12771,0 @@ button#meal-calendar-btn svg {
+-    /* border: 0.5px solid #e7e7e8; */
+-    /* border-bottom: 1.5px solid #dedede; */
+-    /* border-left: 0.5px solid #dedede; */
+-    /* border-right: 0.5px solid #dedede; */
+-    /* border-top: 0.5px solid #dedede; */
+@@ -14048,11 +12789,0 @@ button#meal-calendar-btn svg {
+-/*.meal-swipe .swipe-content {
+-    position: relative;
+-    z-index: 2;
+-    background: white;
+-    width: 100%;
+-    transform: translateX(0);
+-    transition: transform 0.2s ease;
+-    will-change: transform;
+-    cursor: grab;
+-    box-sizing: border-box;
+-}*/
+@@ -14105 +12835,0 @@ button.action-btn.action-delete.meal-action-delete {
+-    /* margin-top: 5px; */
+@@ -14113 +12842,0 @@ button.action-btn.action-delete.meal-action-delete {
+-/* === swipe PRODUCT  === */
+@@ -14170 +12898,0 @@ button.action-btn.action-delete {
+-/* ÐŸÑ€Ð¾Ð´ÑƒÐºÑ‚ Ð² Ð¿Ñ€Ð¸Ñ‘Ð¼Ðµ: ÑƒÐ´Ð°Ð»ÐµÐ½Ð¸Ðµ Ð² Ð¾Ð´Ð½Ð¾Ð¹ Ð¿Ð¾Ð»Ð¾ÑÐµ Ñ ÑˆÐ°Ð¿ÐºÐ¾Ð¹, ÑÐ¿Ñ€Ð°Ð²Ð° Ð·Ð° Ð¿Ñ€ÐµÐ´ÐµÐ»Ð°Ð¼Ð¸ Ð²Ð¸Ð´Ð¸Ð¼Ð¾ÑÑ‚Ð¸ Ð´Ð¾ ÑÐ²Ð°Ð¹Ð¿Ð° (ÑˆÐ¸Ñ€Ð¸Ð½Ð° 65px = maxSwipe Ð² bindSwipeBlock). */
+@@ -14186 +12913,0 @@ button.action-btn.action-delete {
+-    /* margin-left: 10px; */
+@@ -14198 +12924,0 @@ button.action-btn.action-delete {
+-    /* width: 155px; */
+@@ -14200,2 +12925,0 @@ button.action-btn.action-delete {
+-    /* padding-left: 14px; */
+-    /* padding-right: 14px; */
+@@ -14301,2 +13024,0 @@ button.action-btn.action-plan span.action-plan-text svg {
+-    /* background: #fff; */
+-    /* width: 100%; */
+@@ -14316,2 +13037,0 @@ button.action-btn.action-plan span.action-plan-text svg {
+-    /* border-left: 1px solid #e5e5e5; */
+-    /* border-right: 1px solid #e5e5e5; */
+@@ -14326 +13045,0 @@ button.action-btn.action-plan span.action-plan-text svg {
+-/* === PAGE ADD PRODUCT  === */
+@@ -14330 +13048,0 @@ button.action-btn.action-plan span.action-plan-text svg {
+-    /* padding-bottom: 100px; */
+@@ -14351,2 +13068,0 @@ button.action-btn.action-plan span.action-plan-text svg {
+-    /* min-height: var(--top-bar-height); */
+-    /* height: auto; */
+@@ -14355 +13070,0 @@ button.action-btn.action-plan span.action-plan-text svg {
+-    /* padding: var(--top-bar-pad-top) 10px var(--top-bar-pad-bottom) 10px; */
+@@ -14372 +13086,0 @@ button.action-btn.action-plan span.action-plan-text svg {
+-    /* background: #fff; */
+@@ -14376,2 +13089,0 @@ button.action-btn.action-plan span.action-plan-text svg {
+-    /* box-shadow: 0px 1px 3px #00000030; */
+-    /* border: 0.5px solid #d9d9d9; */
+@@ -14402 +13113,0 @@ button.action-btn.action-plan span.action-plan-text svg {
+-    /* border-bottom: none; */
+@@ -14504 +13214,0 @@ button.action-btn.action-plan span.action-plan-text svg {
+-    /* min-height: 88px; */
+@@ -14535 +13244,0 @@ button.action-btn.action-plan span.action-plan-text svg {
+-        /* grid-template-columns: 104px 1fr; */ /* gap: 10px; */
+@@ -14538 +13246,0 @@ button.action-btn.action-plan span.action-plan-text svg {
+-        /* font-size: 14px; */
+@@ -14541 +13248,0 @@ button.action-btn.action-plan span.action-plan-text svg {
+-        /* font-size: 13px; */
+@@ -14605 +13311,0 @@ button.action-btn.action-plan span.action-plan-text svg {
+-/* === cateory  === */
+@@ -14721 +13426,0 @@ button.action-btn.action-plan span.action-plan-text svg {
+-/* === PAGE INFO PRODUCT  === */
+@@ -14725,4 +13429,0 @@ button.action-btn.action-plan span.action-plan-text svg {
+-    /* padding-bottom: 340px !important; */
+-}
+-.create-food.meal-overlay-subpage{
+-    /* padding: 0 10px; */
+@@ -14731 +13431,0 @@ button.action-btn.action-plan span.action-plan-text svg {
+-    /* position: sticky; */
+@@ -14749,2 +13448,0 @@ button.action-btn.action-plan span.action-plan-text svg {
+-    /* min-height: var(--top-bar-height); */
+-    /* height: auto; */
+@@ -14752,6 +13449,0 @@ button.action-btn.action-plan span.action-plan-text svg {
+-    /* background: #f2f2f7; */
+-    /* padding: var(--top-bar-pad-top) 10px var(--top-bar-pad-bottom) 10px; */
+-    /* display: none; */
+-    /* height: 23px; */
+-    /* padding-top: 7px; */
+-    /* margin-bottom: 17px; */
+@@ -14776 +13467,0 @@ button.action-btn.action-plan span.action-plan-text svg {
+-    /* width: 100%; */
+@@ -14778 +13468,0 @@ button.action-btn.action-plan span.action-plan-text svg {
+-    /* margin-bottom: 3px; */
+@@ -14783 +13472,0 @@ button.action-btn.action-plan span.action-plan-text svg {
+-    /* background: #f2f2f7; */
+@@ -14785,2 +13473,0 @@ button.action-btn.action-plan span.action-plan-text svg {
+-    /* padding: 8px 0 10px; */
+-    /* width: 100%; */
+@@ -14789,13 +13475,0 @@ button.action-btn.action-plan span.action-plan-text svg {
+-.create-food-sticky-h3::after {
+-    /* content: ''; */
+-    /* position: absolute; */
+-    /* left: 0; */
+-    /* right: 0; */
+-    /* bottom: 0; */
+-    /* height: 1px; */
+-    /* background: rgba(17, 24, 39, 0.1); */
+-    /* transform: scaleX(var(--sticky-border-progress, 0)); */
+-    /* transform-origin: 0 53%; */
+-    /* transition: transform 120ms linear; */
+-    /* pointer-events: none; */
+-}
+@@ -14808 +13481,0 @@ button.action-btn.action-plan span.action-plan-text svg {
+-    /* background: #e1e2e5; */
+@@ -14813,2 +13485,0 @@ button.edit-meal-search-main-action.food-details-action-btn.food-details-action-
+-button.edit-meal-search-main-action.food-details-action-btn.food-details-action-edit {
+-}
+@@ -14856,4 +13526,0 @@ button.delete-food-from-meal-btn {
+-.meal-card {
+-    /* background:#fff; */
+-    /* border-radius: 10px; */
+-}
+@@ -14876,3 +13542,0 @@ button.delete-food-from-meal-btn {
+-    /* border-left: 1px solid #e5e5e5; */
+-    /* border-right: 1px solid #e5e5e5; */
+-    /* border-bottom: 1px solid #e5e5e5; */
+@@ -14880,2 +13543,0 @@ button.delete-food-from-meal-btn {
+-    /* box-shadow: 0 2px 0px #cccccc; */
+-    /* border: 1px solid #e0e0e0; */
+@@ -14887 +13548,0 @@ button.delete-food-from-meal-btn {
+-    /* border-bottom: 2px solid #dedede; */
+@@ -15015 +13675,0 @@ button.delete-food-from-meal-btn {
+-    /* font-weight: 500; */
+@@ -15050 +13709,0 @@ button.delete-food-from-meal-btn {
+-    /* height: calc(100dvh - 76px); */
+@@ -15056,3 +13714,0 @@ button.delete-food-from-meal-btn {
+-.meal-search-screen.meal-search-screen--fill.meal-search-screen--history {
+-    /* padding-top: var(--top-bar-pad-top); */
+-}
+@@ -15069,7 +13724,0 @@ button.delete-food-from-meal-btn {
+-    /* padding-top: var(--top-bar-pad-top); */
+-}
+-.meal-search-screen--fill .meal-search-topbar {
+-    /* flex-shrink: 0; */
+-    /* position: relative; */
+-    /* z-index: 60; */
+-    /* background: #eeeff3; */
+@@ -15126 +13774,0 @@ button.delete-food-from-meal-btn {
+-    /* position: sticky; */
+@@ -15129 +13776,0 @@ button.delete-food-from-meal-btn {
+-    /* background: #f3f2f8; */
+@@ -15132 +13778,0 @@ button.delete-food-from-meal-btn {
+-    /* max-height: 220px; */
+@@ -15141,4 +13786,0 @@ button.delete-food-from-meal-btn {
+-.meal-search-body {
+-    /* padding: 6px 7px 18px; */
+-    /* margin-top: 3px; */
+-}
+@@ -15152,16 +13793,0 @@ button.delete-food-from-meal-btn {
+-    /* padding: 6px 7px 12px; */
+-    /* margin-top: 26px; */
+-    /* padding-bottom: 32px; */
+-}
+-.meal-search-screen--fill .meal-search-section-head {
+-    /* position: absolute; */
+-    /* top: 6px; */
+-    /* left: 7px; */
+-    /* right: 7px; */
+-    /* z-index: 25; */
+-    /* flex-shrink: 0; */
+-    /* margin-top: 0; */
+-    /* margin-bottom: 0; */
+-    /* background: #f3f2f8; */
+-    /* align-items: flex-start; */
+-    /* gap: 8px; */
+@@ -15187,5 +13812,0 @@ button.delete-food-from-meal-btn {
+-/* Ð“Ð¾Ñ€Ð¸Ð·Ð¾Ð½Ñ‚Ð°Ð»ÑŒÐ½Ñ‹Ðµ Ð²ÐºÐ»Ð°Ð´ÐºÐ¸: Ð¿Ð°Ð½ÐµÐ»Ð¸ Ð² DOM; paging Ð±Ð»Ð¸Ð¶Ðµ Ðº UIScrollView (mandatory snap, web.dev + WebKit).
+-   JS-Ñ€ÐµÐ¶Ð¸Ð¼ Ñ‚Ð°Ð±Ð¾Ð²: TAB_SYNC_ANCHOR_B (Â«Ð¯ÐºÐ¾Ñ€ÑŒÂ») â€” ÑÐ¼. pages/meal.js renderMealSearch */
+-/* Ð“Ð¾Ñ€Ð¸Ð·Ð¾Ð½Ñ‚Ð°Ð»ÑŒÐ½Ñ‹Ð¹ paging Ð² Ð´ÑƒÑ…Ðµ UIScrollView (WebKit + web.dev scroll-snap):
+-   mandatory + Ñ€Ð°Ð²Ð½Ñ‹Ðµ Ð´Ð¾Ñ‡ÐµÑ€Ð½Ð¸Ðµ Â«ÑÑ‚Ñ€Ð°Ð½Ð¸Ñ†Ñ‹Â» â†’ ÑÐ½Ð°Ð¿ Ð½Ð° ÐºÐ¾Ð¼Ð¿Ð¾Ð·Ð¸Ñ‚Ð¾Ñ€Ðµ; Ð±ÐµÐ· CSS smooth Ð½Ð°
+-   Ð¿Ð¾Ð»ÑŒÐ·Ð¾Ð²Ð°Ñ‚ÐµÐ»ÑŒÑÐºÐ¾Ð¼ Ð¶ÐµÑÑ‚Ðµ (Ð¸Ð½ÐµÑ€Ñ†Ð¸Ñ Ð·Ð°Ð´Ð°Ñ‘Ñ‚ÑÑ WebKit, Ð½Ðµ scroll-behavior). */
+@@ -15224 +13844,0 @@ button.delete-food-from-meal-btn {
+-    /* ÐšÐ°Ðº Ð´Ð»Ð¸Ð½Ð½Ñ‹Ð¹ fling Ð² iOS paging: Ð½Ðµ Ñ‚Ñ€ÐµÐ±ÑƒÐµÐ¼ Ñ„Ð¸Ð·Ð¸Ñ‡ÐµÑÐºÐ¾Ð¹ Ð¾ÑÑ‚Ð°Ð½Ð¾Ð²ÐºÐ¸ Ð½Ð° ÐºÐ°Ð¶Ð´Ð¾Ð¹ ÑÑ‚Ñ€Ð°Ð½Ð¸Ñ†Ðµ Ð¿Ð¾ Ð´Ð¾Ñ€Ð¾Ð³Ðµ */
+@@ -15246,2 +13865,0 @@ button.delete-food-from-meal-btn {
+-    /* padding: 2px 16px calc(var(--bottom-nav-clearance, 99px) + 8px) 16px; */
+-    /* scroll-padding-bottom: calc(var(--bottom-nav-clearance, 100px) + 8px); */
+@@ -15268 +13885,0 @@ button.delete-food-from-meal-btn {
+-    /* width: 100%; */
+@@ -15270 +13886,0 @@ button.delete-food-from-meal-btn {
+-    /* justify-content: space-between; */
+@@ -15272 +13887,0 @@ button.delete-food-from-meal-btn {
+-    /* position: sticky; */
+@@ -15274,4 +13888,0 @@ button.delete-food-from-meal-btn {
+-    /* z-index: 1000; */
+-    /* height: var(--top-bar-height); */
+-    /* min-height: var(--top-bar-height); */
+-    /* box-sizing: border-box; */
+@@ -15284 +13894,0 @@ button.delete-food-from-meal-btn {
+-    /* height: 32px; */
+@@ -15296 +13905,0 @@ button.delete-food-from-meal-btn {
+-    /* padding: var(--top-bar-pad-top) 16px 8px 16px; */
+@@ -15301 +13909,0 @@ button.delete-food-from-meal-btn {
+-
+@@ -15305 +13912,0 @@ button.delete-food-from-meal-btn {
+-
+@@ -15313 +13919,0 @@ button.delete-food-from-meal-btn {
+-
+@@ -15317 +13922,0 @@ button.delete-food-from-meal-btn {
+-
+@@ -15348,2 +13952,0 @@ button.delete-food-from-meal-btn {
+-    /* min-height: 38px; */
+-    /* padding: 4px 0; */
+@@ -15351 +13953,0 @@ button.delete-food-from-meal-btn {
+-    /* line-height: 1; */
+@@ -15389 +13990,0 @@ button.delete-food-from-meal-btn {
+-    /* height: 17px; */
+@@ -15397 +13997,0 @@ button.delete-food-from-meal-btn {
+-    /* height: 18px; */
+@@ -15409,2 +14008,0 @@ button.delete-food-from-meal-btn {
+-    /* width: 32px; */
+-    /* height: 22px; */
+@@ -15418,3 +14015,0 @@ button.delete-food-from-meal-btn {
+-    /* width: 38px; */
+-    /* height: 38px; */
+-    /* padding: 0; */
+@@ -15449,13 +14043,0 @@ button.delete-food-from-meal-btn {
+-.meal-search-meal-trigger {
+-    /* display: inline-flex; */
+-    /* align-items: center; */
+-    /* gap: 4px; */
+-    /* border: none; */
+-    /* background: transparent; */
+-    /* color: #1f6fff; */
+-    /* font-size: 17px; */
+-    /* font-weight: 600; */
+-    /* line-height: 1; */
+-    /* padding: 4px 8px; */
+-    /* cursor: pointer; */
+-}
+@@ -15464,2 +14045,0 @@ button.delete-food-from-meal-btn {
+-    /* align-items: center; */
+-    /* justify-content: center; */
+@@ -15481,15 +14060,0 @@ button.delete-food-from-meal-btn {
+-.meal-search-picker-menu {
+-    /* position: absolute; */
+-    /* top: calc(100% + 10px); */
+-    /* left: 50%; */
+-    /* transform: translateX(-50%); */
+-    /* width: 330px; */
+-    /* max-width: calc(100vw - 36px); */
+-    /* background: #fff; */
+-    /* border-radius: 18px; */
+-    /* box-shadow: 0 16px 36px rgba(0, 0, 0, 0.12); */
+-    /* overflow: hidden; */
+-    /* opacity: 0; */
+-    /* pointer-events: none; */
+-    /* z-index: 45; */
+-}
+@@ -15500,12 +14064,0 @@ button.delete-food-from-meal-btn {
+-.meal-search-picker-item {
+-    /* width: 100%; */
+-    /* border: none; */
+-    /* border-bottom: 1px solid #ececec; */
+-    /* background: #fff; */
+-    /* text-align: left; */
+-    /* padding: 18px 28px; */
+-    /* font-size: 18px; */
+-    /* line-height: 1.1; */
+-    /* color: #111; */
+-    /* cursor: pointer; */
+-}
+@@ -15515,3 +14067,0 @@ button.delete-food-from-meal-btn {
+-.meal-search-picker-item.active {
+-    /* background: #f7f8fc; */
+-}
+@@ -15529,2 +14079 @@ button.delete-food-from-meal-btn {
+-    border: 0.5px solid #d1d1d1;
+-
++    border: 1px solid #d1d1d1;
+@@ -15537 +14085,0 @@ button.delete-food-from-meal-btn {
+-
+@@ -15607 +14154,0 @@ button.delete-food-from-meal-btn {
+-/* ÐžÐ±Ñ‘Ñ€Ñ‚ÐºÐ°: Ð¸Ð½Ð´Ð¸ÐºÐ°Ñ‚Ð¾Ñ€ ÐÐ• Ð²Ð½ÑƒÑ‚Ñ€Ð¸ .meal-search-tabs â€” Ð¸Ð½Ð°Ñ‡Ðµ overflow-x:auto Ð¾Ð±Ñ€ÐµÐ·Ð°ÐµÑ‚ Ñ‚Ñ€ÐµÑƒÐ³Ð¾Ð»ÑŒÐ½Ð¸Ðº Ð¿Ð¾ Ð¿Ñ€Ð°Ð²Ð¸Ð»Ð°Ð¼ CSS */
+@@ -15723,3 +14269,0 @@ button.delete-food-from-meal-btn {
+-.meal-search-tab.active {
+-    /* font-weight: 600; */
+-}
+@@ -15826,2 +14369,0 @@ button.delete-food-from-meal-btn {
+-.meal-search-main-action {
+-}
+@@ -15853 +14394,0 @@ button.delete-food-from-meal-btn {
+-    /* height: 38px; */
+@@ -15861 +14401,0 @@ button.delete-food-from-meal-btn {
+-    /* min-height: 38px; */
+@@ -15935 +14474,0 @@ button.delete-food-from-meal-btn {
+-    /* border-bottom: none; */
+@@ -15944,9 +14482,0 @@ button.delete-food-from-meal-btn {
+-.meal-search-section-head {
+-    /* display: flex; */
+-    /* align-items: center; */
+-    /* gap: 12px; */
+-    /* margin-top: 6px; */
+-    /* margin-bottom: 9px; */
+-    /* justify-content: space-between; */
+-    /* padding: 0 11px; */
+-}
+@@ -15996 +14525,0 @@ button.delete-food-from-meal-btn {
+-    /* background: #fff; */
+@@ -16115,2 +14643,0 @@ button.delete-food-from-meal-btn {
+-.meal-search-topbar {
+-}
+@@ -16132,2 +14658,0 @@ button.delete-food-from-meal-btn {
+-    /* font-weight: 600; */
+-    /* line-height: 1; */
+@@ -16136 +14660,0 @@ button.delete-food-from-meal-btn {
+-    /* margin-top: -2px; */
+@@ -16157 +14680,0 @@ button.delete-food-from-meal-btn {
+-
+@@ -16170 +14692,0 @@ span.meal-search-meal-arrow svg {
+-    /* background: rgb(0 0 0 / 0%); */
+@@ -16204,2 +14725,0 @@ span.meal-search-meal-arrow svg {
+-.meal-search-picker-list {
+-}
+@@ -16219 +14738,0 @@ span.meal-search-meal-arrow svg {
+-    /* background: #f2f2f7; */
+@@ -16372,2 +14890,0 @@ span.meal-search-meal-arrow svg {
+-
+-
+@@ -16457 +14973,0 @@ button.food-inline-save-btn {
+-    /* legacy invalid declarations intentionally left inactive */
+@@ -16474 +14989,0 @@ button.food-inline-save-btn {
+-    /* background: #fff; */
+@@ -16621 +15135,0 @@ button.edit-meal-search-main-action.recipe-details-action-delete svg {
+-/*============ bottom sheet==============*/
+@@ -16640 +15153,0 @@ button.edit-meal-search-main-action.recipe-details-action-delete svg {
+-    /* box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.16); */
+@@ -16739,3 +15251,0 @@ button.edit-meal-search-main-action.recipe-details-action-delete svg {
+-/* =========================
+-   PAGE ADD RECEPT
+-========================= */
+@@ -16743 +15252,0 @@ button.edit-meal-search-main-action.recipe-details-action-delete svg {
+-    /* display: flex; */
+@@ -16878,4 +15386,0 @@ button.edit-meal-search-main-action.recipe-details-action-delete svg {
+-/* =========================    RECEPT SERCH */
+-/* =========================
+-   PAGE TARGET
+-========================= */
+@@ -16971,2 +15475,0 @@ button.edit-meal-search-main-action.recipe-details-action-delete svg {
+-/* =========================
+-========================= */
+@@ -17180 +15682,0 @@ input.meal-goal-wheel-sub.meal-goal-wheel-sub-input {
+-    /* position: sticky; */
+@@ -17191,2 +15692,0 @@ input.meal-goal-wheel-sub.meal-goal-wheel-sub-input {
+-    /* min-height: var(--top-bar-height); */
+-    /* height: auto; */
+@@ -17194,3 +15693,0 @@ input.meal-goal-wheel-sub.meal-goal-wheel-sub-input {
+-    /* background: #f2f2f7; */
+-    /* padding: var(--top-bar-pad-top) 23px var(--top-bar-pad-bottom) 23px; */
+-    /* border-bottom: 1.5px solid transparent; */
+@@ -17200,5 +15696,0 @@ input.meal-goal-wheel-sub.meal-goal-wheel-sub-input {
+-.meal-goal-top-actions {
+-    /* display: flex; */
+-    /* align-items: center; */
+-    /* gap: 14px; */
+-}
+@@ -17239 +15730,0 @@ input.meal-goal-wheel-sub.meal-goal-wheel-sub-input {
+-    /* flex: 1; */
+@@ -17286,2 +15776,0 @@ input.meal-goal-wheel-sub.meal-goal-wheel-sub-input {
+-.meal-goal-page {
+-}
+@@ -17290 +15778,0 @@ input.meal-goal-wheel-sub.meal-goal-wheel-sub-input {
+-    /* width: 88%; */
+@@ -17304 +15791,0 @@ input.meal-goal-wheel-sub.meal-goal-wheel-sub-input {
+-    /* background: #111827; */
+@@ -17508,9 +15994,0 @@ span.meal-goal-preset-interval-part {
+-.topfone svg {
+-    /* display: block; */
+-}
+-.meal-goal-section.avryday {
+-    /* padding-top: 30px; */
+-    /* border-radius: 10px; */
+-    /* box-shadow: 0px 1px 3px #00000030; */
+-    /* border: 0.5px solid #d9d9d9; */
+-}
+@@ -17601,2 +16078,0 @@ button.meal-goal-macros-clear-btn {
+-    /* margin-top: 14px; */
+-    /* display: grid; */
+@@ -17613 +16088,0 @@ button.meal-goal-macros-clear-btn {
+-    /* background: #f2f2f7; */
+@@ -17618,4 +16092,0 @@ button.meal-goal-macros-clear-btn {
+-.meal-goal-sheet-icon-btn, .meal-goal-macros-clear-btn {
+-    /* font-size: 22px; */
+-    /* line-height: 1; */
+-}
+@@ -17651 +16121,0 @@ button.meal-goal-macros-clear-btn {
+-    /* margin: 0 auto; */
+@@ -17700,14 +16169,0 @@ button.meal-goal-interval-delete-btn {
+-.meal-goal-top-actions {
+-    /* display: flex; */
+-    /* align-items: center; */
+-    /* gap: 10px; */
+-}
+-.meal-goal-top-btn {
+-}
+-.meal-goal-top-btn-save {
+-    /* width: 36px; */
+-    /* height: 36px; */
+-    /* border-radius: 999px; */
+-    /* background: #078bef; */
+-    /* color: #ffffff; */
+-}
+@@ -17716 +16171,0 @@ button.meal-goal-interval-delete-btn {
+-    /* Keep the meal content sized under the sticky top bar. */
+@@ -17729 +16183,0 @@ button.meal-goal-interval-delete-btn {
+-    /* padding: 10px; */
+@@ -17741,12 +16194,0 @@ button.meal-goal-interval-delete-btn {
+-/*
+- * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+- *  Ð¡ÐšÐžÐ ÐžÐ¡Ð¢Ð¬ ÐŸÐžÐ¯Ð’Ð›Ð•ÐÐ˜Ð¯ / Ð˜Ð¡Ð§Ð•Ð—ÐÐÐ˜Ð¯ Ð¡Ð¢Ð ÐÐÐ˜Ð¦ MEAL-ÐžÐ’Ð•Ð Ð›Ð•Ð¯
+- *
+- *  --meal-search-appear   : Ð¿Ð¾ÑÐ²Ð»ÐµÐ½Ð¸Ðµ ÑÑ‚Ñ€Ð°Ð½Ð¸Ñ†Ñ‹ Ð¿Ð¾Ð¸ÑÐºÐ° Ð¿Ñ€Ð¾Ð´ÑƒÐºÑ‚Ð¾Ð²
+- *  --meal-search-disappear: Ð¸ÑÑ‡ÐµÐ·Ð°Ð½Ð¸Ðµ ÑÑ‚Ñ€Ð°Ð½Ð¸Ñ†Ñ‹ Ð¿Ð¾Ð¸ÑÐºÐ° Ð¿Ñ€Ð¾Ð´ÑƒÐºÑ‚Ð¾Ð²
+- *  --meal-detail-appear   : Ð¿Ð¾ÑÐ²Ð»ÐµÐ½Ð¸Ðµ ÑÑ‚Ñ€Ð°Ð½Ð¸Ñ†Ñ‹ Ð´ÐµÑ‚Ð°Ð»ÐµÐ¹ Ð¿Ñ€Ð¾Ð´ÑƒÐºÑ‚Ð°
+- *  --meal-detail-disappear: Ð¸ÑÑ‡ÐµÐ·Ð°Ð½Ð¸Ðµ ÑÑ‚Ñ€Ð°Ð½Ð¸Ñ†Ñ‹ Ð´ÐµÑ‚Ð°Ð»ÐµÐ¹ Ð¿Ñ€Ð¾Ð´ÑƒÐºÑ‚Ð°
+- *
+- *  Ð—Ð½Ð°Ñ‡ÐµÐ½Ð¸Ðµ = Ð´Ð»Ð¸Ñ‚ÐµÐ»ÑŒÐ½Ð¾ÑÑ‚ÑŒ Ð² ÑÐµÐºÑƒÐ½Ð´Ð°Ñ… (0 = Ð¼Ð³Ð½Ð¾Ð²ÐµÐ½Ð½Ð¾).
+- * â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+- */
+@@ -17759 +16200,0 @@ button.meal-goal-interval-delete-btn {
+-/* Ð­ÐºÑ€Ð°Ð½ Ð¿Ð¾Ð²ÐµÑ€Ñ… Ð¿Ð¾Ð¸ÑÐºÐ°: Ð¾Ñ‚Ð´ÐµÐ»ÑŒÐ½Ð°Ñ Ð¿Ñ€Ð¾ÐºÑ€ÑƒÑ‚ÐºÐ° Ð²Ð½ÑƒÑ‚Ñ€Ð¸, Ñ‡Ñ‚Ð¾Ð±Ñ‹ Ð½Ðµ Ð¿ÐµÑ€ÐµÐºÐ»ÑŽÑ‡Ð°Ñ‚ÑŒ Ñ€ÐµÐ¶Ð¸Ð¼ ÐºÐ¾Ð½Ñ‚ÐµÐ¹Ð½ÐµÑ€Ð°. */
+@@ -17764 +16204,0 @@ button.meal-goal-interval-delete-btn {
+-    /* padding: 0 10px; */
+@@ -17790,10 +16229,0 @@ button#add-meal-section-btn {
+-.tab-shape-btn span {
+-    /* position: absolute; */
+-    /* inset: 0; */
+-    /* border: none; */
+-    /* cursor: pointer; */
+-    /* color: #268eff; */
+-    /* padding: 16px 0px 0px 0; */
+-    /* background: none; */
+-}
+-/* Ð›Ð¸Ñ‡Ð½Ñ‹Ð¹ ÐºÐ°Ð±Ð¸Ð½ÐµÑ‚ Ð¸ Ð¿ÑƒÐ±Ð»Ð¸Ñ‡Ð½Ñ‹Ð¹ Ð½Ð¾Ð¼ÐµÑ€ */
+@@ -17887 +16316,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-/* ========== Auth, client modals, cabinet â€” polished UI ========== */
+@@ -17933,3 +16361,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* box-shadow: 0 10px 28px var(--ui-auth-glow); */
+-    /* border: 1.5px solid #268eff; */
+-    /* color: #268eff; */
+@@ -17997,5 +16422,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* border-radius: var(--ui-radius-md) !important; */
+-    /* border: none !important; */
+-    /* color: #fff !important; */
+-    /* background: linear-gradient(180deg, var(--ui-auth-accent-mid), var(--ui-auth-accent)) !important; */
+-    /* box-shadow: 0 8px 24px var(--ui-auth-glow); */
+@@ -18013 +16433,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* color: var(--ui-auth-accent); */
+@@ -18021 +16440,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-/* Modals: add client + shared cycle overlay */
+@@ -18171 +16589,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-/* Add program modal */
+@@ -18194 +16611,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* transition: border-color 0.2s, box-shadow 0.2s; */
+@@ -18200 +16616,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.1); */
+@@ -18204,3 +16619,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* flex-direction: column; */
+-    /* align-items: stretch; */
+-    /* gap: 0; */
+@@ -18208,2 +16620,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* max-width: 400px; */
+-    /* padding: 20px 22px 22px; */
+@@ -18212,3 +16622,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* width: 100%; */
+-    /* height: auto; */
+-    /* min-height: 44px; */
+@@ -18216,10 +16623,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* margin: 0; */
+-    /* font-size: 15px; */
+-    /* border: 1px solid #d1d1d6; */
+-    /* border-radius: 10px; */
+-    /* background: #fafafa; */
+-    /* box-sizing: border-box; */
+-    /* outline: none; */
+-    /* transition: border-color 0.2s, box-shadow 0.2s; */
+-    /* -webkit-appearance: none; */
+-    /* appearance: none; */
+@@ -18232,6 +16629,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-.modal-edit.modal-exercise-name-modal .modal-buttons {
+-    /* display: flex; */
+-    /* flex-wrap: nowrap; */
+-    /* gap: 10px; */
+-    /* margin-top: 14px; */
+-}
+@@ -18269 +16660,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* min-height: 44px; */
+@@ -18277 +16667,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* transition: border-color 0.2s, box-shadow 0.2s, background 0.2s; */
+@@ -18284 +16673,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* border: 1px solid #9d9da1; */
+@@ -18286 +16674,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* background: #fff; */
+@@ -18293 +16680,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease; */
+@@ -18299,2 +16685,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* border: 1px solid #9d9da1; */
+-    /* background: #fff; */
+@@ -18310 +16694,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* min-height: 48px; */
+@@ -18312,2 +16695,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* border-radius: var(--ui-radius-md) !important; */
+-    /* font-weight: 600 !important; */
+@@ -18430,2 +16811,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* font-weight: 600; */
+-    /* font-size: 15px; */
+@@ -18435,2 +16814,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* border: 1px solid #d1d1d6; */
+-    /* background: #f5f5f7; */
+@@ -18450 +16827,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-/* Post-registration success */
+@@ -18507,3 +16883,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-/* Ð›Ð¸Ñ‡Ð½Ñ‹Ð¹ ÐºÐ°Ð±Ð¸Ð½ÐµÑ‚ */
+-.profile-cabinet-page {
+-}
+@@ -18553,2 +16926,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* font-weight: 700; */
+-    /* letter-spacing: -0.02em; */
+@@ -18568,2 +16939,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-.public-user-code-host.profile-cabinet-code {
+-}
+@@ -18941 +17310,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-/* ===== Meal search: external base (FatSecret) ===== */
+@@ -18983,3 +17351,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* left: 50%; */
+-    /* top: 50%; */
+-    /* transform: translate(-50%, -50%); */
+@@ -18988 +17353,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* line-height: 1; */
+@@ -18991 +17355,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* margin-bottom: 12px; */
+@@ -19008 +17371,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* margin: 0; */
+@@ -19012 +17374,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* min-height: 38px; */
+@@ -19038,2 +17399,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-.recipe-food-search-topbar {
+-}
+@@ -19110 +17469,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* padding-top: var(--top-bar-pad-top); */
+@@ -19129,2 +17487,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-/* (Ð£Ð±Ñ€Ð°Ð»Ð¸ ÐºÐ°ÑÑ‚Ð¾Ð¼Ð½ÑƒÑŽ ÐºÐ°Ñ€Ñ‚Ð¾Ñ‡ÐºÑƒ meal-base-item Ð¸ Ð¼Ð¾Ð´Ð°Ð»ÐºÑƒ: Ð±Ð°Ð·Ð° Ñ‚ÐµÐ¿ÐµÑ€ÑŒ Ñ€ÐµÐ½Ð´ÐµÑ€Ð¸Ñ‚ÑÑ Ð² Ð¾Ð±Ñ‰ÐµÐ¼ ÑÑ‚Ð¸Ð»Ðµ meal-search-item) */
+-/* Supplements calendar view */
+@@ -19198,6 +17554,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* transition:
+-        height 240ms cubic-bezier(0.22, 1, 0.36, 1),
+-        min-height 240ms cubic-bezier(0.22, 1, 0.36, 1),
+-        max-height 240ms cubic-bezier(0.22, 1, 0.36, 1),
+-        padding 240ms cubic-bezier(0.22, 1, 0.36, 1),
+-        border-bottom-color 180ms ease; */
+@@ -19209,3 +17559,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* transition:
+-        opacity 180ms ease,
+-        visibility 0s linear 0ms; */
+@@ -19216 +17563,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* gap: 10px; */
+@@ -19219 +17565,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* flex: 1 1 auto; */
+@@ -19280 +17625,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* flex: 1 1 auto; */
+@@ -19385,6 +17729,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-.supplements-topbar-calendar-btn {
+-    /* font-size: 11px; */
+-    /* font-weight: 700; */
+-    /* padding: 0 10px; */
+-    /* line-height: 1; */
+-}
+@@ -19394,7 +17732,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-.supplements-topbar-table-btn {
+-    /* font-size: 10px; */
+-    /* font-weight: 700; */
+-    /* padding: 0 37px; */
+-    /* text-transform: uppercase; */
+-    /* margin: 0 auto; */
+-}
+@@ -19558,2 +17889,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-/* Когда "Сегодня" скрыт (уехало со скроллом), поднимаем +/- неделю в первую строку,
+-   но сохраняем высоту lead (и gap), чтобы низ не прыгал. */
+@@ -19566 +17895,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* border: 0.5px solid #d9d9d9; */
+@@ -19657 +17985,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* letter-spacing: -0.01em; */
+@@ -19683 +18010,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* padding: 0 0px calc(36px + env(safe-area-inset-bottom)); */
+@@ -19686 +18012,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* border: 1px solid rgba(28, 28, 30, 0.07); */
+@@ -19731 +18056,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* display: none; */
+@@ -19757 +18081,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* color: #8e8e93; */
+@@ -19802 +18125,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* border: 1px solid rgba(28, 28, 30, 0.06); */
+@@ -19812,2 +18134,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-.supplement-calendar-day.supplement-calendar-day--placeholder {
+-}
+@@ -19837 +18157,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* color: #007aff; */
+@@ -19846,3 +18165,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-.supplement-calendar-day.is-selected-empty {
+-    /* border-color: #3e8ce1; */
+-}
+@@ -19883,2 +18199,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* background: rgba(255, 255, 255, 0.72); */
+-    /* color: #167a3f; */
+@@ -19894,5 +18208,0 @@ button.btn.btn-secondary.profile-copy-btn {
+-    /* background: rgba(17, 24, 39, 0.08); */
+-}
+-.supplement-calendar-day.is-selected .supplement-calendar-day-supplement, .supplement-calendar-day.is-selected .supplement-calendar-day-more {
+-    /* background: rgba(255, 255, 255, 0.16); */
+-    /* color: #fff; */
+@@ -20140 +18449,0 @@ div#supplements-content.supplements-page--day-details > h3 {
+-    /* min-width: 76px; */
+@@ -20159 +18467,0 @@ div#supplements-content.supplements-page--day-details > h3 {
+-    /* outline: 2px solid #5b9ef3!important; */
+@@ -20161,2 +18468,0 @@ div#supplements-content.supplements-page--day-details > h3 {
+-    /* outline-offset: -2px; */
+-    /* background: #f8fbff !important; */
+@@ -20189,5 +18494,0 @@ div#supplements-content.supplements-page--day-details > h3 {
+-.supplement-dose-cell-btn.has-dose {
+-    /* border-color: rgba(36, 162, 91, 0.18); */
+-    /* background: rgba(237, 252, 244, 0.98); */
+-    /* color: #167a3f; */
+-}
+@@ -20231 +18531,0 @@ div#supplements-content.supplements-page--day-details > h3 {
+-    /* font-size: 10px!important; */
+@@ -20282 +18581,0 @@ div#supplements-content.supplements-page--day-details > h3 {
+-    /* box-shadow: 0 -16px 42px rgba(15, 23, 42, 0.18); */
+@@ -20294,2 +18592,0 @@ div#supplements-content.supplements-page--day-details > h3 {
+-    /* display: grid; */
+-    /* grid-template-columns: minmax(0, 1fr) 42px; */
+@@ -20315,2 +18611,0 @@ div#supplements-content.supplements-page--day-details > h3 {
+-    /* color: #4b5563; */
+-    /* transition: opacity 0.1s ease, color 0.1s ease, transform 0.1s ease; */
+@@ -20330 +18624,0 @@ div#supplements-content.supplements-page--day-details > h3 {
+-
+@@ -20335 +18628,0 @@ button.supplement-sheet-editor__formula-icon svg {
+-
+@@ -20341 +18633,0 @@ button.supplement-sheet-editor__tool-btn.supplement-sheet-editor__tool-btn--time
+-    /* opacity: 0; */
+@@ -20378 +18669,0 @@ button.supplement-sheet-editor__tool-btn.supplement-sheet-editor__tool-btn--time
+-    /* line-height: 1.28; */
+@@ -20386 +18676,0 @@ button.supplement-sheet-editor__tool-btn.supplement-sheet-editor__tool-btn--time
+-    /* gap: 8px; */
+@@ -20388 +18677,0 @@ button.supplement-sheet-editor__tool-btn.supplement-sheet-editor__tool-btn--time
+-    /* padding: 0px 14px 10px; */
+@@ -20400,2 +18688,0 @@ button.supplement-sheet-editor__tool-btn.supplement-sheet-editor__tool-btn--time
+-    /* border-radius: 10px; */
+-    /* background: #fff; */
+@@ -20417 +18703,0 @@ button.supplement-sheet-editor__tool-btn.supplement-sheet-editor__tool-btn--time
+-    /* gap: 8px; */
+@@ -20431 +18716,0 @@ button.supplement-sheet-editor__tool-btn.supplement-sheet-editor__tool-btn--time
+-    /* border-radius: 10px; */
+@@ -20438 +18722,0 @@ button.supplement-sheet-editor__tool-btn.supplement-sheet-editor__tool-btn--colo
+-    /* background: #dcdde0; */
+@@ -20445,2 +18728,0 @@ button.supplement-sheet-editor__tool-btn.supplement-sheet-editor__tool-btn--colo
+-.supplement-sheet-editor__tool-btn--color::after {
+-}
+@@ -20471 +18752,0 @@ button.supplement-sheet-editor__tool-btn.supplement-sheet-editor__tool-btn--colo
+-    /* transition: max-height 0.28s ease, opacity 0.18s ease, padding 0.22s ease; */
+@@ -20509 +18789,0 @@ button.supplement-sheet-editor__tool-btn.supplement-sheet-editor__tool-btn--colo
+-    /* border-top: 1px solid #eef1f5; */
+@@ -20515 +18794,0 @@ button.supplement-sheet-editor__tool-btn.supplement-sheet-editor__tool-btn--colo
+-    /* background: #fff; */
+@@ -20544 +18822,0 @@ button.supplement-sheet-editor__tool-btn.supplement-sheet-editor__tool-btn--colo
+-    /* background: #fff; */
+@@ -20590 +18867,0 @@ button.supplement-sheet-editor__tool-btn.supplement-sheet-editor__tool-btn--colo
+-    /* border-top: 1px solid #f1f1f1; */
+@@ -20630 +18906,0 @@ button.supplement-sheet-editor__tool-btn.supplement-sheet-editor__tool-btn--colo
+-    /* background: #fff; */
+@@ -20674 +18949,0 @@ button.supplement-sheet-editor__tool-btn.supplement-sheet-editor__tool-btn--colo
+-    /* background: #ffffff; */
+@@ -20738 +19012,0 @@ button.supplement-sheet-editor__tool-btn.supplement-sheet-editor__tool-btn--colo
+-    /* background: #eef5ff; */
+@@ -20740 +19013,0 @@ button.supplement-sheet-editor__tool-btn.supplement-sheet-editor__tool-btn--colo
+-    /* box-shadow: inset 0 0 0 1px rgba(62, 140, 225, 0.14); */
+@@ -20900 +19172,0 @@ html.supplement-table-sheet-editing div#supplements-content.supplements-page--ta
+-    /* letter-spacing: -0.01em; */
+@@ -20909,3 +19180,0 @@ html.supplement-table-sheet-editing div#supplements-content.supplements-page--ta
+-.supplements-controls-wrapper--table .supplements-table-range-toggle {
+-    /* width: 92px; */
+-}
+@@ -20913,3 +19181,0 @@ html.supplement-table-sheet-editing div#supplements-content.supplements-page--ta
+-    /* background: #111827; */
+-    /* color: #fff; */
+-    /* box-shadow: 0 6px 14px rgba(17, 24, 39, 0.18); */
+@@ -21127 +19392,0 @@ html.supplement-table-sheet-editing div#supplements-content.supplements-page--ta
+-    /* padding: 3px; */
+@@ -21257 +19521,0 @@ button.btn.btn-primary.supplement-dose-merge-confirm {
+-
+@@ -21524 +19787,0 @@ html.supplement-column-drag-lock #root {
+-        /* gap: 6px; */ /* margin-top: 8px; */
+@@ -21527,2 +19789,0 @@ html.supplement-column-drag-lock #root {
+-        /* gap: 8px; */
+-        /* margin-bottom: 8px; */
+@@ -21531 +19791,0 @@ html.supplement-column-drag-lock #root {
+-        /* font-size: 14px; */
+@@ -21534,3 +19793,0 @@ html.supplement-column-drag-lock #root {
+-        /* width: 100%; */
+-        /* justify-content: space-between; */
+-        /* margin-bottom: 8px; */
+@@ -21542,2 +19798,0 @@ html.supplement-column-drag-lock #root {
+-        /* padding: 2px; */
+-        /* border-radius: 12px; */
+@@ -21546,3 +19800,0 @@ html.supplement-column-drag-lock #root {
+-        /* min-height: 28px; */
+-        /* padding: 0 8px; */
+-        /* font-size: 11px; */
+@@ -21551 +19802,0 @@ html.supplement-column-drag-lock #root {
+-        /* width: 84px; */
+@@ -21554 +19804,0 @@ html.supplement-column-drag-lock #root {
+-        /* font-size: 11px; */
+@@ -21557,3 +19806,0 @@ html.supplement-column-drag-lock #root {
+-        /* min-height: 96px; */
+-        /* border-radius: 6px; */
+-        /* padding: 3px 2px 3px; */
+@@ -21565,2 +19811,0 @@ html.supplement-column-drag-lock #root {
+-        /* font-size: 10px; */
+-        /* padding-inline: 3px; */
+@@ -21777 +20021,0 @@ html.program-reorder-lock #root {
+-    /* background: #fff; */
+@@ -21792 +20035,0 @@ html.program-reorder-lock #root {
+-    /* min-height: 46px; */
+@@ -21869 +20111,0 @@ html.program-reorder-lock #root {
+-    /* box-shadow: 0 0.5px 1px #5195e0 !important; */
+@@ -21880 +20121,0 @@ html.program-reorder-lock #root {
+-    /* min-height: 47px; */
+@@ -22108 +20348,0 @@ html.program-reorder-lock #root {
+-    /* background: #fff; */
+@@ -22126 +20365,0 @@ html.program-reorder-lock #root {
+-    /* background: #fff; */
+@@ -22181 +20419,0 @@ html.program-reorder-lock #root {
+-    /* padding-top: 17px; */
+@@ -22372 +20609,0 @@ html.program-reorder-lock #root {
+-/* ===== iOS / PWA safe-top overrides ===== */
+@@ -22382,7 +20618,0 @@ html.program-reorder-lock #root {
+-    /* min-height: var(--app-height, 100dvh); */
+-}
+-.meal-overlay-layer {
+-    /* padding-top: var(--top-bar-pad-top); */
+-}
+-.meal-overlay-layer--search .meal-overlay-subpage {
+-    /* padding-top: var(--top-bar-pad-top); */
+@@ -22442 +20671,0 @@ html.program-reorder-lock #root {
+-    /* backdrop-filter: blur(10px); */
+@@ -22517 +20745,0 @@ html.program-reorder-lock #root {
+-    /* background: rgba(255, 255, 255, 0.86); */
+@@ -22519 +20746,0 @@ html.program-reorder-lock #root {
+-    /* box-shadow: 0 6px 18px rgba(34, 86, 136, 0.08); */
+@@ -22584 +20810,0 @@ html.program-reorder-lock #root {
+-    /* min-height: 42px; */
+@@ -22591 +20816,0 @@ html.program-reorder-lock #root {
+-    /* font-weight: 700; */
+@@ -22598 +20822,0 @@ html.program-reorder-lock #root {
+-    /* background: rgba(244, 247, 252, 0.72); */
+@@ -22608 +20831,0 @@ html.program-reorder-lock #root {
+-    /* border-color: #438ee1; */
+@@ -22610 +20832,0 @@ html.program-reorder-lock #root {
+-    /* box-shadow: 0 14px 28px rgba(51, 127, 216, 0.28); */
+@@ -22627 +20848,0 @@ html.program-reorder-lock #root {
+-    /* background: rgba(242, 246, 251, 0.95); */
+@@ -22644 +20864,0 @@ html.program-reorder-lock #root {
+-    /* font-weight: 700; */
+@@ -22653 +20872,0 @@ html.program-reorder-lock #root {
+-    /* box-shadow: 0 10px 24px rgba(62, 140, 225, 0.2) !important; */
+@@ -22679 +20897,0 @@ html.program-reorder-lock #root {
+-    /* top: calc(var(--top-bar-height, 65px) + 0px); */
+@@ -22685 +20902,0 @@ html.program-reorder-lock #root {
+-    /* padding: 7px 12px; */
+@@ -22693,2 +20909,0 @@ html.program-reorder-lock #root {
+-    /* box-shadow: 0 8px 18px rgba(17, 24, 39, 0.08); */
+-    /* background: rgba(60, 60, 67, 0.12); */
+@@ -22700 +20914,0 @@ html.program-reorder-lock #root {
+-
+@@ -22704 +20917,0 @@ html.program-reorder-lock #root {
+-
+@@ -22707 +20919,0 @@ html.program-reorder-lock #root {
+-    /* background: rgba(255, 149, 0, 0.16);*/
+@@ -22710 +20921,0 @@ html.program-reorder-lock #root {
+-
+@@ -22712 +20922,0 @@ html.program-reorder-lock #root {
+-    /* background: rgba(0, 122, 255, 0.14);*/
+@@ -22715 +20924,0 @@ html.program-reorder-lock #root {
+-
+@@ -22718 +20926,0 @@ html.program-reorder-lock #root {
+-    /* background: rgba(255, 59, 48, 0.14);*/

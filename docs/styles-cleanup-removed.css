@@ -1,0 +1,1550 @@
+/* 1. �����, ���������, ������� | �������� ������ 525-526
+   .programs-list--cycles-board .add-cycle-btn--fullrow {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.programs-list--cycles-board .add-cycle-btn--fullrow {
+}
+
+/* 2. ������ | �������� ������ 963-964
+   .mode-btn h4 {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.mode-btn h4 {
+}
+
+/* 3. ������ | �������� ������ 3034-3035
+   .delete-record-btn {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.delete-record-btn {
+}
+
+/* 4. ������ / calendar | �������� ������ 3057-3058
+   .journal-record-details h3 {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.journal-record-details h3 {
+}
+
+/* 5. ������ | �������� ������ 3059-3060
+   h3.training-comment-heading {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+h3.training-comment-heading {
+}
+
+/* 6. ������ | �������� ������ 3297-3303
+   / .list-item .go-btn {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+/ .list-item .go-btn {
+    background: #007aff;
+    color: white;
+    padding: 5px 12px;
+    font-size: 14px;
+    border-radius: 8px;
+}
+
+/* 7. ���������� �������� / ������� �������� | �������� ������ 3304-3305
+   .toast-message {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.toast-message {
+}
+
+/* 8. ���������� �������� / ������� �������� | �������� ������ 3378-3379
+   button#select-own-mode {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+button#select-own-mode {
+}
+
+/* 9. ������� / meals | �������� ������ 8382-8384
+   .create-food-unit-dropdown-item:not(: last-child) {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .create-food-unit-dropdown-item:not(: last-child) {
+        border-bottom: 1px solid #f0f1f5;
+    }
+
+/* 10. ������� / meals | �������� ������ 8385-8387
+   .create-food-unit-dropdown-item: active {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .create-food-unit-dropdown-item: active {
+        background: #f6f7fb;
+    }
+
+/* 11. ������� / meals | �������� ������ 8469-8471
+   .recipe-category-sheet .recipe-category-sheet-item: active {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .recipe-category-sheet .recipe-category-sheet-item: active {
+        transform: scale(0.985);
+    }
+
+/* 12. ������� / meals | �������� ������ 8503-8504
+   .create-food {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .create-food {
+    }
+
+/* 13. ������� / meals | �������� ������ 8514-8515
+   .topBar-create-food {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .topBar-create-food {
+    }
+
+/* 14. ������� / meals | �������� ������ 8583-8584
+   .meal-card {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-card {
+    }
+
+/* 15. ������� / meals | �������� ������ 8783-8784
+   .meal-search-screen--fill .meal-search-topbar {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-search-screen--fill .meal-search-topbar {
+    }
+
+/* 16. ������� / meals | �������� ������ 8846-8847
+   .meal-search-body {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-search-body {
+    }
+
+/* 17. ������� / meals | �������� ������ 8856-8857
+   .meal-search-screen--fill .meal-search-section-head {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-search-screen--fill .meal-search-section-head {
+    }
+
+/* 18. ������� / meals | �������� ������ 8949-8950
+   .meal-search-topbar {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-search-topbar {
+    }
+
+/* 19. ������� / meals | �������� ������ 8951-8952
+   .meal-search-topbar--bottom-nav-mode {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-search-topbar--bottom-nav-mode {
+    }
+
+/* 20. ������� / meals | �������� ������ 8990-8991
+   .meal-search-meal-trigger {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-search-meal-trigger {
+    }
+
+/* 21. ������� / meals | �������� ������ 9009-9010
+   .meal-search-picker-menu {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-search-picker-menu {
+    }
+
+/* 22. ������� / meals | �������� ������ 9015-9016
+   .meal-search-picker-item {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-search-picker-item {
+    }
+
+/* 23. ������� / meals | �������� ������ 9017-9019
+   .meal-search-picker-item: last-child {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-search-picker-item: last-child {
+        border-bottom: none;
+    }
+
+/* 24. ������� / meals | �������� ������ 9020-9021
+   .meal-search-picker-item.active {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-search-picker-item.active {
+    }
+
+/* 25. ������� / meals | �������� ������ 9049-9053
+   .meal-search-input: focus {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-search-input: focus {
+        outline: none!important;
+        box-shadow: none;
+        border: none;
+    }
+
+/* 26. ������� / meals | �������� ������ 9172-9173
+   .meal-search-tab.active {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-search-tab.active {
+    }
+
+/* 27. ������� / meals | �������� ������ 9274-9275
+   .meal-search-main-action {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-search-main-action {
+    }
+
+/* 28. ������� / meals | �������� ������ 9298-9299
+   .meal-quick-add-form-card .create-food-row--quick-add-last {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-quick-add-form-card .create-food-row--quick-add-last {
+    }
+
+/* 29. ������� / meals | �������� ������ 9306-9307
+   .meal-search-section-head {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-search-section-head {
+    }
+
+/* 30. ������� / meals | �������� ������ 9437-9438
+   .meal-search-topbar {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-search-topbar {
+    }
+
+/* 31. ������� / meals | �������� ������ 9525-9526
+   .meal-search-picker-item.active {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-search-picker-item.active {
+    }
+
+/* 32. ������� / meals | �������� ������ 9629-9631
+   .meal-sort-sheet-option: last-child {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-sort-sheet-option: last-child {
+        border-bottom: none;
+    }
+
+/* 33. ������� / meals | �������� ������ 9711-9713
+   .food-meal-dropdown-item: last-child {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .food-meal-dropdown-item: last-child {
+        border-bottom: none;
+    }
+
+/* 34. ������� / meals | �������� ������ 9714-9716
+   .food-meal-dropdown-item: active {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .food-meal-dropdown-item: active {
+        background: #f3f4f6;
+    }
+
+/* 35. ������� / meals | �������� ������ 10072-10074
+   .recipe-ingredient-row: last-child {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .recipe-ingredient-row: last-child {
+        border-bottom: none;
+    }
+
+/* 36. ������� / meals | �������� ������ 10125-10126
+   .recipe-add-ingredient-btn {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .recipe-add-ingredient-btn {
+    }
+
+/* 37. ������� / meals | �������� ������ 10178-10180
+   .meal-goal-row: last-child {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-goal-row: last-child {
+        border-bottom: none;
+    }
+
+/* 38. ������� / meals | �������� ������ 10396-10399
+   .meal-target-btn: active svg {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-target-btn: active svg {
+        transform: scale(1.08);
+        transition: transform 0.2s ease;
+    }
+
+/* 39. ������� / meals | �������� ������ 10453-10454
+   .meal-goal-top-actions {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-goal-top-actions {
+    }
+
+/* 40. ������� / meals | �������� ������ 10532-10534
+   .meal-goal-updated-kcal-btn: active {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-goal-updated-kcal-btn: active {
+        opacity: 0.7;
+    }
+
+/* 41. ������ | �������� ������ 10631-10632
+   .topfone svg {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .topfone svg {
+        }
+
+/* 42. ������� / meals | �������� ������ 10734-10735
+   .meal-goal-sheet-icon-btn, .meal-goal-macros-clear-btn {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-goal-sheet-icon-btn, .meal-goal-macros-clear-btn {
+    }
+
+/* 43. ������� / meals | �������� ������ 10809-10810
+   .meal-goal-top-actions {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-goal-top-actions {
+    }
+
+/* 44. ������� / meals | �������� ������ 10811-10812
+   .meal-goal-top-btn {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-goal-top-btn {
+    }
+
+/* 45. ������� / meals | �������� ������ 10813-10814
+   .meal-goal-top-btn-save {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-goal-top-btn-save {
+    }
+
+/* 46. ���������� �������� / ������� �������� | �������� ������ 10840-10845
+   : root {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    : root {
+        --meal-search-appear: 0s;
+        --meal-search-disappear: 0s;
+        --meal-detail-appear: 0s;
+        --meal-detail-disappear: 0s;
+    }
+
+/* 47. ���������� �������� / ������� �������� | �������� ������ 10959-10969
+   : root {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    : root {
+        --ui-auth-accent: #0a84ff;
+        --ui-auth-accent-mid: #409cff;
+        --ui-auth-glow: rgba(10, 132, 255, 0.35);
+        --ui-surface: rgba(255, 255, 255, 0.92);
+        --ui-border: rgba(60, 60, 67, 0.12);
+        --ui-text-muted: #636366;
+        --ui-radius-lg: 20px;
+        --ui-radius-md: 14px;
+        --ui-shadow-elevated: 0 22px 50px rgba(15, 23, 42, 0.12), 0 8px 20px rgba(15, 23, 42, 0.06);
+    }
+
+/* 48. ����������� � ������� | �������� ������ 11055-11058
+   .auth-field: focus, #auth-screen .auth-box input: focus {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .auth-field: focus, #auth-screen .auth-box input: focus {
+        border-color: rgba(10, 132, 255, 0.55);
+        box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.12);
+    }
+
+/* 49. ����������� � ������� | �������� ������ 11066-11069
+   .auth-submit-btn: active {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .auth-submit-btn: active {
+        transform: scale(0.98);
+        opacity: 0.95;
+    }
+
+/* 50. ����������� � ������� | �������� ������ 11080-11082
+   .auth-toggle-btn: active {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .auth-toggle-btn: active {
+        background: rgba(10, 132, 255, 0.08);
+    }
+
+/* 51. ������ | �������� ������ 11128-11130
+   .modal-hint--rich p: last-child {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .modal-hint--rich p: last-child {
+        margin-bottom: 0;
+    }
+
+/* 52. �����, ���������, ������� | �������� ������ 11202-11206
+   .modal-cicle--add-client .modal-input: focus {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .modal-cicle--add-client .modal-input: focus {
+        border-color: rgba(10, 132, 255, 0.55);
+        box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.1);
+        background: #fff;
+    }
+
+/* 53. �����, ���������, ������� | �������� ������ 11257-11261
+   .modal-cicle--add-program .modal-input: focus {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .modal-cicle--add-program .modal-input: focus {
+        border-color: rgba(10, 132, 255, 0.55);
+        box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.1);
+        background: #fff;
+    }
+
+/* 54. �����, ���������, ������� | �������� ������ 11291-11293
+   .add-program-dropdown-row: active {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .add-program-dropdown-row: active {
+        background: #f0f0f5;
+    }
+
+/* 55. �����, ���������, ������� | �������� ������ 11352-11356
+   .add-program-dropdown-item: active, .add-program-dropdown-item.active {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .add-program-dropdown-item: active, .add-program-dropdown-item.active {
+        background: rgba(10, 132, 255, 0.1);
+        color: #007aff;
+        font-weight: 500;
+    }
+
+/* 56. ����������� � ������� | �������� ������ 11443-11444
+   .profile-cabinet-page {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .profile-cabinet-page {
+    }
+
+/* 57. ����������� � ������� | �������� ������ 11456-11458
+   .profile-field-group: last-child {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .profile-field-group: last-child {
+        margin-bottom: 0;
+    }
+
+/* 58. ����������� � ������� | �������� ������ 11482-11486
+   .profile-cabinet-form .profile-input: focus, .profile-cabinet-form .modal-input:focus {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .profile-cabinet-form .profile-input: focus, .profile-cabinet-form .modal-input:focus {
+        border-color: rgba(10, 132, 255, 0.5);
+        box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.1);
+        background: #fff;
+    }
+
+/* 59. ����������� � ������� | �������� ������ 11501-11502
+   .public-user-code-host.profile-cabinet-code {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .public-user-code-host.profile-cabinet-code {
+    }
+
+/* 60. ����������� � ������� | �������� ������ 11534-11536
+   .profile-invite-row: last-child {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .profile-invite-row: last-child {
+        border-bottom: none;
+    }
+
+/* 61. ������� / meals | �������� ������ 11850-11852
+   .meal-base-item: active {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+    .meal-base-item: active {
+        transform: scale(0.99);
+    }
+
+/* 62. ������ | �������� ������ 11914-11915
+   .week-controls-group .btn {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.week-controls-group .btn {
+}
+
+/* 63. ������ | �������� ������ 11916-11917
+   .week-controls-group .week-label {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.week-controls-group .week-label {
+}
+
+/* 64. ���� / supplements | �������� ������ 12231-12232
+   .supplements-page .btn-primary {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.supplements-page .btn-primary {
+}
+
+/* 65. ������� / meals | �������� ������ 12450-12451
+   .meal-swipe.meal-swipe--inline-header {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.meal-swipe.meal-swipe--inline-header {
+}
+
+/* 66. ������� / meals | �������� ������ 12489-12490
+   .meal-food-list {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.meal-food-list {
+}
+
+/* 67. ������� / meals | �������� ������ 12544-12545
+   .meal-food-list-footer-btn--quick-add {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.meal-food-list-footer-btn--quick-add {
+}
+
+/* 68. ������� / meals | �������� ������ 13340-13341
+   .meal-food-list :last-child {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.meal-food-list :last-child {
+}
+
+/* 69. ������� / meals | �������� ������ 13363-13364
+   #meals-container > .meal-swipe--inline-header:first-child .meal-card-header {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+#meals-container > .meal-swipe--inline-header:first-child .meal-card-header {
+}
+
+/* 70. ������� / meals | �������� ������ 13365-13366
+   #meals-container > .meal-swipe--inline-header:first-child .meal-card-header {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+#meals-container > .meal-swipe--inline-header:first-child .meal-card-header {
+}
+
+/* 71. ������� / meals | �������� ������ 14042-14043
+   .create-food.meal-overlay-subpage{
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.create-food.meal-overlay-subpage{
+}
+
+/* 72. ������� / meals | �������� ������ 14089-14090
+   .create-food-sticky-h3::after {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.create-food-sticky-h3::after {
+}
+
+/* 73. ������� / meals | �������� ������ 14101-14102
+   button.edit-meal-search-main-action.food-details-action-btn.food-details-action-edit {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+button.edit-meal-search-main-action.food-details-action-btn.food-details-action-edit {
+}
+
+/* 74. ������� / meals | �������� ������ 14144-14145
+   .meal-card {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.meal-card {
+}
+
+/* 75. ������� / meals | �������� ������ 14334-14335
+   .meal-search-screen.meal-search-screen--fill.meal-search-screen--history {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.meal-search-screen.meal-search-screen--fill.meal-search-screen--history {
+}
+
+/* 76. ������� / meals | �������� ������ 14347-14348
+   .meal-search-screen--fill .meal-search-topbar {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.meal-search-screen--fill .meal-search-topbar {
+}
+
+/* 77. ������� / meals | �������� ������ 14410-14411
+   .meal-search-body {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.meal-search-body {
+}
+
+/* 78. ������� / meals | �������� ������ 14420-14421
+   .meal-search-screen--fill .meal-search-section-head {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.meal-search-screen--fill .meal-search-section-head {
+}
+
+/* 79. ������� / meals | �������� ������ 14671-14672
+   .meal-search-meal-trigger {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.meal-search-meal-trigger {
+}
+
+/* 80. ������� / meals | �������� ������ 14690-14691
+   .meal-search-picker-menu {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.meal-search-picker-menu {
+}
+
+/* 81. ������� / meals | �������� ������ 14696-14697
+   .meal-search-picker-item {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.meal-search-picker-item {
+}
+
+/* 82. ������� / meals | �������� ������ 14701-14702
+   .meal-search-picker-item.active {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.meal-search-picker-item.active {
+}
+
+/* 83. ������� / meals | �������� ������ 14905-14906
+   .meal-search-tab.active {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.meal-search-tab.active {
+}
+
+/* 84. ������� / meals | �������� ������ 15007-15008
+   .meal-search-main-action {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.meal-search-main-action {
+}
+
+/* 85. ������� / meals | �������� ������ 15122-15123
+   .meal-search-section-head {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.meal-search-section-head {
+}
+
+/* 86. ������� / meals | �������� ������ 15285-15286
+   .meal-search-topbar {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.meal-search-topbar {
+}
+
+/* 87. ������� / meals | �������� ������ 15369-15370
+   .meal-search-picker-list {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.meal-search-picker-list {
+}
+
+/* 88. ������� / meals | �������� ������ 16342-16343
+   .meal-goal-top-actions {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.meal-goal-top-actions {
+}
+
+/* 89. ������� / meals | �������� ������ 16424-16425
+   .meal-goal-page {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.meal-goal-page {
+}
+
+/* 90. ������ | �������� ������ 16644-16645
+   .topfone svg {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.topfone svg {
+}
+
+/* 91. ������� / meals | �������� ������ 16646-16647
+   .meal-goal-section.avryday {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.meal-goal-section.avryday {
+}
+
+/* 92. ������� / meals | �������� ������ 16746-16747
+   .meal-goal-sheet-icon-btn, .meal-goal-macros-clear-btn {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.meal-goal-sheet-icon-btn, .meal-goal-macros-clear-btn {
+}
+
+/* 93. ������� / meals | �������� ������ 16825-16826
+   .meal-goal-top-actions {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.meal-goal-top-actions {
+}
+
+/* 94. ������� / meals | �������� ������ 16827-16828
+   .meal-goal-top-btn {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.meal-goal-top-btn {
+}
+
+/* 95. ������� / meals | �������� ������ 16829-16830
+   .meal-goal-top-btn-save {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.meal-goal-top-btn-save {
+}
+
+/* 96. ������ | �������� ������ 16891-16892
+   .tab-shape-btn span {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.tab-shape-btn span {
+}
+
+/* 97. ���������� �������� / ������� �������� | �������� ������ 17293-17294
+   .modal-edit.modal-exercise-name-modal .modal-buttons {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.modal-edit.modal-exercise-name-modal .modal-buttons {
+}
+
+/* 98. ����������� � ������� | �������� ������ 17549-17550
+   .profile-cabinet-page {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.profile-cabinet-page {
+}
+
+/* 99. ����������� � ������� | �������� ������ 17607-17608
+   .public-user-code-host.profile-cabinet-code {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.public-user-code-host.profile-cabinet-code {
+}
+
+/* 100. ������� / meals | �������� ������ 18069-18070
+   .recipe-food-search-topbar {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.recipe-food-search-topbar {
+}
+
+/* 101. ���� / supplements | �������� ������ 18401-18402
+   .supplements-topbar-calendar-btn {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.supplements-topbar-calendar-btn {
+}
+
+/* 102. ���� / supplements | �������� ������ 18406-18407
+   .supplements-topbar-table-btn {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.supplements-topbar-table-btn {
+}
+
+/* 103. ���� / supplements | �������� ������ 18810-18811
+   .supplement-calendar-day.supplement-calendar-day--placeholder {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.supplement-calendar-day.supplement-calendar-day--placeholder {
+}
+
+/* 104. ���� / supplements | �������� ������ 18843-18844
+   .supplement-calendar-day.is-selected-empty {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.supplement-calendar-day.is-selected-empty {
+}
+
+/* 105. ���� / supplements | �������� ������ 18889-18890
+   .supplement-calendar-day.is-selected .supplement-calendar-day-supplement, .supplement-calendar-day.is-selected .supplement-calendar-day-more {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.supplement-calendar-day.is-selected .supplement-calendar-day-supplement, .supplement-calendar-day.is-selected .supplement-calendar-day-more {
+}
+
+/* 106. ���� / supplements | �������� ������ 19176-19177
+   .supplement-dose-cell-btn.has-dose {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.supplement-dose-cell-btn.has-dose {
+}
+
+/* 107. ���� / supplements | �������� ������ 19412-19413
+   .supplement-sheet-editor__tool-btn--color::after {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.supplement-sheet-editor__tool-btn--color::after {
+}
+
+/* 108. ���� / supplements | �������� ������ 19866-19867
+   .supplements-controls-wrapper--table .supplements-table-range-toggle {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.supplements-controls-wrapper--table .supplements-table-range-toggle {
+}
+
+/* 109. ������� / meals | �������� ������ 21307-21308
+   .meal-overlay-layer {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.meal-overlay-layer {
+}
+
+/* 110. ������� / meals | �������� ������ 21309-21310
+   .meal-overlay-layer--search .meal-overlay-subpage {
+   ������ �������: ���������� ��� ������ CSS-����; ��������� �� ������ ��� �������� ���������. */
+.meal-overlay-layer--search .meal-overlay-subpage {
+}
+
+/* === Pass 2: invalid selector blocks removed after structural review === */
+
+/* P2-1. Global shell/base | source lines 3379-3388
+   @import url('https: //fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap'); body {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    @import url('https: //fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap'); body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Inter', "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        background-color: #f2f2f7;
+        color: #1c1c1e;
+        padding: 0;
+        margin: 0;
+        min-height: var(--app-height, 100vh);
+        height: var(--app-height, 100vh);
+        letter-spacing: -0.01em;
+    }
+
+/* P2-2. Global shell/base | source lines 3389-3400
+   : root {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    : root {
+        --safe-top: env(safe-area-inset-top, 0px);
+        --safe-bottom: env(safe-area-inset-bottom, 0px);
+        --safe-top-min: 14px;
+        --safe-top-fallback: max(var(--safe-top), var(--safe-top-min));
+        --top-bar-pad-top: calc(var(--safe-top-fallback) + 10px);
+        --top-bar-pad-bottom: 10px;
+        --top-bar-row: 30px;
+        --top-bar-height: calc(var(--top-bar-pad-top) + var(--top-bar-row) + var(--top-bar-pad-bottom));
+        --top-bar-offset: var(--top-bar-height);
+        --bottom-nav-clearance: calc(58px + 35px + 16px + var(--safe-bottom));
+    }
+
+/* P2-3. Programs/Cycles/Clients | source lines 3470-3473
+   .program-card: focus, .program-card:focus-visible {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .program-card: focus, .program-card:focus-visible {
+        outline: none !important;
+        background-color: inherit !important;
+    }
+
+/* P2-4. Global shell/base | source lines 3478-3481
+   button: focus, button:focus-visible, button:active {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    button: focus, button:focus-visible, button:active {
+        outline: none !important;
+        box-shadow: none !important;
+    }
+
+/* P2-5. Global shell/base | source lines 3495-3497
+   *:: -webkit-scrollbar {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    *:: -webkit-scrollbar {
+        display: none;
+    }
+
+/* P2-6. Misc | source lines 3574-3577
+   .top-back-btn: active svg {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .top-back-btn: active svg {
+        transform: scale(1.1);
+        transition: transform 0.2s ease;
+    }
+
+/* P2-7. Misc | source lines 3587-3590
+   .top-menu-btn: active svg {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .top-menu-btn: active svg {
+        transform: scale(1.1);
+        transition: transform 0.2s ease;
+    }
+
+/* P2-8. Global shell/base | source lines 3623-3626
+   .menu-modal button.menu-icon-btn: active {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .menu-modal button.menu-icon-btn: active {
+        transform: scale(1.05);
+        transition: transform 0.2s ease;
+    }
+
+/* P2-9. Global shell/base | source lines 3646-3649
+   button: focus, button:active {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    button: focus, button:active {
+        outline: none;
+        box-shadow: none;
+    }
+
+/* P2-10. Journal/Calendar | source lines 3699-3701
+   .list-item: last-child, .journal-record:last-child {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .list-item: last-child, .journal-record:last-child {
+        border-bottom: none;
+    }
+
+/* P2-11. Global shell/base | source lines 3712-3715
+   input: focus {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    input: focus {
+        outline: none;
+        box-shadow: inset 0 0 0 1.5px #007aff;
+    }
+
+/* P2-12. Programs/Cycles/Clients | source lines 3842-3845
+   .add-client-btn: active, .list-item.client-item:active , .add-program-btn:active , .list-item.program-item:active , .add-cycle-btn:active {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .add-client-btn: active, .list-item.client-item:active , .add-program-btn:active , .list-item.program-item:active , .add-cycle-btn:active {
+        transition: transform 0.2s ease;
+        box-shadow: none !important;
+    }
+
+/* P2-13. Global shell/base | source lines 3892-3895
+   .modal-cicle .modal-buttons button.btn.btn-primary: active {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .modal-cicle .modal-buttons button.btn.btn-primary: active {
+        transform: scale(1.1);
+        transition: transform 0.2s ease;
+    }
+
+/* P2-14. Misc | source lines 3991-3993
+   .set-row: last-child {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .set-row: last-child {
+        border-bottom: none;
+    }
+
+/* P2-15. Journal/Calendar | source lines 4058-4060
+   .journal-record: last-child {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .journal-record: last-child {
+        margin-bottom: 0;
+    }
+
+/* P2-16. Timer | source lines 4348-4351
+   button.btn.btn-timer: active svg {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    button.btn.btn-timer: active svg {
+        transform: scale(1.1);
+        transition: transform 0.2s ease;
+    }
+
+/* P2-17. Timer | source lines 4396-4399
+   .timer-presets button: active {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .timer-presets button: active {
+        transform: scale(1.1);
+        transition: transform 0.2s ease;
+    }
+
+/* P2-18. Timer | source lines 4419-4422
+   .timer-center button: active {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .timer-center button: active {
+        transform: scale(1.1);
+        transition: transform 0.2s ease;
+    }
+
+/* P2-19. Global shell/base | source lines 4555-4558
+   button.btn.edit-note-btn: active svg {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    button.btn.edit-note-btn: active svg {
+        transform: scale(1.3);
+        transition: transform 0.2s ease;
+    }
+
+/* P2-20. Global shell/base | source lines 4605-4609
+   textarea.comment-input: focus {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    textarea.comment-input: focus {
+        border-color: #3f7ae0;
+        background-color: #fff;
+        box-shadow: 0 0 4px rgba(63, 122, 224, 0.25);
+    }
+
+/* P2-21. Global shell/base | source lines 4652-4655
+   .comExer button.btn.btn-secondary: active {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .comExer button.btn.btn-secondary: active {
+        transform: scale(1.05);
+        transition: transform 0.2s ease;
+    }
+
+/* P2-22. Global shell/base | source lines 4663-4666
+   .comExer .modal-controls button.btn.btn-primary: active {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .comExer .modal-controls button.btn.btn-primary: active {
+        transform: scale(1.1);
+        transition: transform 0.2s ease;
+    }
+
+/* P2-23. Global shell/base | source lines 4741-4744
+   .comment-btn-group: active, .comment-btn-group:active button.btn.comment-toggle-btn.has-note {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .comment-btn-group: active, .comment-btn-group:active button.btn.comment-toggle-btn.has-note {
+        color: #317ccd;
+        transition: transform 0.2s ease;
+    }
+
+/* P2-24. Misc | source lines 4803-4806
+   .complete-training-btn: active {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .complete-training-btn: active {
+        transition: transform 0.2s ease;
+        box-shadow: none!important;
+    }
+
+/* P2-25. Supplements | source lines 4898-4902
+   .dose-input: focus {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .dose-input: focus {
+        background-color: #d5d5d5;
+        border: 0 solid #ffd700;
+        box-shadow: none;
+    }
+
+/* P2-26. Journal/Calendar | source lines 4956-4958
+   .list-item: last-child, .journal-record:last-child {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .list-item: last-child, .journal-record:last-child {
+        border-bottom: none;
+    }
+
+/* P2-27. Global shell/base | source lines 4970-4973
+   input: focus {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    input: focus {
+        outline: none;
+        box-shadow: inset 0 0 0 0.5px #a9a9a9;
+    }
+
+/* P2-28. Misc | source lines 5016-5019
+   .exercise-item: active {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .exercise-item: active {
+        box-shadow: none !important;
+        transition: transform 0.2s ease;
+    }
+
+/* P2-29. Global shell/base | source lines 5295-5298
+   .modal-set button.btn.btn-primary: active {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .modal-set button.btn.btn-primary: active {
+        transform: scale(1.1);
+        transition: transform 0.2s ease;
+    }
+
+/* P2-30. Global shell/base | source lines 5309-5311
+   button.btn.delete-set-btn: active svg {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    button.btn.delete-set-btn: active svg {
+        transform: scale(1.3);
+    }
+
+/* P2-31. Misc | source lines 5332-5334
+   .set-row: last-child {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .set-row: last-child {
+        border-bottom: none;
+    }
+
+/* P2-32. Misc | source lines 5373-5375
+   .add-set-btn: active svg {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .add-set-btn: active svg {
+        transform: scale(1.3);
+    }
+
+/* P2-33. Misc | source lines 5400-5403
+   .duplicate-controls .btn: active {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .duplicate-controls .btn: active {
+        transform: scale(1.06);
+        transition: transform 0.2s ease;
+    }
+
+/* P2-34. Global shell/base | source lines 5418-5421
+   .modal-remove-edit button.btn.btn-primary: active, .modal-remove-edit button.btn.cancel-btn:active {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .modal-remove-edit button.btn.btn-primary: active, .modal-remove-edit button.btn.cancel-btn:active {
+        transform: scale(1.05);
+        transition: transform 0.2s ease;
+    }
+
+/* P2-35. Global shell/base | source lines 5443-5446
+   .modal-edit .modal-buttons button.btn.btn-primary: active {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .modal-edit .modal-buttons button.btn.btn-primary: active {
+        transform: scale(1.1);
+        transition: transform 0.2s ease;
+    }
+
+/* P2-36. Global shell/base | source lines 5526-5529
+   button.btn.btn-primary.add-exercise-btn: active {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    button.btn.btn-primary.add-exercise-btn: active {
+        transition: transform 0.2s ease;
+        box-shadow: none !important;
+    }
+
+/* P2-37. Programs/Cycles/Clients | source lines 5669-5671
+   .program-pill: active {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .program-pill: active {
+        transform: scale(0.96);
+    }
+
+/* P2-38. Journal/Calendar | source lines 5912-5916
+   .calendar-cell: active {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .calendar-cell: active {
+        transform: scale(1.05);
+        transition: transform 0.2s ease;
+        z-index: 100;
+    }
+
+/* P2-39. Journal/Calendar | source lines 6022-6024
+   .journal-record: last-child {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .journal-record: last-child {
+        margin-bottom: 0;
+    }
+
+/* P2-40. Misc | source lines 6372-6378
+   / .list-item .go-btn {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    / .list-item .go-btn {
+        background: #007aff;
+        color: white;
+        padding: 5px 12px;
+        font-size: 14px;
+        border-radius: 8px;
+    }
+
+/* P2-41. Programs/Cycles/Clients | source lines 6476-6479
+   .mode-btn: active {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .mode-btn: active {
+        transition: transform 0.2s ease;
+        box-shadow: none !important;
+    }
+
+/* P2-42. Global shell/base | source lines 6557-6559
+   .modal-content.modal-compact .modal-controls button.btn.btn-secondary.cancel-btn: active, .modal-content.modal-compact .modal-controls button.btn.btn-danger.confirm-btn:active {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .modal-content.modal-compact .modal-controls button.btn.btn-secondary.cancel-btn: active, .modal-content.modal-compact .modal-controls button.btn.btn-danger.confirm-btn:active {
+        transition: transform 0.2s ease;
+    }
+
+/* P2-43. Supplements | source lines 6764-6768
+   .dose-input: focus {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .dose-input: focus {
+        background-color: #d5d5d5;
+        border: 0 solid #ffd700;
+        box-shadow: none;
+    }
+
+/* P2-44. Global shell/base | source lines 6934-6937
+   button.action-btn.action-delete: active svg {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    button.action-btn.action-delete: active svg {
+        transform: scale(1.1);
+        transition: transform 0.2s ease;
+    }
+
+/* P2-45. Misc | source lines 6954-6957
+   .action-btn: active svg {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .action-btn: active svg {
+        transform: scale(1.1);
+        transition: transform 0.2s ease;
+    }
+
+/* P2-46. Misc | source lines 7785-7787
+   .week-day-item: active .week-day-circle {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .week-day-item: active .week-day-circle {
+        transform: scale(0.96);
+    }
+
+/* P2-47. Meals | source lines 7788-7789
+   .meal-food-list : last-child {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .meal-food-list : last-child {
+    }
+
+/* P2-48. Meals | source lines 7883-7886
+   .meal-swipe .action-btn: active svg {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .meal-swipe .action-btn: active svg {
+        transform: scale(1.1);
+        transition: transform 0.2s ease;
+    }
+
+/* P2-49. Meals | source lines 8095-8099
+   .meal-food-list > .food-swipe: last-child .food-info-header {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .meal-food-list > .food-swipe: last-child .food-info-header {
+        border-radius: 0;
+        padding-bottom: 18px;
+        box-shadow: none;
+    }
+
+/* P2-50. Meals | source lines 8168-8170
+   .create-food-row: last-child {
+   Reason: invalid selector syntax or broken duplicate import/root block. */
+    .create-food-row: last-child {
+        border-bottom: none;
+    }
+
+/* ===== Pass 3: invalid pseudo selector blocks removed safely ===== */
+
+/* 1. programs-cycles-clients | lines 3808+
+   .program-item > div: first-child {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .program-item > div: first-child {
+        flex-grow: 1;
+    }
+
+
+/* 2. shared-ui | lines 4052+
+   .list-item > div: first-child {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .list-item > div: first-child {
+        flex: 1;
+        min-width: 0;
+        word-break: break-all;
+        overflow-wrap: anywhere;
+        white-space: normal;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+
+
+/* 3. shared-ui | lines 4424+
+   .timer-toggle-checkbox: checked + .timer-toggle-box::after {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .timer-toggle-checkbox: checked + .timer-toggle-box::after {
+        content: "";
+        position: absolute;
+        width: 15px;
+        height: 5px;
+        border-left: 4px solid #009832;
+        border-bottom: 3px solid #009832;
+        top: 3px;
+        left: 3px;
+        transform: rotate(-45deg);
+    }
+
+
+/* 4. shared-ui | lines 5056+
+   .checkbox-input: checked + .checkbox-custom::after {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .checkbox-input: checked + .checkbox-custom::after {
+        content: '';
+        position: absolute;
+        width: 15px;
+        height: 5px;
+        border-left: 4px solid #009832;
+        border-bottom: 3px solid #009832;
+        top: 3px;
+        left: 3px;
+        transform: rotate(-45deg);
+    }
+
+
+/* 5. shared-ui | lines 5335+
+   .h-wheel:: -webkit-scrollbar {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .h-wheel:: -webkit-scrollbar {
+        display: none;
+    }
+
+
+/* 6. programs-cycles-clients | lines 5391+
+   .modal-overlay.program-details .modal-content .modal-buttons button: hover {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .modal-overlay.program-details .modal-content .modal-buttons button: hover {
+        transform: scale(1.1);
+        background: #eff6ff;
+    }
+
+
+/* 7. shared-ui | lines 5559+
+   .checkbox-container input: checked ~ .checkmark {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .checkbox-container input: checked ~ .checkmark {
+        background-color: #ffffff;
+        border: 1px solid #b2b1b1;
+    }
+
+
+/* 8. shared-ui | lines 5563+
+   .checkmark: after {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .checkmark: after {
+        content: "";
+        position: absolute;
+        display: none;
+    }
+
+
+/* 9. shared-ui | lines 5568+
+   .checkbox-container input: checked ~ .checkmark:after {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .checkbox-container input: checked ~ .checkmark:after {
+        display: block;
+    }
+
+
+/* 10. shared-ui | lines 5571+
+   .checkbox-container .checkmark: after {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .checkbox-container .checkmark: after {
+        content: '';
+        position: absolute;
+        width: 15px;
+        height: 5px;
+        border-left: 4px solid #009832;
+        border-bottom: 3px solid #009832;
+        top: 3px;
+        left: 3px;
+        transform: rotate(-45deg);
+    }
+
+
+/* 11. shared-ui | lines 5646+
+   .select-option: hover {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .select-option: hover {
+        background: #f2f2f7;
+    }
+
+
+/* 12. shared-ui | lines 5663+
+   .custom-select .select-option:: before {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .custom-select .select-option:: before {
+        content: '-';
+        color: #999;
+        margin-right: 8px;
+    }
+
+
+/* 13. shared-ui | lines 5668+
+   .custom-select .select-option.selected:: after {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .custom-select .select-option.selected:: after {
+        content: '';
+    }
+
+
+/* 14. shared-ui | lines 5671+
+   .custom-select .select-option.selected:: before {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .custom-select .select-option.selected:: before {
+        content: '';
+        width: 15px;
+        height: 5px;
+        border-left: 4px solid #009832;
+        border-bottom: 3px solid #009832;
+        transform: rotate(-45deg);
+    }
+
+
+/* 15. journal | lines 5780+
+   .calendar-cell.today .day-number:: after {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .calendar-cell.today .day-number:: after {
+        content: '';
+        display: block;
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background-color: #007aff;
+        margin: 9px auto 0 auto;
+    }
+
+
+/* 16. journal | lines 5789+
+   .calendar-cell.today.has-training .day-number:: after, .calendar-cell.today.planned .day-number::after {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .calendar-cell.today.has-training .day-number:: after, .calendar-cell.today.planned .day-number::after {
+        position: absolute;
+        background: none;
+    }
+
+
+/* 17. journal | lines 5810+
+   .training-dropdown-item: hover {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .training-dropdown-item: hover {
+        background: #f2f2f7;
+    }
+
+
+/* 18. journal | lines 5976+
+   .journal-record-details .back-btn: hover {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .journal-record-details .back-btn: hover {
+        text-decoration: underline;
+    }
+
+
+/* 19. shared-ui | lines 6168+
+   .media-thumb: hover {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .media-thumb: hover {
+        transform: scale(1.05);
+        transition: 0.2s;
+    }
+
+
+/* 20. supplements | lines 6404+
+   .sup-name: hover {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .sup-name: hover {
+        background: rgba(0, 0, 0, 0.05);
+        border-radius: 6px;
+    }
+
+
+/* 21. supplements | lines 6472+
+   .supplement-table-wrapper:: -webkit-scrollbar {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .supplement-table-wrapper:: -webkit-scrollbar {
+        display: none;
+    }
+
+
+/* 22. journal | lines 6812+
+   .training-dropdown-item: hover {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .training-dropdown-item: hover {
+        background: #f2f2f2;
+    }
+
+
+/* 23. shared-ui | lines 6823+
+   .delete-plan-btn: hover {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .delete-plan-btn: hover {
+        color: #ff3333;
+    }
+
+
+/* 24. meals | lines 7012+
+   .meal-header-kcal: empty {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .meal-header-kcal: empty {
+        display: none;
+    }
+
+
+/* 25. meals | lines 7459+
+   .meal-calendar-day.has-entry:: after {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .meal-calendar-day.has-entry:: after {
+        content: '';
+        position: absolute;
+        bottom: 3px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        background: #268eff;
+    }
+
+
+/* 26. meals | lines 7470+
+   .meal-calendar-day.is-outside.has-entry:: after {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .meal-calendar-day.is-outside.has-entry:: after {
+        display: none;
+    }
+
+
+/* 27. shared-ui | lines 7611+
+   .remove-btn: hover {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .remove-btn: hover {
+        transform: scale(1.2);
+    }
+
+
+/* 28. meals | lines 7617+
+   #meals-container > .meal-swipe--inline-header: first-child .meal-card-header {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    #meals-container > .meal-swipe--inline-header: first-child .meal-card-header {
+    }
+
+
+/* 29. meals | lines 7619+
+   #meals-container > .meal-swipe--inline-header: first-child .meal-card-header {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    #meals-container > .meal-swipe--inline-header: first-child .meal-card-header {
+    }
+
+
+/* 30. meals | lines 7962+
+   .create-food-form-card :nth-child(3).create-food-row .create-food-row-control input, .create-food-form-card : nth-child(4).create-food-row .create-food-row-control input {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .create-food-form-card :nth-child(3).create-food-row .create-food-row-control input, .create-food-form-card : nth-child(4).create-food-row .create-food-row-control input {
+        text-align: center;
+    }
+
+
+/* 31. meals | lines 8236+
+   .recipe-category-sheet .recipe-category-sheet-item: hover {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .recipe-category-sheet .recipe-category-sheet-item: hover {
+        background: #eceff3;
+    }
+
+
+/* 32. meals | lines 8239+
+   .recipe-category-sheet .recipe-category-sheet-item.active: hover {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .recipe-category-sheet .recipe-category-sheet-item.active: hover {
+        background: #111827;
+    }
+
+
+/* 33. meals | lines 8253+
+   .recipe-category-sheet:: before {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .recipe-category-sheet:: before {
+        content: '';
+        width: 42px;
+        height: 5px;
+        border-radius: 999px;
+        background: #d1d5db;
+        align-self: center;
+        margin: 2px 0 10px;
+        flex-shrink: 0;
+    }
+
+
+/* 34. meals | lines 8363+
+   .meal-card-macros.meal-card-macros--expanded:: before {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .meal-card-macros.meal-card-macros--expanded:: before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 56px;
+        width: 89%;
+        border-top: 1px solid #e5e5e5;
+        z-index: 99;
+        transform: translateX(12%);
+    }
+
+
+/* 35. meals | lines 8646+
+   .meal-search-tab-carousel:: -webkit-scrollbar {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .meal-search-tab-carousel:: -webkit-scrollbar {
+        display: none;
+    }
+
+
+/* 36. meals | lines 8782+
+   .meal-search-input:: placeholder {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .meal-search-input:: placeholder {
+        color: #b1b1b8;
+    }
+
+
+/* 37. meals | lines 8867+
+   .meal-search-tabs:: -webkit-scrollbar {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .meal-search-tabs:: -webkit-scrollbar {
+        display: none;
+    }
+
+
+/* 38. meals | lines 8900+
+   .meal-search-tab.active:: after {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .meal-search-tab.active:: after {
+        content: none;
+    }
+
+
+/* 39. meals | lines 9697+
+   .copy-meal-sheet-wheel:: -webkit-scrollbar {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .copy-meal-sheet-wheel:: -webkit-scrollbar {
+        display: none;
+    }
+
+
+/* 40. meals | lines 9902+
+   .meal-goal-input:: placeholder {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .meal-goal-input:: placeholder {
+        color: #b2b2b8;
+    }
+
+
+/* 41. meals | lines 9959+
+   .meal-goal-sheet-icon-btn.disabled, .meal-goal-sheet-icon-btn: disabled {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .meal-goal-sheet-icon-btn.disabled, .meal-goal-sheet-icon-btn: disabled {
+        opacity: 0.32;
+        pointer-events: none;
+    }
+
+
+/* 42. meals | lines 10156+
+   .meal-goal-top-btn.disabled, .meal-goal-top-btn: disabled {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .meal-goal-top-btn.disabled, .meal-goal-top-btn: disabled {
+        opacity: 0.32;
+        pointer-events: none;
+    }
+
+
+/* 43. meals | lines 10376+
+   .meal-goal-kcal-input: disabled {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .meal-goal-kcal-input: disabled {
+        opacity: 0.45;
+    }
+
+
+/* 44. programs-cycles-clients | lines 11014+
+   .add-program-confirm-btn.disabled, .add-program-confirm-btn: disabled {
+   Reason: invalid pseudo selector with a space after : or ::; browser ignores this block, so removing it should not change the UI. */
+    .add-program-confirm-btn.disabled, .add-program-confirm-btn: disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+    }
